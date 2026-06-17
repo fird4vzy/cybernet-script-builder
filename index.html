@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cybernet AI — Конструктор скриптов</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="favicon-180.png">
+  <link rel="shortcut icon" href="favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=20251029o">
+</head>
+<body>
+
+  <div class="app">
+    <div class="brand-header">
+      <img src="logo.png" alt="Cybernet AI" class="brand-logo">
+      <div class="brand-meta">
+        <div class="dashboard-title">Конструктор скриптов</div>
+        <div class="dashboard-sub">Cybernet AI · Создавайте диалоговые схемы для колл-центра</div>
+      </div>
+    </div>
+
+    <div class="stats-grid" id="stats-grid"></div>
+
+    <div class="profile-bar">
+      <span class="profile-bar-label">Профиль:</span>
+      <div id="profiles-list" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+      <div class="profile-actions">
+        <button class="icon-btn" onclick="newProfile()" title="Новый">+</button>
+        <button class="icon-btn" onclick="renameProfile()" title="Переименовать">✎</button>
+        <button class="icon-btn" onclick="deleteProfile()" title="Удалить">×</button>
+      </div>
+      <div class="ai-header-actions">
+        <button class="ai-header-btn ai-header-btn-primary" onclick="openGenScriptModal()" title="Создать весь скрипт с помощью AI">
+          ✨ AI-скрипт
+        </button>
+        <button class="ai-header-btn" onclick="runAIReview()" title="AI проверит ваш скрипт и найдёт проблемы">
+          🔍 AI-ревью
+        </button>
+        <button class="ai-header-btn" onclick="openLLMSettings()" title="Настройки AI">
+          <span class="ai-status-badge">⚙</span>
+        </button>
+      </div>
+    </div>
+
+    <nav class="side-rail" aria-label="Навигация">
+      <button class="rail-btn active" data-tab="editor" onclick="switchTab('editor', this)" aria-label="Блоки">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        <span class="rail-tooltip">Блоки</span>
+      </button>
+      <button class="rail-btn" data-tab="vars" onclick="switchTab('vars', this)" aria-label="Переменные">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h6M4 12h6M4 17h6"/><path d="M14 7h6M14 12h6M14 17h6"/></svg>
+        <span class="rail-tooltip">Переменные</span>
+      </button>
+      <button class="rail-btn" data-tab="intents" onclick="switchTab('intents', this)" aria-label="Интенты">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v14l4-2h10a2 2 0 0 0 2-2z"/><circle cx="12" cy="10" r="1.5" fill="currentColor"/></svg>
+        <span class="rail-tooltip">Интенты</span>
+      </button>
+      <button class="rail-btn" data-tab="canvas" onclick="switchTab('canvas', this)" aria-label="Canvas">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
+        <span class="rail-tooltip">Canvas</span>
+      </button>
+      <button class="rail-btn" data-tab="refs" onclick="switchTab('refs', this)" aria-label="Эталоны">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+        <span class="rail-tooltip">Эталоны для AI</span>
+      </button>
+      <button class="rail-btn" data-tab="preview" onclick="switchTab('preview', this)" aria-label="Предпросмотр">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span class="rail-tooltip">Предпросмотр</span>
+      </button>
+      <button class="rail-btn" data-tab="validate" onclick="switchTab('validate', this)" aria-label="Валидация">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+        <span id="validate-badge" class="rail-badge"></span>
+        <span class="rail-tooltip">Валидация</span>
+      </button>
+      <button class="rail-btn" data-tab="export" onclick="switchTab('export', this)" aria-label="Экспорт">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span class="rail-tooltip">Экспорт</span>
+      </button>
+    </nav>
+
+    <div class="tabs" style="display: none;">
+      <button class="tab active" data-tab="editor" onclick="switchTab('editor', this)">Блоки</button>
+    </div>
+
+    <div id="tab-editor">
+      <div class="toolbar">
+        <div class="search">
+          <span class="search-icon">🔍</span>
+          <input id="search" placeholder="Поиск по названию, ID или тексту" oninput="renderBlocks()">
+        </div>
+        <select id="lang-filter" class="select" onchange="renderBlocks()">
+          <option value="all">Оба языка</option>
+          <option value="ru">Только RU</option>
+          <option value="uz">Только UZ</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="addSection()">+ раздел</button>
+      </div>
+      <div id="blocks-list"></div>
+    </div>
+
+    <div id="tab-vars" style="display: none;">
+      <div class="info-box">
+        Используйте переменные в тексте блоков в формате <span class="var-chip">{BANK_NAME}</span>. Они автоматически подставятся при предпросмотре и экспорте.
+      </div>
+      <div class="vars-grid" id="vars-grid"></div>
+      <div style="margin-top: 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <button class="btn" onclick="addVariable()">+ добавить переменную</button>
+        <button class="btn btn-primary" onclick="saveAllVars()">💾 Сохранить все переменные</button>
+        <span id="vars-saved-indicator" class="saved-indicator"></span>
+      </div>
+    </div>
+
+    <div id="tab-intents" style="display: none;">
+      <div class="info-box" style="margin-bottom: 14px;">
+        💡 <strong>Интенты</strong> — это намерения клиента, которые определяет ИИ. Например, <code>q_willpay</code> (спрашивает об оплате), <code>howMuch</code> (интересуется суммой). У каждого блока свой intent — он запускается когда клиент говорит что-то подходящее.
+      </div>
+      <div class="intents-toolbar">
+        <div class="search" style="flex: 1;">
+          <span class="search-icon">🔍</span>
+          <input id="intent-search" placeholder="Поиск по intent'у" oninput="renderIntents()">
+        </div>
+        <button class="btn btn-primary" onclick="addIntent()">+ Добавить intent</button>
+      </div>
+      <div id="intents-list"></div>
+    </div>
+
+
+    <div id="tab-canvas" style="display: none;">
+      <div class="canvas-controls">
+        <button class="btn btn-sm btn-simulator" id="btn-sim-toggle" onclick="simToggle()" title="Пройти скрипт как оператор">
+          🎬 Симулятор
+        </button>
+        <button class="btn btn-sm" onclick="canvasAutoLayout()" title="Расставить блоки по алгоритму swim-lane">
+          ⚙ Авто-раскладка
+        </button>
+        <button class="btn btn-sm btn-ghost" onclick="canvasFitToView()" title="Вписать всю схему в экран">
+          ⊡ Вписать
+        </button>
+        <button class="btn btn-sm btn-ghost" onclick="canvasResetZoom()">100%</button>
+        <button class="btn btn-sm btn-ghost" onclick="resetAllBranchColors()" title="Убрать зелёные/красные/цветные стрелки — все станут серыми (по умолчанию)">
+          🎨 Сбросить цвета веток
+        </button>
+        <button class="btn btn-sm btn-ghost" onclick="applyEdgeLabelsAsTitles()" title="Если у блока 1 входящая стрелка с лейблом — этот лейбл становится названием блока. Не трогает intent. Можно откатить через Ctrl+Z.">
+          🏷 Лейблы → названия
+        </button>
+        <span class="canvas-zoom-indicator" id="canvas-zoom-indicator">100%</span>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4b5563; cursor: pointer;">
+          <input type="checkbox" id="canvas-show-grid" checked onchange="canvasRender()"> Сетка
+        </label>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4b5563; cursor: pointer;">
+          <input type="checkbox" id="canvas-show-text" checked onchange="canvasRender()"> Текст в блоках
+        </label>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4b5563; cursor: pointer;" title="При клике на блок подсвечиваются все блоки-предки и потомки">
+          <input type="checkbox" id="canvas-show-paths" checked onchange="canvasRender()"> 🎯 Пути
+        </label>
+        <select id="canvas-lang" class="select btn-sm" onchange="canvasRender()">
+          <option value="ru">RU</option>
+          <option value="uz">UZ</option>
+        </select>
+        <div style="margin-left: auto; display: flex; gap: 6px; align-items: center;">
+          <button class="btn btn-sm btn-primary" onclick="canvasExportMenu(event)" title="Скачать схему как PDF / SVG / PNG / JSON / CSV">
+            📥 Скачать
+          </button>
+          <button class="btn btn-sm" id="btn-canvas-fullscreen" onclick="toggleCanvasFullscreen()" title="Развернуть на весь экран (Esc для выхода)">
+            ⛶ Полный экран
+          </button>
+        </div>
+      </div>
+      <div id="canvas-export-menu" class="canvas-export-menu" style="display: none;">
+        <button class="cem-item" onclick="canvasDownloadAs('pdf')">📄 PDF (для печати)</button>
+        <button class="cem-item" onclick="canvasDownloadAs('svg')">🖼 SVG (векторный)</button>
+        <button class="cem-item" onclick="canvasDownloadAs('png')">🌅 PNG (картинка)</button>
+        <div class="cem-divider"></div>
+        <button class="cem-item" onclick="canvasDownloadAs('json')">💾 JSON (для бэкапа)</button>
+        <button class="cem-item" onclick="canvasDownloadAs('csv')">📊 CSV (таблица)</button>
+        <button class="cem-item" onclick="canvasDownloadAs('drawio')">📐 Draw.io XML</button>
+      </div>
+      <div id="sim-status-bar" class="sim-status-bar" style="display: none;">
+        <div class="sim-status-icon">🎬</div>
+        <div class="sim-status-text">
+          <strong>Симулятор активен</strong> · <span id="sim-step-label">Шаг 1</span>
+        </div>
+        <button class="btn btn-sm btn-ghost" onclick="simReset()">⏮ К началу</button>
+        <button class="btn btn-sm btn-ghost" onclick="simBack()" id="btn-sim-back">← Назад</button>
+        <button class="btn btn-sm btn-danger" onclick="simStop()">✕ Закрыть симулятор</button>
+      </div>
+      <div class="canvas-layout">
+        <div class="canvas-viewport" id="canvas-viewport">
+          <div class="canvas-stage" id="canvas-stage"></div>
+          <div class="path-legend" id="path-legend">
+            <div class="path-legend-title">
+              <span>🎯 Подсветка путей</span>
+              <button class="path-legend-close" onclick="clearPathHighlight()" title="Снять подсветку">×</button>
+            </div>
+            <div class="path-legend-item">
+              <div class="path-legend-dot" style="background: #f59e0b;"></div>
+              <span>Выбранный блок</span>
+            </div>
+            <div class="path-legend-item">
+              <div class="path-legend-dot" style="background: #8b5cf6;"></div>
+              <span>Откуда ведут к нему</span>
+            </div>
+            <div class="path-legend-item">
+              <div class="path-legend-dot" style="background: #0ea5e9;"></div>
+              <span>Куда можно прийти</span>
+            </div>
+          </div>
+        </div>
+        <aside class="canvas-sidebar" id="canvas-sidebar">
+          <div class="canvas-sidebar-empty">
+            <div style="font-size: 36px; margin-bottom: 12px;">👆</div>
+            <div style="font-weight: 600; color: #374151; margin-bottom: 6px;">Выберите блок</div>
+            <div style="font-size: 13px; color: #6b7280; line-height: 1.5;">Кликните по любому блоку на холсте, чтобы открыть его в редакторе</div>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <div id="tab-refs" style="display: none;">
+      <div class="info-box" style="margin-bottom: 14px;">
+        💡 <strong>Эталоны</strong> — образцы качественных скриптов. AI использует их как пример логики, структуры и тона при создании новых скриптов через ✨ AI-скрипт.<br>
+        <strong style="color:#16a34a;">Как создать эталон:</strong> нарисуйте схему в Visio/Draw.io → импортируйте XML (вкладка Экспорт) → проверьте и заполните интенты/тексты → вернитесь сюда и нажмите «+ Из текущего профиля». Или загрузите готовый JSON.
+      </div>
+      <div class="refs-toolbar">
+        <button class="btn btn-primary" onclick="importReferenceFromCurrentProfile()">+ Из текущего профиля</button>
+        <label class="btn" style="cursor: pointer;">
+          📁 Загрузить JSON
+          <input type="file" accept=".json" onchange="importReferenceFromFile(event)" style="display: none;">
+        </label>
+      </div>
+      <div id="refs-list"></div>
+    </div>
+
+    <div id="tab-preview" style="display: none;">
+      <div class="toolbar">
+        <select id="preview-lang" class="select" onchange="renderPreview()">
+          <option value="ru">RU — Русский</option>
+          <option value="uz">UZ — O'zbek</option>
+        </select>
+      </div>
+      <div class="preview-wrap" id="preview-content"></div>
+    </div>
+
+    <div id="tab-validate" style="display: none;">
+      <div class="info-box" style="margin-bottom: 18px;">
+        Автоматическая проверка скрипта на тупиковые блоки, недостижимые узлы, битые ссылки и пустые тексты.
+      </div>
+      <div id="validation-results"></div>
+    </div>
+
+    <div id="tab-export" style="display: none;">
+      <div id="layout-indicator" class="layout-indicator"></div>
+      <div class="export-grid">
+        <div class="export-card">
+          <h3>📤 Экспорт</h3>
+          <button class="btn btn-primary" onclick="exportAll()">📦 Всё сразу (PDF + Draw.io + JSON)</button>
+          <div style="font-size: 11px; color: #6b7280; margin: 14px 0 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Полный скрипт</div>
+          <button class="btn" onclick="exportHTML()">📄 Полный PDF (таблица + схема)</button>
+          <button class="btn" onclick="exportJSON()">💾 JSON (бэкап)</button>
+          <button class="btn" onclick="exportMarkdown()">📝 Markdown</button>
+          <button class="btn" onclick="exportAllBlocksCSV()">📊 CSV (все блоки)</button>
+          <div style="font-size: 11px; color: #6b7280; margin: 14px 0 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Только схема</div>
+          <button class="btn" onclick="exportFlowchartPDF()">📊 PDF только схемы</button>
+          <button class="btn" onclick="exportSVG()">🖼 SVG векторный</button>
+          <button class="btn" onclick="exportPNG()">🖼 PNG изображение</button>
+          <button class="btn" onclick="exportDrawio()">🗂 Draw.io XML (редактируемый)</button>
+        </div>
+        <div class="export-card">
+          <h3>📥 Импорт</h3>
+          <div style="font-size: 11px; color: #6b7280; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">JSON (полный профиль)</div>
+          <input type="file" id="import-file" accept=".json" onchange="importJSON(event)" style="margin-bottom: 6px; font-size: 12px; width: 100%;">
+          <div style="font-size: 12px; color: #6b7280; margin-bottom: 16px; line-height: 1.5;">Восстановить профиль с переменными, координатами и всем остальным.</div>
+
+          <div style="font-size: 11px; color: #6b7280; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">CSV из Excel / Google Sheets</div>
+          <input type="file" id="import-csv" accept=".csv" onchange="importCSV(event)" style="margin-bottom: 6px; font-size: 12px; width: 100%;">
+          <div style="font-size: 12px; color: #6b7280; margin-bottom: 10px; line-height: 1.5;">Создаёт новый профиль из таблицы с блоками.</div>
+          <button class="btn btn-sm" onclick="downloadCSVTemplate()" style="width: 100%; margin-bottom: 16px;">📄 Скачать шаблон CSV</button>
+
+          <div style="font-size: 11px; color: #6b7280; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Draw.io XML (из Visio)</div>
+          <input type="file" id="import-drawio" accept=".drawio,.xml" onchange="importDrawio(event)" style="margin-bottom: 6px; font-size: 12px; width: 100%;">
+          <div style="font-size: 12px; color: #6b7280; margin-bottom: 16px; line-height: 1.5;">Импорт блок-схемы из <a href="https://app.diagrams.net" target="_blank" style="color:#2563eb;">app.diagrams.net</a>. Для Visio (.vsdx): откройте в Draw.io → File → Save As → XML.</div>
+
+          <div style="font-size: 11px; color: #6b7280; margin: 14px 0 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Автосохранение</div>
+          <div style="font-size: 12px; color: #6b7280; margin-bottom: 10px; line-height: 1.5;">Все изменения автоматически сохраняются в браузере. Данные доступны при следующем открытии.</div>
+          <button class="btn btn-sm btn-danger" onclick="clearStorage()" style="width: 100%; margin-bottom: 14px;">🗑 Очистить автосохранение</button>
+
+          <button class="btn btn-danger" onclick="resetProfile()" style="width: 100%;">⟳ Сбросить к шаблону AVO</button>
+        </div>
+      </div>
+      <div class="instruction">
+        <strong>Формат CSV:</strong> колонки <code>id, title, intent, type, section, next_default, next_yes, next_no, text_ru, text_uz</code>. Обязательна только <code>id</code>. Скачайте шаблон чтобы увидеть пример.<br><br>
+        <strong>Импорт из Visio:</strong><br>
+        1. Откройте бесплатный <a href="https://app.diagrams.net" target="_blank">app.diagrams.net</a> → File → Open from → Device → выберите ваш .vsdx файл<br>
+        2. После открытия: File → Save As → выберите формат <code>.xml</code> (NOT .drawio compressed)<br>
+        3. Загрузите этот .xml выше — все блоки и связи импортируются автоматически<br>
+        4. Тексты ru/uz придётся заполнить вручную или через AI (✨ кнопки)<br><br>
+        <strong>Как получить PDF:</strong><br>
+        1. Нажмите «Полный PDF» или «PDF только схемы»<br>
+        2. В новом окне: <kbd>Ctrl</kbd>+<kbd>P</kbd> (или <kbd>⌘</kbd>+<kbd>P</kbd>) → «Сохранить как PDF»<br>
+        3. Для схемы выбирайте «Альбомная» ориентация<br><br>
+        <strong>Draw.io экспорт:</strong> XML-файл можно открыть на <a href="https://app.diagrams.net" target="_blank">app.diagrams.net</a> для ручной доработки схемы.
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Choose template -->
+  <div id="template-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title">Новый профиль</div>
+        <button class="icon-btn" onclick="closeTemplateModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field" style="margin-bottom: 16px;">
+          <label class="field-label">Название профиля</label>
+          <input id="modal-profile-name" class="input" placeholder="Например: Hamkor bank" value="Новый банк">
+        </div>
+        <label class="field-label" style="margin-bottom: 10px; display: block;">Выберите шаблон</label>
+        <div class="template-grid">
+          <label class="template-card">
+            <input type="radio" name="tpl" value="avo_limit" checked>
+            <div class="tpl-check">✓</div>
+            <div class="tpl-title">💳 AVO — Кредитный лимит</div>
+            <div class="tpl-desc">Входящая линия: вопросы по лимиту, погашению, приложению. 14 блоков.</div>
+          </label>
+          <label class="template-card">
+            <input type="radio" name="tpl" value="collection">
+            <div class="tpl-check">✓</div>
+            <div class="tpl-title">📞 Pre-script Collection</div>
+            <div class="tpl-desc">Исходящий звонок-напоминание. Счётчики 1/2/3 раза, родственники, отказы, переводы, мошенничество. 40+ блоков.</div>
+          </label>
+          <label class="template-card">
+            <input type="radio" name="tpl" value="blank">
+            <div class="tpl-check">✓</div>
+            <div class="tpl-title">⚪ Пустой профиль</div>
+            <div class="tpl-desc">Один стартовый блок. Стройте всё с нуля.</div>
+          </label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeTemplateModal()">Отмена</button>
+        <button class="btn btn-primary" onclick="confirmNewProfile()">Создать профиль</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LLM SETTINGS MODAL -->
+  <div id="llm-settings-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal" style="max-width: 520px;">
+      <div class="modal-head">
+        <div class="modal-title">⚙️ Настройки AI</div>
+        <button class="icon-btn" onclick="closeLLMSettings()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="info-box" style="font-size: 12px; margin-bottom: 16px;">
+          🔑 Для работы AI-функций нужен API ключ Google Gemini.<br>
+          <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#2563eb; text-decoration: underline;">aistudio.google.com/apikey</a> — получите бесплатно за 1 минуту.<br>
+          Ключ сохраняется только в вашем браузере, никуда не отправляется.
+        </div>
+        <div class="field" style="margin-bottom: 14px;">
+          <label class="field-label">API ключ</label>
+          <input id="llm-key-input" class="input" type="password" placeholder="AIza..." autocomplete="off">
+        </div>
+          <div class="field" style="margin-bottom: 14px;">
+            <label class="field-label">Модель</label>
+            <select id="llm-model-select" class="input">
+              <optgroup label="Gemini 2.5 (новейшие)">
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash (рекомендуем — быстрая и умная)</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro (самая мощная)</option>
+                <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (самая дешёвая)</option>
+              </optgroup>
+              <optgroup label="Gemini 2.0">
+                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
+              </optgroup>
+              <optgroup label="Gemini 1.5 (старые)">
+                <option value="gemini-1.5-pro-latest">Gemini 1.5 Pro Latest</option>
+                <option value="gemini-1.5-flash-latest">Gemini 1.5 Flash Latest</option>
+                <option value="gemini-1.5-flash-8b-latest">Gemini 1.5 Flash 8B Latest</option>
+              </optgroup>
+            </select>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;">
+            <button id="llm-test-btn" class="btn btn-sm" onclick="testLLMKey()">🧪 Проверить ключ</button>
+            <button class="btn btn-sm" onclick="listAvailableModels()" title="Показать какие модели доступны для этого ключа">📋 Доступные модели</button>
+            <button class="btn btn-sm" onclick="openPromptsEditor()" title="Редактировать системные промпты">📝 Редактор промптов</button>
+          </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeLLMSettings()">Отмена</button>
+        <button class="btn btn-primary" onclick="saveLLMSettingsFromModal()">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- GENERATE SCRIPT MODAL -->
+  <div id="gen-script-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal" style="max-width: 640px;">
+      <div class="modal-head">
+        <div class="modal-title">✨ Создать скрипт с помощью AI</div>
+        <button class="icon-btn" onclick="closeGenScriptModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="info-box" style="font-size: 12px; margin-bottom: 16px;">
+          💡 Gemini создаст готовый скрипт с блоками, ветками и текстами на двух языках. Генерация занимает 30-60 секунд.
+        </div>
+        <div class="field" style="margin-bottom: 14px;">
+          <label class="field-label">Ниша / Сфера <span style="color:#dc2626;">*</span></label>
+          <input id="gs-niche" class="input" placeholder="Например: Банк (потребкредит), МФО, страхование, связь, доставка">
+        </div>
+        <div class="cs-row-2" style="margin-bottom: 14px;">
+          <div class="field">
+            <label class="field-label">Цель разговора</label>
+            <select id="gs-goal" class="input">
+              <option value="напоминание о платеже">Напоминание о платеже</option>
+              <option value="взыскание задолженности">Взыскание задолженности</option>
+              <option value="продажа продукта">Продажа продукта</option>
+              <option value="верификация / KYC">Верификация / KYC</option>
+              <option value="опрос удовлетворённости">Опрос удовлетворённости</option>
+              <option value="запись на встречу">Запись на встречу</option>
+              <option value="информирование">Информирование</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label">Канал</label>
+            <select id="gs-channel" class="input">
+              <option value="исходящий звонок">Исходящий звонок</option>
+              <option value="входящий звонок">Входящий звонок</option>
+              <option value="WhatsApp">WhatsApp</option>
+              <option value="чат в приложении">Чат в приложении</option>
+            </select>
+          </div>
+        </div>
+        <div class="cs-row-2" style="margin-bottom: 14px;">
+          <div class="field">
+            <label class="field-label">Тон</label>
+            <select id="gs-tone" class="input">
+              <option value="формально-вежливый">Формально-вежливый</option>
+              <option value="дружелюбный">Дружелюбный</option>
+              <option value="нейтральный">Нейтральный</option>
+              <option value="настойчивый">Настойчивый</option>
+              <option value="эмпатичный">Эмпатичный</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label">Размер скрипта</label>
+            <select id="gs-size" class="input">
+              <option value="small">Маленький (~10-15 блоков)</option>
+              <option value="medium" selected>Средний (~25-35 блоков)</option>
+              <option value="large">Большой (~50-70 блоков)</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">Дополнительные требования (опционально)</label>
+          <textarea id="gs-extras" class="textarea" placeholder="Например: обязательно обработать возражения «дорого» и «уже есть кредит»; упомянуть акцию 0% на 3 месяца; предложить рассрочку как альтернативу" style="min-height: 70px;"></textarea>
+        </div>
+        <div class="field" style="margin-top: 14px;">
+          <label class="field-label" style="display: flex; align-items: center; justify-content: space-between;">
+            <span>📚 Использовать эталоны как образец стиля</span>
+            <span style="font-weight:400; color:#6b7280; font-size: 11px;" id="gs-refs-count"></span>
+          </label>
+          <div id="gs-refs-picker" class="gs-refs-picker">
+            <!-- populated by openGenScriptModal -->
+          </div>
+          <div id="gs-mode-box" class="gs-mode-box" style="display: none;">
+            <label class="field-label" style="margin-bottom: 8px;">Как использовать несколько эталонов?</label>
+            <label class="gs-mode-option">
+              <input type="radio" name="gs-mode" value="exact" checked>
+              <div>
+                <div class="gs-mode-title">📋 Точная копия (по первому)</div>
+                <div class="gs-mode-desc">Скопировать логику, структуру и тон ближайшего эталона, адаптировав под новую сферу</div>
+              </div>
+            </label>
+            <label class="gs-mode-option">
+              <input type="radio" name="gs-mode" value="blend">
+              <div>
+                <div class="gs-mode-title">🔀 Смешать лучшее</div>
+                <div class="gs-mode-desc">Объединить сильные стороны всех выбранных эталонов в один скрипт</div>
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeGenScriptModal()">Отмена</button>
+        <button id="gs-generate-btn" class="btn btn-primary" onclick="generateScript()">✨ Сгенерировать</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI REVIEW MODAL -->
+  <div id="ai-review-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal" style="max-width: 720px; max-height: 85vh;">
+      <div class="modal-head">
+        <div class="modal-title">🔍 AI-ревью скрипта</div>
+        <button class="icon-btn" onclick="closeAIReview()">×</button>
+      </div>
+      <div class="modal-body" style="overflow-y: auto;">
+        <div id="review-content"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeAIReview()">Закрыть</button>
+        <button class="btn btn-primary" onclick="runAIReview()">🔄 Перепроверить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROMPTS EDITOR MODAL -->
+  <div id="prompts-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal" style="max-width: 880px; max-height: 90vh;">
+      <div class="modal-head">
+        <div class="modal-title">📝 Редактор промптов</div>
+        <button class="icon-btn" onclick="closePromptsEditor()">×</button>
+      </div>
+      <div class="modal-body" style="overflow-y: auto;">
+        <div class="info-box" style="font-size: 12px; margin-bottom: 14px;">
+          💡 Здесь можно править инструкции для Gemini. Используйте плейсхолдеры в фигурных скобках — они подставляются автоматически.<br>
+          Для генерации: <code>{niche}</code>, <code>{goal}</code>, <code>{channel}</code>, <code>{tone}</code>, <code>{blockCount}</code>, <code>{extras}</code><br>
+          Для улучшения: <code>{title}</code>, <code>{type}</code>, <code>{intent}</code>, <code>{currentRu}</code>, <code>{currentUz}</code>, <code>{task}</code><br>
+          Для ревью: <code>{name}</code>, <code>{blockCount}</code>, <code>{scriptJson}</code>, <code>{referencesSection}</code>
+        </div>
+
+        <div class="prompt-section">
+          <div class="prompt-section-head">
+            <h3>✨ Генерация скрипта (system)</h3>
+            <button class="btn btn-sm btn-ghost" onclick="resetSinglePrompt('generate_system')">↻ По умолчанию</button>
+          </div>
+          <textarea id="pr-generate-system" class="textarea prompt-textarea"></textarea>
+        </div>
+
+        <div class="prompt-section">
+          <div class="prompt-section-head">
+            <h3>✨ Генерация скрипта (user)</h3>
+            <button class="btn btn-sm btn-ghost" onclick="resetSinglePrompt('generate_user')">↻ По умолчанию</button>
+          </div>
+          <textarea id="pr-generate-user" class="textarea prompt-textarea"></textarea>
+        </div>
+
+        <div class="prompt-section">
+          <div class="prompt-section-head">
+            <h3>🎯 Улучшение блока (system)</h3>
+            <button class="btn btn-sm btn-ghost" onclick="resetSinglePrompt('improve_system')">↻ По умолчанию</button>
+          </div>
+          <textarea id="pr-improve-system" class="textarea prompt-textarea" style="min-height: 70px;"></textarea>
+        </div>
+
+        <div class="prompt-section">
+          <div class="prompt-section-head">
+            <h3>🎯 Улучшение блока (user)</h3>
+            <button class="btn btn-sm btn-ghost" onclick="resetSinglePrompt('improve_user')">↻ По умолчанию</button>
+          </div>
+          <textarea id="pr-improve-user" class="textarea prompt-textarea"></textarea>
+        </div>
+
+        <div class="prompt-section">
+          <div class="prompt-section-head">
+            <h3>🔍 AI-ревью (system)</h3>
+            <button class="btn btn-sm btn-ghost" onclick="resetSinglePrompt('review_system')">↻ По умолчанию</button>
+          </div>
+          <textarea id="pr-review-system" class="textarea prompt-textarea" style="min-height: 70px;"></textarea>
+        </div>
+
+        <div class="prompt-section">
+          <div class="prompt-section-head">
+            <h3>🔍 AI-ревью (user)</h3>
+            <button class="btn btn-sm btn-ghost" onclick="resetSinglePrompt('review_user')">↻ По умолчанию</button>
+          </div>
+          <textarea id="pr-review-user" class="textarea prompt-textarea"></textarea>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-danger" onclick="resetPromptsToDefault()">↻ Сбросить ВСЁ</button>
+        <button class="btn" onclick="closePromptsEditor()">Отмена</button>
+        <button class="btn btn-primary" onclick="savePromptsFromEditor()">💾 Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast" class="toast"></div>
+
+  <!-- AUTOSAVE INDICATOR -->
+  <div id="autosave-indicator" class="autosave-indicator"></div>
+
+  <!-- FLOATING UNDO/REDO -->
+  <div class="floating-undo-redo">
+    <button class="icon-btn-lg" id="btn-undo-float" onclick="undo()" disabled title="Отменить (Ctrl+Z)">↶</button>
+    <button class="icon-btn-lg" id="btn-redo-float" onclick="redo()" disabled title="Повторить (Ctrl+Shift+Z)">↷</button>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="script.js?v=20251029o"></script>
+</body>
+</html>
