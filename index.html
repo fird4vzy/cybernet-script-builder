@@ -10,14 +10,46 @@
   <link rel="shortcut icon" href="favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20251029o">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@400;500;600;700&family=Unbounded:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=20251029z">
 </head>
 <body>
 
-  <div class="app">
+  <!-- ─── ЭКРАН ВХОДА ─── -->
+  <div class="auth-screen" id="auth-screen" style="display:none;">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <img src="logo-white.png" alt="Cybernet AI" class="auth-logo">
+      </div>
+      <div class="auth-eyebrow">CYBERNET AI</div>
+      <h1 class="auth-title">Конструктор скриптов</h1>
+      <p class="auth-sub">Войдите, чтобы получить доступ к вашим скриптам и эталонам команды</p>
+
+      <button class="auth-google-btn" onclick="signInWithGoogle()">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        Войти через Google
+      </button>
+
+      <div class="auth-divider"><span>или по email</span></div>
+
+      <div class="auth-fields">
+        <input type="email" id="auth-email" class="auth-email-input" placeholder="you@cybernet.uz" autocomplete="username">
+        <input type="password" id="auth-password" class="auth-email-input" placeholder="Пароль" autocomplete="current-password" onkeydown="if(event.key==='Enter')handlePasswordLogin()">
+      </div>
+      <div class="auth-btn-row">
+        <button class="auth-email-btn auth-btn-main" onclick="handlePasswordLogin()">Войти</button>
+        <button class="auth-email-btn auth-btn-alt" onclick="handlePasswordSignup()">Регистрация</button>
+      </div>
+      <div class="auth-email-hint" id="auth-email-hint"></div>
+
+      <div class="auth-foot">Доступ по приглашению · Cybernet AI © 2026</div>
+    </div>
+  </div>
+
+  <div class="app" id="app-root">
     <div class="brand-header">
-      <img src="logo.png" alt="Cybernet AI" class="brand-logo">
+      <img src="logo-navy.png" alt="Cybernet AI" class="brand-logo brand-logo-light">
+      <img src="logo-white.png" alt="Cybernet AI" class="brand-logo brand-logo-dark">
       <div class="brand-meta">
         <div class="dashboard-title">Конструктор скриптов</div>
         <div class="dashboard-sub">Cybernet AI · Создавайте диалоговые схемы для колл-центра</div>
@@ -28,21 +60,37 @@
 
     <div class="profile-bar">
       <span class="profile-bar-label">Профиль:</span>
-      <div id="profiles-list" style="display: flex; gap: 6px; flex-wrap: wrap;"></div>
+      <div class="profile-dropdown" id="profile-dropdown">
+        <button class="profile-dd-trigger" id="profile-dd-trigger" onclick="toggleProfileDropdown(event)">
+          <span class="profile-dd-current" id="profile-dd-current">—</span>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="profile-dd-menu" id="profile-dd-menu"></div>
+      </div>
       <div class="profile-actions">
-        <button class="icon-btn" onclick="newProfile()" title="Новый">+</button>
+        <button class="icon-btn" id="share-profile-btn" onclick="toggleShareProfile()" title="Сделать видимым для команды">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        </button>
+        <button class="icon-btn" onclick="newProfile()" title="Новый профиль">+</button>
         <button class="icon-btn" onclick="renameProfile()" title="Переименовать">✎</button>
         <button class="icon-btn" onclick="deleteProfile()" title="Удалить">×</button>
       </div>
       <div class="ai-header-actions">
         <button class="ai-header-btn ai-header-btn-primary" onclick="openGenScriptModal()" title="Создать весь скрипт с помощью AI">
-          ✨ AI-скрипт
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></svg>AI-скрипт
         </button>
         <button class="ai-header-btn" onclick="runAIReview()" title="AI проверит ваш скрипт и найдёт проблемы">
-          🔍 AI-ревью
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:5px;"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>AI-ревью
         </button>
         <button class="ai-header-btn" onclick="openLLMSettings()" title="Настройки AI">
-          <span class="ai-status-badge">⚙</span>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button class="theme-toggle" onclick="toggleTheme()" title="Светлая / тёмная тема" aria-label="Переключить тему">
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+        <button class="theme-toggle" id="signout-btn" onclick="signOut()" title="Выйти" aria-label="Выйти" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         </button>
       </div>
     </div>
@@ -90,7 +138,7 @@
     <div id="tab-editor">
       <div class="toolbar">
         <div class="search">
-          <span class="search-icon">🔍</span>
+          <span class="search-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>
           <input id="search" placeholder="Поиск по названию, ID или тексту" oninput="renderBlocks()">
         </div>
         <select id="lang-filter" class="select" onchange="renderBlocks()">
@@ -110,7 +158,7 @@
       <div class="vars-grid" id="vars-grid"></div>
       <div style="margin-top: 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
         <button class="btn" onclick="addVariable()">+ добавить переменную</button>
-        <button class="btn btn-primary" onclick="saveAllVars()">💾 Сохранить все переменные</button>
+        <button class="btn btn-primary" onclick="saveAllVars()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>Сохранить все переменные</button>
         <span id="vars-saved-indicator" class="saved-indicator"></span>
       </div>
     </div>
@@ -121,7 +169,7 @@
       </div>
       <div class="intents-toolbar">
         <div class="search" style="flex: 1;">
-          <span class="search-icon">🔍</span>
+          <span class="search-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></span>
           <input id="intent-search" placeholder="Поиск по intent'у" oninput="renderIntents()">
         </div>
         <button class="btn btn-primary" onclick="addIntent()">+ Добавить intent</button>
@@ -133,30 +181,30 @@
     <div id="tab-canvas" style="display: none;">
       <div class="canvas-controls">
         <button class="btn btn-sm btn-simulator" id="btn-sim-toggle" onclick="simToggle()" title="Пройти скрипт как оператор">
-          🎬 Симулятор
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><polygon points="6 3 20 12 6 21 6 3" fill="currentColor" stroke="none"/></svg>Симулятор
         </button>
         <button class="btn btn-sm" onclick="canvasAutoLayout()" title="Расставить блоки по алгоритму swim-lane">
-          ⚙ Авто-раскладка
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>Авто-раскладка
         </button>
         <button class="btn btn-sm btn-ghost" onclick="canvasFitToView()" title="Вписать всю схему в экран">
-          ⊡ Вписать
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>Вписать
         </button>
         <button class="btn btn-sm btn-ghost" onclick="canvasResetZoom()">100%</button>
         <button class="btn btn-sm btn-ghost" onclick="resetAllBranchColors()" title="Убрать зелёные/красные/цветные стрелки — все станут серыми (по умолчанию)">
-          🎨 Сбросить цвета веток
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.563-2.512 5.563-5.563C22 6.012 17.5 2 12 2z"/></svg>Сбросить цвета веток
         </button>
         <button class="btn btn-sm btn-ghost" onclick="applyEdgeLabelsAsTitles()" title="Если у блока 1 входящая стрелка с лейблом — этот лейбл становится названием блока. Не трогает intent. Можно откатить через Ctrl+Z.">
-          🏷 Лейблы → названия
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Лейблы → названия
         </button>
         <span class="canvas-zoom-indicator" id="canvas-zoom-indicator">100%</span>
-        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4b5563; cursor: pointer;">
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tx-secondary); cursor: pointer;">
           <input type="checkbox" id="canvas-show-grid" checked onchange="canvasRender()"> Сетка
         </label>
-        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4b5563; cursor: pointer;">
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tx-secondary); cursor: pointer;">
           <input type="checkbox" id="canvas-show-text" checked onchange="canvasRender()"> Текст в блоках
         </label>
-        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #4b5563; cursor: pointer;" title="При клике на блок подсвечиваются все блоки-предки и потомки">
-          <input type="checkbox" id="canvas-show-paths" checked onchange="canvasRender()"> 🎯 Пути
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tx-secondary); cursor: pointer;" title="При клике на блок подсвечиваются все блоки-предки и потомки">
+          <input type="checkbox" id="canvas-show-paths" checked onchange="canvasRender()"> Пути
         </label>
         <select id="canvas-lang" class="select btn-sm" onchange="canvasRender()">
           <option value="ru">RU</option>
@@ -164,37 +212,37 @@
         </select>
         <div style="margin-left: auto; display: flex; gap: 6px; align-items: center;">
           <button class="btn btn-sm btn-primary" onclick="canvasExportMenu(event)" title="Скачать схему как PDF / SVG / PNG / JSON / CSV">
-            📥 Скачать
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Скачать
           </button>
           <button class="btn btn-sm" id="btn-canvas-fullscreen" onclick="toggleCanvasFullscreen()" title="Развернуть на весь экран (Esc для выхода)">
-            ⛶ Полный экран
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Полный экран
           </button>
         </div>
       </div>
       <div id="canvas-export-menu" class="canvas-export-menu" style="display: none;">
-        <button class="cem-item" onclick="canvasDownloadAs('pdf')">📄 PDF (для печати)</button>
-        <button class="cem-item" onclick="canvasDownloadAs('svg')">🖼 SVG (векторный)</button>
-        <button class="cem-item" onclick="canvasDownloadAs('png')">🌅 PNG (картинка)</button>
+        <button class="cem-item" onclick="canvasDownloadAs('pdf')"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>PDF (для печати)</button>
+        <button class="cem-item" onclick="canvasDownloadAs('svg')"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><polyline points="21 15 16 10 5 21"/></svg>SVG (векторный)</button>
+        <button class="cem-item" onclick="canvasDownloadAs('png')"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><polyline points="21 15 16 10 5 21"/></svg>PNG (картинка)</button>
         <div class="cem-divider"></div>
-        <button class="cem-item" onclick="canvasDownloadAs('json')">💾 JSON (для бэкапа)</button>
-        <button class="cem-item" onclick="canvasDownloadAs('csv')">📊 CSV (таблица)</button>
-        <button class="cem-item" onclick="canvasDownloadAs('drawio')">📐 Draw.io XML</button>
+        <button class="cem-item" onclick="canvasDownloadAs('json')"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>JSON (бэкап)</button>
+        <button class="cem-item" onclick="canvasDownloadAs('csv')"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>CSV (таблица)</button>
+        <button class="cem-item" onclick="canvasDownloadAs('drawio')"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/><line x1="12" y1="22" x2="12" y2="12"/><polyline points="22 8.5 12 15.5 2 8.5"/></svg>Draw.io XML</button>
       </div>
       <div id="sim-status-bar" class="sim-status-bar" style="display: none;">
-        <div class="sim-status-icon">🎬</div>
+        <div class="sim-status-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3" fill="currentColor" stroke="none"/></svg></div>
         <div class="sim-status-text">
           <strong>Симулятор активен</strong> · <span id="sim-step-label">Шаг 1</span>
         </div>
-        <button class="btn btn-sm btn-ghost" onclick="simReset()">⏮ К началу</button>
+        <button class="btn btn-sm btn-ghost" onclick="simReset()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><polygon points="19 20 9 12 19 4 19 20" fill="currentColor"/><line x1="5" y1="19" x2="5" y2="5"/></svg>К началу</button>
         <button class="btn btn-sm btn-ghost" onclick="simBack()" id="btn-sim-back">← Назад</button>
-        <button class="btn btn-sm btn-danger" onclick="simStop()">✕ Закрыть симулятор</button>
+        <button class="btn btn-sm btn-danger" onclick="simStop()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Закрыть симулятор</button>
       </div>
       <div class="canvas-layout">
         <div class="canvas-viewport" id="canvas-viewport">
           <div class="canvas-stage" id="canvas-stage"></div>
           <div class="path-legend" id="path-legend">
             <div class="path-legend-title">
-              <span>🎯 Подсветка путей</span>
+              <span style="display:flex;align-items:center;gap:6px;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>Подсветка путей</span>
               <button class="path-legend-close" onclick="clearPathHighlight()" title="Снять подсветку">×</button>
             </div>
             <div class="path-legend-item">
@@ -213,7 +261,7 @@
         </div>
         <aside class="canvas-sidebar" id="canvas-sidebar">
           <div class="canvas-sidebar-empty">
-            <div style="font-size: 36px; margin-bottom: 12px;">👆</div>
+            <div style="display:flex;justify-content:center;margin-bottom:12px;color:var(--tx-tertiary);"><svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V6a3 3 0 0 1 6 0v5"/><path d="M21 11a4 4 0 0 0-4-4h-2v8H9"/><path d="M9 15v3a3 3 0 0 0 6 0v-3"/><circle cx="12" cy="22" r="0.5" fill="currentColor"/></svg></div>
             <div style="font-weight: 600; color: #374151; margin-bottom: 6px;">Выберите блок</div>
             <div style="font-size: 13px; color: #6b7280; line-height: 1.5;">Кликните по любому блоку на холсте, чтобы открыть его в редакторе</div>
           </div>
@@ -229,7 +277,7 @@
       <div class="refs-toolbar">
         <button class="btn btn-primary" onclick="importReferenceFromCurrentProfile()">+ Из текущего профиля</button>
         <label class="btn" style="cursor: pointer;">
-          📁 Загрузить JSON
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>Загрузить JSON
           <input type="file" accept=".json" onchange="importReferenceFromFile(event)" style="display: none;">
         </label>
       </div>
@@ -257,21 +305,21 @@
       <div id="layout-indicator" class="layout-indicator"></div>
       <div class="export-grid">
         <div class="export-card">
-          <h3>📤 Экспорт</h3>
-          <button class="btn btn-primary" onclick="exportAll()">📦 Всё сразу (PDF + Draw.io + JSON)</button>
+          <h3 style="display:flex;align-items:center;gap:8px;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>Экспорт</h3>
+          <button class="btn btn-primary" onclick="exportAll()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>Всё сразу (PDF + Draw.io + JSON)</button>
           <div style="font-size: 11px; color: #6b7280; margin: 14px 0 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Полный скрипт</div>
-          <button class="btn" onclick="exportHTML()">📄 Полный PDF (таблица + схема)</button>
-          <button class="btn" onclick="exportJSON()">💾 JSON (бэкап)</button>
-          <button class="btn" onclick="exportMarkdown()">📝 Markdown</button>
-          <button class="btn" onclick="exportAllBlocksCSV()">📊 CSV (все блоки)</button>
+          <button class="btn" onclick="exportHTML()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Полный PDF (таблица + схема)</button>
+          <button class="btn" onclick="exportJSON()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><polyline points="19 21 12 14 5 21"/><polyline points="5 3 12 10 19 3"/></svg>JSON (бэкап)</button>
+          <button class="btn" onclick="exportMarkdown()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>Markdown</button>
+          <button class="btn" onclick="exportAllBlocksCSV()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>CSV (все блоки)</button>
           <div style="font-size: 11px; color: #6b7280; margin: 14px 0 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Только схема</div>
-          <button class="btn" onclick="exportFlowchartPDF()">📊 PDF только схемы</button>
-          <button class="btn" onclick="exportSVG()">🖼 SVG векторный</button>
-          <button class="btn" onclick="exportPNG()">🖼 PNG изображение</button>
-          <button class="btn" onclick="exportDrawio()">🗂 Draw.io XML (редактируемый)</button>
+          <button class="btn" onclick="exportFlowchartPDF()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>PDF только схемы</button>
+          <button class="btn" onclick="exportSVG()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><polyline points="21 15 16 10 5 21"/></svg>SVG векторный</button>
+          <button class="btn" onclick="exportPNG()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><polyline points="21 15 16 10 5 21"/></svg>PNG изображение</button>
+          <button class="btn" onclick="exportDrawio()"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/></svg>Draw.io XML (редактируемый)</button>
         </div>
         <div class="export-card">
-          <h3>📥 Импорт</h3>
+          <h3 style="display:flex;align-items:center;gap:8px;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Импорт</h3>
           <div style="font-size: 11px; color: #6b7280; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">JSON (полный профиль)</div>
           <input type="file" id="import-file" accept=".json" onchange="importJSON(event)" style="margin-bottom: 6px; font-size: 12px; width: 100%;">
           <div style="font-size: 12px; color: #6b7280; margin-bottom: 16px; line-height: 1.5;">Восстановить профиль с переменными, координатами и всем остальным.</div>
@@ -279,7 +327,7 @@
           <div style="font-size: 11px; color: #6b7280; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">CSV из Excel / Google Sheets</div>
           <input type="file" id="import-csv" accept=".csv" onchange="importCSV(event)" style="margin-bottom: 6px; font-size: 12px; width: 100%;">
           <div style="font-size: 12px; color: #6b7280; margin-bottom: 10px; line-height: 1.5;">Создаёт новый профиль из таблицы с блоками.</div>
-          <button class="btn btn-sm" onclick="downloadCSVTemplate()" style="width: 100%; margin-bottom: 16px;">📄 Скачать шаблон CSV</button>
+          <button class="btn btn-sm" onclick="downloadCSVTemplate()" style="width: 100%; margin-bottom: 16px;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Скачать шаблон CSV</button>
 
           <div style="font-size: 11px; color: #6b7280; margin-bottom: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Draw.io XML (из Visio)</div>
           <input type="file" id="import-drawio" accept=".drawio,.xml" onchange="importDrawio(event)" style="margin-bottom: 6px; font-size: 12px; width: 100%;">
@@ -287,7 +335,7 @@
 
           <div style="font-size: 11px; color: #6b7280; margin: 14px 0 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;">Автосохранение</div>
           <div style="font-size: 12px; color: #6b7280; margin-bottom: 10px; line-height: 1.5;">Все изменения автоматически сохраняются в браузере. Данные доступны при следующем открытии.</div>
-          <button class="btn btn-sm btn-danger" onclick="clearStorage()" style="width: 100%; margin-bottom: 14px;">🗑 Очистить автосохранение</button>
+          <button class="btn btn-sm btn-danger" onclick="clearStorage()" style="width: 100%; margin-bottom: 14px;"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>Очистить автосохранение</button>
 
           <button class="btn btn-danger" onclick="resetProfile()" style="width: 100%;">⟳ Сбросить к шаблону AVO</button>
         </div>
@@ -325,19 +373,19 @@
           <label class="template-card">
             <input type="radio" name="tpl" value="avo_limit" checked>
             <div class="tpl-check">✓</div>
-            <div class="tpl-title">💳 AVO — Кредитный лимит</div>
+            <div class="tpl-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>AVO — Кредитный лимит</div>
             <div class="tpl-desc">Входящая линия: вопросы по лимиту, погашению, приложению. 14 блоков.</div>
           </label>
           <label class="template-card">
             <input type="radio" name="tpl" value="collection">
             <div class="tpl-check">✓</div>
-            <div class="tpl-title">📞 Pre-script Collection</div>
+            <div class="tpl-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>Pre-script Collection</div>
             <div class="tpl-desc">Исходящий звонок-напоминание. Счётчики 1/2/3 раза, родственники, отказы, переводы, мошенничество. 40+ блоков.</div>
           </label>
           <label class="template-card">
             <input type="radio" name="tpl" value="blank">
             <div class="tpl-check">✓</div>
-            <div class="tpl-title">⚪ Пустой профиль</div>
+            <div class="tpl-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/></svg>Пустой профиль</div>
             <div class="tpl-desc">Один стартовый блок. Стройте всё с нуля.</div>
           </label>
         </div>
@@ -353,7 +401,7 @@
   <div id="llm-settings-modal" class="modal-backdrop" style="display: none;">
     <div class="modal" style="max-width: 520px;">
       <div class="modal-head">
-        <div class="modal-title">⚙️ Настройки AI</div>
+        <div class="modal-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Настройки AI</div>
         <button class="icon-btn" onclick="closeLLMSettings()">×</button>
       </div>
       <div class="modal-body">
@@ -402,7 +450,7 @@
   <div id="gen-script-modal" class="modal-backdrop" style="display: none;">
     <div class="modal" style="max-width: 640px;">
       <div class="modal-head">
-        <div class="modal-title">✨ Создать скрипт с помощью AI</div>
+        <div class="modal-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></svg>Создать скрипт с помощью AI</div>
         <button class="icon-btn" onclick="closeGenScriptModal()">×</button>
       </div>
       <div class="modal-body">
@@ -498,7 +546,7 @@
   <div id="ai-review-modal" class="modal-backdrop" style="display: none;">
     <div class="modal" style="max-width: 720px; max-height: 85vh;">
       <div class="modal-head">
-        <div class="modal-title">🔍 AI-ревью скрипта</div>
+        <div class="modal-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>AI-ревью скрипта</div>
         <button class="icon-btn" onclick="closeAIReview()">×</button>
       </div>
       <div class="modal-body" style="overflow-y: auto;">
@@ -595,6 +643,8 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="script.js?v=20251029o"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-client.js?v=20251029z"></script>
+  <script src="script.js?v=20251029z"></script>
 </body>
 </html>

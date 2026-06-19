@@ -1,4 +1,31 @@
 // ═══════════════════════════════════════════════════════════════
+// THEME (light / dark) — apply early to avoid flash
+// ═══════════════════════════════════════════════════════════════
+const THEME_KEY = 'cybernet_theme_v1';
+(function initThemeEarly() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    // Vault is a dark-first design — default to dark unless user chose light
+    const theme = saved || 'dark';
+    document.documentElement.setAttribute('data-theme', theme);
+  } catch (e) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+})();
+
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') || 'light';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+  // Re-render canvas so SVG edge colors etc. pick up new theme if needed
+  if (typeof canvasRender === 'function') {
+    const canvasTab = document.getElementById('tab-canvas');
+    if (canvasTab && canvasTab.style.display !== 'none') canvasRender();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // TEMPLATES
 // ═══════════════════════════════════════════════════════════════
 
@@ -402,37 +429,37 @@ function renderStats() {
       <div class="stat-label">Всего блоков</div>
       <div class="stat-value">${d.blocks.length}</div>
       <div class="stat-sub">в ${d.sections.length} разделах</div>
-      <div class="stat-icon si-blue">📋</div>
+      <div class="stat-icon si-blue"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
     </div>
     <div class="stat-card grad-orange">
       <div class="stat-label">Вопросов клиента</div>
       <div class="stat-value">${questionCount}</div>
       <div class="stat-sub">оранжевые блоки</div>
-      <div class="stat-icon si-orange">❓</div>
+      <div class="stat-icon si-orange"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
     </div>
     <div class="stat-card grad-purple">
       <div class="stat-label">Развилок</div>
       <div class="stat-value">${decisionCount}</div>
       <div class="stat-sub">ромбы-решения</div>
-      <div class="stat-icon si-purple">◆</div>
+      <div class="stat-icon si-purple"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 22 12 12 22 2 12 12 2"/></svg></div>
     </div>
     <div class="stat-card grad-green">
       <div class="stat-label">Покрытие языков</div>
       <div class="stat-value">${langCoverage}%</div>
       <div class="stat-sub">${langsCovered} / ${d.blocks.length} блоков</div>
-      <div class="stat-icon si-green">🌐</div>
+      <div class="stat-icon si-green"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
     </div>
     <div class="stat-card grad-teal">
       <div class="stat-label">Переменных</div>
       <div class="stat-value">${varsCount}</div>
       <div class="stat-sub">для подстановки</div>
-      <div class="stat-icon si-teal">{ }</div>
+      <div class="stat-icon si-teal"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5a2 2 0 0 1 2-2 2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></svg></div>
     </div>
     <div class="stat-card grad-red">
       <div class="stat-label">Конечных точек</div>
       <div class="stat-value">${endCount}</div>
       <div class="stat-sub">старт + завершения</div>
-      <div class="stat-icon si-red">⏹</div>
+      <div class="stat-icon si-red"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg></div>
     </div>
   `;
   // refresh validation indicator
@@ -443,10 +470,43 @@ function renderStats() {
 // PROFILES with modal
 // ═══════════════════════════════════════════════════════════════
 function renderProfiles() {
-  document.getElementById('profiles-list').innerHTML = Object.keys(profiles).map(name =>
-    `<span class="profile-pill ${name === activeProfile ? 'active' : ''}" onclick="switchProfile('${esc(name)}')">${esc(name)}</span>`
-  ).join('');
+  const names = Object.keys(profiles);
+  // Update trigger label
+  const cur = document.getElementById('profile-dd-current');
+  if (cur) cur.textContent = activeProfile || '—';
+  setTimeout(updateShareButton, 0);
+  // Build menu
+  const menu = document.getElementById('profile-dd-menu');
+  if (menu) {
+    menu.innerHTML = names.map(name => `
+      <button class="profile-dd-item ${name === activeProfile ? 'active' : ''}" onclick="switchProfile('${esc(name)}'); closeProfileDropdown();">
+        <span class="profile-dd-dot"></span>
+        <span class="profile-dd-name">${esc(name)}</span>
+        ${name === activeProfile ? '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
+      </button>
+    `).join('');
+  }
 }
+
+function toggleProfileDropdown(e) {
+  if (e) e.stopPropagation();
+  const dd = document.getElementById('profile-dropdown');
+  if (dd) dd.classList.toggle('open');
+  updateShareButton();
+}
+
+function closeProfileDropdown() {
+  const dd = document.getElementById('profile-dropdown');
+  if (dd) dd.classList.remove('open');
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  const dd = document.getElementById('profile-dropdown');
+  if (dd && dd.classList.contains('open') && !dd.contains(e.target)) {
+    dd.classList.remove('open');
+  }
+});
 
 function switchProfile(name) {
   activeProfile = name;
@@ -500,12 +560,38 @@ function renameProfile() {
 
 function deleteProfile() {
   if (Object.keys(profiles).length <= 1) { toast('Нужен хотя бы один профиль', 'error'); return; }
+  const p = profiles[activeProfile];
+  if (p && p._readOnly) { toast('Это общий профиль коллеги — его нельзя удалить', 'error'); return; }
   if (!confirm(`Удалить «${activeProfile}»?`)) return;
   snapshot('Удаление профиля');
+  // Удалить из облака
+  if (p && p._cloudId && typeof cloudDeleteProfile === 'function') {
+    cloudDeleteProfile(p._cloudId);
+  }
   delete profiles[activeProfile];
   activeProfile = Object.keys(profiles)[0];
   renderProfiles(); renderBlocks(); renderVars(); renderStats();
   toast('Профиль удалён');
+}
+
+function toggleShareProfile() {
+  const p = profiles[activeProfile];
+  if (!p) return;
+  if (p._readOnly) { toast('Это общий профиль коллеги', 'error'); return; }
+  if (!getCurrentUserId()) { toast('Войдите, чтобы делиться профилями', 'error'); return; }
+  p._isShared = !p._isShared;
+  toast(p._isShared ? '✓ Профиль теперь виден команде' : 'Профиль снова личный');
+  updateShareButton();
+  if (typeof cloudPushProfiles === 'function') cloudPushProfiles();
+}
+
+function updateShareButton() {
+  const btn = document.getElementById('share-profile-btn');
+  if (!btn) return;
+  const p = profiles[activeProfile];
+  const shared = p && p._isShared;
+  btn.classList.toggle('active', !!shared);
+  btn.title = shared ? 'Виден команде — нажмите чтобы сделать личным' : 'Сделать видимым для команды';
 }
 
 function resetProfile() {
@@ -556,7 +642,11 @@ function renderBlocks() {
           <span class="block-title">${hl(b.title, q)}</span>
           <span class="block-id">${esc(b.id)}</span>
           <span class="block-chev ${isOpen ? 'open' : ''}">▶</span>
-        </div>
+        </div>`;
+
+      // LAZY: only render the heavy body for OPEN blocks (huge perf win on 100+ blocks)
+      if (isOpen) {
+      html += `
         <div class="block-body">
           <div class="field-grid-4">
             <div class="field">
@@ -640,8 +730,9 @@ function renderBlocks() {
             <button class="btn btn-sm btn-danger" onclick="deleteBlock('${b.id}')">Удалить</button>
             <button class="btn btn-sm btn-primary" onclick="saveBlock('${b.id}')">Сохранить</button>
           </div>
-        </div>
-      </div>`;
+        </div>`;
+      } // end if(isOpen)
+      html += `</div>`;
     });
     html += '</div>';
   });
@@ -2677,11 +2768,11 @@ function toggleCanvasFullscreen() {
   if (isFullscreen) {
     tab.classList.remove('canvas-fullscreen');
     document.body.classList.remove('canvas-fullscreen-active');
-    if (btn) btn.innerHTML = '⛶ Полный экран';
+    if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Полный экран';
   } else {
     tab.classList.add('canvas-fullscreen');
     document.body.classList.add('canvas-fullscreen-active');
-    if (btn) btn.innerHTML = '⛶ Свернуть';
+    if (btn) btn.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>Свернуть';
   }
   // Re-fit after layout change
   setTimeout(() => {
@@ -3928,7 +4019,7 @@ function simStart() {
   renderSimSidebar();
   focusOnCurrentBlock();
 
-  toast('🎬 Симулятор запущен');
+  toast('Симулятор запущен');
 }
 
 function simStop() {
@@ -4647,6 +4738,8 @@ function saveToStorage() {
     autosave.lastSaveAt = Date.now();
     autosave.dirty = false;
     updateAutosaveIndicator('saved');
+    // Also sync to cloud (debounced, only if logged in)
+    scheduleCloudSync();
   } catch (err) {
     // Likely QuotaExceededError
     console.error('Autosave failed:', err);
@@ -4712,6 +4805,73 @@ function clearStorage() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// CLOUD SYNC (Supabase) — поверх localStorage
+// ═══════════════════════════════════════════════════════════════
+let cloudSyncState = { syncing: false, lastSync: 0, timer: null };
+
+// Загрузить профили из облака в локальную структуру
+async function cloudPullProfiles() {
+  if (typeof cloudLoadProfiles !== 'function') return false;
+  const rows = await cloudLoadProfiles();
+  if (!rows) return false; // облако недоступно
+  if (!rows.length) return false; // нет облачных данных — оставляем локальные
+
+  const myId = getCurrentUserId();
+  const newProfiles = {};
+  rows.forEach(row => {
+    const p = row.data || {};
+    p._cloudId = row.id;
+    p._isShared = row.is_shared;
+    p._ownerId = row.owner_id;
+    p._readOnly = (row.owner_id !== myId); // чужой общий профиль — только чтение
+    // Уникальное имя (у общего профиля коллеги может совпасть имя)
+    let displayName = row.name;
+    if (p._readOnly) displayName = row.name + ' (общий)';
+    if (newProfiles[displayName]) displayName = displayName + ' #' + row.id.slice(0, 4);
+    newProfiles[displayName] = p;
+  });
+
+  profiles = newProfiles;
+  Object.values(profiles).forEach(p => { delete p._migrated; ensureProfileBranches(p); });
+  Object.entries(profiles).forEach(([name, p]) => {
+    if (!p.blocks) return;
+    const withCoords = p.blocks.filter(b => typeof b.x === 'number' && typeof b.y === 'number');
+    if (withCoords.length >= p.blocks.length * 0.5) canvasState.autoLaidOut.add(name);
+  });
+  activeProfile = Object.keys(profiles)[0];
+  return true;
+}
+
+// Выгрузить текущие профили в облако (только свои, не read-only)
+async function cloudPushProfiles() {
+  if (typeof cloudSaveProfile !== 'function' || !getCurrentUserId()) return;
+  if (cloudSyncState.syncing) return;
+  cloudSyncState.syncing = true;
+  try {
+    for (const [name, p] of Object.entries(profiles)) {
+      if (p._readOnly) continue; // чужой профиль не трогаем
+      const { _cloudId, _isShared, _ownerId, _readOnly, _migrated, ...cleanData } = p;
+      const cleanName = name.replace(/ \(общий\)$/, '').replace(/ #[0-9a-f]{4}$/, '');
+      const saved = await cloudSaveProfile(cleanName, cleanData, _isShared || false, _cloudId);
+      if (saved && saved.id && !p._cloudId) {
+        p._cloudId = saved.id; // запомнить id для будущих upsert
+      }
+    }
+    cloudSyncState.lastSync = Date.now();
+  } finally {
+    cloudSyncState.syncing = false;
+  }
+}
+
+// Debounced sync to cloud
+function scheduleCloudSync() {
+  if (!getCurrentUserId()) return; // не залогинен — только локально
+  clearTimeout(cloudSyncState.timer);
+  cloudSyncState.timer = setTimeout(() => { cloudPushProfiles(); }, 1500);
+}
+
+
 function updateAutosaveIndicator(status) {
   const el = document.getElementById('autosave-indicator');
   if (!el) return;
@@ -4721,16 +4881,16 @@ function updateAutosaveIndicator(status) {
     const hh = String(t.getHours()).padStart(2, '0');
     const mm = String(t.getMinutes()).padStart(2, '0');
     const ss = String(t.getSeconds()).padStart(2, '0');
-    el.innerHTML = `<span class="ai-icon">💾</span> Сохранено <span class="ai-time">${hh}:${mm}:${ss}</span>`;
+    el.innerHTML = `<span class="ai-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span> Сохранено <span class="ai-time">${hh}:${mm}:${ss}</span>`;
     el.classList.add('status-saved');
   } else if (status === 'dirty') {
-    el.innerHTML = `<span class="ai-icon">✏️</span> Изменения…`;
+    el.innerHTML = `<span class="ai-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></span> Изменения…`;
     el.classList.add('status-dirty');
   } else if (status === 'error') {
-    el.innerHTML = `<span class="ai-icon">⚠️</span> Ошибка сохранения`;
+    el.innerHTML = `<span class="ai-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span> Ошибка сохранения`;
     el.classList.add('status-error');
   } else if (status === 'off') {
-    el.innerHTML = `<span class="ai-icon">🔌</span> Автосохранение выключено`;
+    el.innerHTML = `<span class="ai-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg></span> Автосохранение выкл.`;
     el.classList.add('status-error');
   }
 }
@@ -4775,6 +4935,47 @@ function saveReferences() {
   } catch (err) {
     toast('Не удалось сохранить эталоны: ' + err.message, 'error');
   }
+  // Sync to cloud (debounced)
+  scheduleReferencesCloudSync();
+}
+
+let _refSyncTimer = null;
+function scheduleReferencesCloudSync() {
+  if (!getCurrentUserId()) return;
+  clearTimeout(_refSyncTimer);
+  _refSyncTimer = setTimeout(cloudPushReferences, 1500);
+}
+
+async function cloudPushReferences() {
+  if (typeof cloudSaveReference !== 'function' || !getCurrentUserId()) return;
+  for (const ref of aiReferences) {
+    if (ref._readOnly) continue;
+    const saved = await cloudSaveReference(ref, ref._isShared || false, ref._cloudId);
+    if (saved && saved.id && !ref._cloudId) ref._cloudId = saved.id;
+  }
+}
+
+async function cloudPullReferences() {
+  if (typeof cloudLoadReferences !== 'function') return false;
+  const rows = await cloudLoadReferences();
+  if (!rows || !rows.length) return false;
+  const myId = getCurrentUserId();
+  aiReferences = rows.map(row => ({
+    id: row.id,
+    _cloudId: row.id,
+    _isShared: row.is_shared,
+    _readOnly: row.owner_id !== myId,
+    name: row.name,
+    scriptType: row.script_type,
+    niche: row.niche,
+    goal: row.goal,
+    tone: row.tone,
+    tags: row.tags || [],
+    notes: row.notes,
+    profileData: row.profile_data,
+    isActive: row.is_active
+  }));
+  return true;
 }
 
 // ─── Editable prompts (user can override defaults) ───────────
@@ -5982,25 +6183,150 @@ function resetSinglePrompt(key) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// INIT
+// INIT — с проверкой авторизации
 // ═══════════════════════════════════════════════════════════════
-// Try to restore from localStorage first
-const restored = loadFromStorage();
-if (restored) {
-  setTimeout(() => {
-    const count = Object.keys(profiles).length;
-    const blockCount = data()?.blocks?.length || 0;
-    toast(`✓ Восстановлено ${count} ${count === 1 ? 'профиль' : 'профиля'} · ${blockCount} блоков`, 'success');
-  }, 300);
+
+// Запускает само приложение (вызывается после успешной авторизации)
+async function bootApp() {
+  // 1. Сначала локальный кеш (быстро)
+  let restored = loadFromStorage();
+
+  // 2. Пробуем подтянуть из облака (источник истины для команды)
+  let fromCloud = false;
+  try {
+    fromCloud = await cloudPullProfiles();
+  } catch (e) { console.error('Cloud pull failed:', e); }
+
+  if (fromCloud) {
+    restored = true;
+    saveToStorage(); // обновить локальный кеш облачными данными
+    setTimeout(() => {
+      const count = Object.keys(profiles).length;
+      toast(`☁ Загружено из облака: ${count} ${count === 1 ? 'профиль' : 'профилей'}`, 'success');
+    }, 300);
+  } else if (restored) {
+    setTimeout(() => {
+      const count = Object.keys(profiles).length;
+      const blockCount = data()?.blocks?.length || 0;
+      toast(`✓ Восстановлено ${count} ${count === 1 ? 'профиль' : 'профиля'} · ${blockCount} блоков`, 'success');
+    }, 300);
+    // Локальные есть, облачных нет → выгрузить локальные в облако (первая синхронизация)
+    if (getCurrentUserId()) setTimeout(cloudPushProfiles, 1500);
+  }
+
+  loadLLMSettings();
+  loadReferences();
+  loadPrompts();
+  // Подтянуть эталоны из облака
+  try { await cloudPullReferences(); } catch (e) { console.error(e); }
+  renderProfiles();
+  renderStats();
+  renderBlocks();
+  updateAutosaveIndicator(autosave.lastSaveAt ? 'saved' : 'dirty');
+  updateAIStatusBadge();
+  if (!restored) setTimeout(saveToStorage, 1000);
 }
 
-loadLLMSettings();
-loadReferences();
-loadPrompts();
-renderProfiles();
-renderStats();
-renderBlocks();
-updateAutosaveIndicator(autosave.lastSaveAt ? 'saved' : 'dirty');
-updateAIStatusBadge();
-// Initial save if we loaded default templates (no storage yet)
-if (!restored) setTimeout(saveToStorage, 1000);
+function showAuthScreen() {
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('app-root').style.display = 'none';
+}
+function showApp() {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app-root').style.display = '';
+  const so = document.getElementById('signout-btn');
+  if (so) so.style.display = 'flex';
+}
+
+function handlePasswordLogin() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const hint = document.getElementById('auth-email-hint');
+  if (!email || !email.includes('@')) {
+    hint.textContent = 'Введите корректный email';
+    hint.style.color = 'var(--err)';
+    return;
+  }
+  if (!password) {
+    hint.textContent = 'Введите пароль';
+    hint.style.color = 'var(--err)';
+    return;
+  }
+  hint.textContent = 'Вход...';
+  hint.style.color = 'var(--tx-secondary)';
+  signInWithPassword(email, password).then(res => {
+    if (res.ok) {
+      hint.textContent = '✓ Успешно';
+      hint.style.color = 'var(--ok)';
+      // onAuthChange покажет приложение
+    } else {
+      let msg = res.msg;
+      if (/invalid login credentials/i.test(msg)) msg = 'Неверный email или пароль. Если вы не регистрировались — нажмите «Регистрация».';
+      hint.textContent = msg;
+      hint.style.color = 'var(--err)';
+    }
+  });
+}
+
+function handlePasswordSignup() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const hint = document.getElementById('auth-email-hint');
+  if (!email || !email.includes('@')) {
+    hint.textContent = 'Введите корректный email';
+    hint.style.color = 'var(--err)';
+    return;
+  }
+  if (!password || password.length < 6) {
+    hint.textContent = 'Пароль минимум 6 символов';
+    hint.style.color = 'var(--err)';
+    return;
+  }
+  hint.textContent = 'Регистрация...';
+  hint.style.color = 'var(--tx-secondary)';
+  signUpWithPassword(email, password).then(res => {
+    if (res.ok) {
+      if (res.needsConfirm) {
+        hint.textContent = '✓ Аккаунт создан! Подтвердите email по ссылке из письма, затем войдите.';
+        hint.style.color = 'var(--ok)';
+      } else {
+        hint.textContent = '✓ Аккаунт создан, входим...';
+        hint.style.color = 'var(--ok)';
+      }
+    } else {
+      let msg = res.msg;
+      if (/already registered/i.test(msg)) msg = 'Этот email уже зарегистрирован — нажмите «Войти».';
+      hint.textContent = msg;
+      hint.style.color = 'var(--err)';
+    }
+  });
+}
+
+// ─── Старт: проверяем авторизацию ───
+(async function startup() {
+  initSupabase();
+  if (!sb) {
+    // Supabase не загрузился → локальный режим (без входа)
+    showApp();
+    bootApp();
+    return;
+  }
+
+  const user = await checkAuthSession();
+  if (user) {
+    showApp();
+    bootApp();
+  } else {
+    showAuthScreen();
+  }
+
+  // Реагируем на вход/выход
+  onAuthChange((event, u) => {
+    if (event === 'SIGNED_IN' && u) {
+      showApp();
+      bootApp();
+    } else if (event === 'SIGNED_OUT') {
+      showAuthScreen();
+    }
+  });
+})();
