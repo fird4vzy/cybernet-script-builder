@@ -3737,3 +3737,144 @@ body.canvas-fullscreen-active .side-rail {
   color: var(--accent-text) !important;
   border-color: var(--accent-soft-bd) !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   DARK THEME — SYSTEMIC FIX for hardcoded light surfaces & inline colors
+   ═══════════════════════════════════════════════════════════════ */
+
+/* .instruction box (export/CSV help) */
+.instruction {
+  margin-top: 16px;
+  padding: 18px;
+  background: var(--accent-soft);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--accent-text);
+  line-height: 1.6;
+  border: 1px solid var(--accent-soft-bd);
+}
+.instruction strong { color: var(--tx-primary); }
+[data-theme="dark"] .instruction { background: var(--accent-soft); color: var(--tx-secondary); border-color: var(--accent-soft-bd); }
+[data-theme="dark"] .instruction strong { color: var(--tx-primary); }
+[data-theme="dark"] .instruction code,
+[data-theme="dark"] .instruction kbd {
+  background: var(--bg-surface-3);
+  color: var(--accent-text);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+[data-theme="dark"] .instruction a { color: var(--accent-text); }
+
+/* Override inline grey labels (color:#6b7280 etc.) inside export/import cards in dark */
+[data-theme="dark"] .export-card div[style*="color: #6b7280"],
+[data-theme="dark"] .export-card div[style*="color:#6b7280"],
+[data-theme="dark"] .info-box div[style*="#6b7280"] {
+  color: var(--tx-tertiary) !important;
+}
+
+/* Inline blue links in dark */
+[data-theme="dark"] a[style*="#2563eb"],
+[data-theme="dark"] a[style*="color:#2563eb"],
+[data-theme="dark"] a[style*="color: #2563eb"] {
+  color: var(--accent-text) !important;
+}
+
+/* File inputs in dark */
+[data-theme="dark"] input[type="file"] {
+  color: var(--tx-secondary);
+}
+[data-theme="dark"] input[type="file"]::file-selector-button {
+  background: var(--bg-surface-3);
+  color: var(--tx-primary);
+  border: 1px solid var(--bd-default);
+  border-radius: 6px;
+  padding: 6px 12px;
+  margin-right: 10px;
+  cursor: pointer;
+}
+[data-theme="dark"] input[type="file"]::file-selector-button:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+/* CATCH-ALL: any element with a hardcoded light inline background in dark theme */
+[data-theme="dark"] [style*="background: #fff"],
+[data-theme="dark"] [style*="background:#fff"],
+[data-theme="dark"] [style*="background: white"],
+[data-theme="dark"] [style*="background:white"],
+[data-theme="dark"] [style*="background: #f9fafb"],
+[data-theme="dark"] [style*="background: #f0fdf4"],
+[data-theme="dark"] [style*="background:#f0fdf4"],
+[data-theme="dark"] [style*="background: #eff6ff"],
+[data-theme="dark"] [style*="background:#eff6ff"] {
+  background: var(--bg-surface-2) !important;
+  color: var(--tx-primary) !important;
+}
+
+/* Modal bodies & any leftover modal light surfaces in dark */
+[data-theme="dark"] .modal-backdrop > div,
+[data-theme="dark"] .modal-box,
+[data-theme="dark"] .modal-panel,
+[data-theme="dark"] .modal-content,
+[data-theme="dark"] .gen-modal,
+[data-theme="dark"] .llm-modal,
+[data-theme="dark"] .ref-modal {
+  background: var(--bg-elevated) !important;
+  color: var(--tx-primary) !important;
+}
+[data-theme="dark"] .modal-backdrop { background: rgba(0,0,0,0.7) !important; }
+
+/* Generic: grey muted helper text inside any card */
+[data-theme="dark"] .export-card div[style*="font-size: 11px"],
+[data-theme="dark"] .export-card div[style*="font-size: 12px"] {
+  color: var(--tx-tertiary) !important;
+}
+
+/* Cards inside modals — dark */
+[data-theme="dark"] .template-card {
+  background: var(--bg-surface-2);
+  border-color: var(--bd-default);
+  color: var(--tx-primary);
+}
+[data-theme="dark"] .template-card:hover { border-color: var(--accent); background: var(--bg-hover); }
+[data-theme="dark"] .template-card.selected,
+[data-theme="dark"] .template-card.active { border-color: var(--accent); background: var(--accent-soft); }
+[data-theme="dark"] .template-name, [data-theme="dark"] .template-title { color: var(--tx-primary); }
+[data-theme="dark"] .template-desc { color: var(--tx-secondary); }
+
+/* Modal text inputs/textareas/selects */
+[data-theme="dark"] .modal input[type="text"],
+[data-theme="dark"] .modal input[type="number"],
+[data-theme="dark"] .modal input[type="password"],
+[data-theme="dark"] .modal textarea,
+[data-theme="dark"] .modal select,
+[data-theme="dark"] .modal .input,
+[data-theme="dark"] .modal .textarea {
+  background: var(--bg-input);
+  color: var(--tx-primary);
+  border-color: var(--bd-default);
+}
+
+/* Modal section labels / muted text */
+[data-theme="dark"] .modal label,
+[data-theme="dark"] .modal .field-label { color: var(--tx-tertiary); }
+[data-theme="dark"] .modal-body div[style*="#6b7280"],
+[data-theme="dark"] .modal-body div[style*="color: #6b7280"] { color: var(--tx-tertiary) !important; }
+
+/* Catch-all for ANY hardcoded dark text on (now) dark bg — inline color:#0f1419 / #1a1a2e / #111 */
+[data-theme="dark"] [style*="color: #0f1419"],
+[data-theme="dark"] [style*="color:#0f1419"],
+[data-theme="dark"] [style*="color: #1a1a2e"],
+[data-theme="dark"] [style*="color: #1f2937"],
+[data-theme="dark"] [style*="color: #111"],
+[data-theme="dark"] [style*="color: #374151"] {
+  color: var(--tx-primary) !important;
+}
+
+/* Generation/LLM/Reference modal specific surfaces */
+[data-theme="dark"] .gen-step, [data-theme="dark"] .gs-section,
+[data-theme="dark"] .llm-section, [data-theme="dark"] .ref-section {
+  background: var(--bg-surface-2) !important;
+  border-color: var(--bd-default) !important;
+  color: var(--tx-primary) !important;
+}
