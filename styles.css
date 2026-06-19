@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   DESIGN SYSTEM v3 — Cybernet Vault tokens
+   DESIGN SYSTEM v3 — Cybernet
    Navy + indigo accent, Unbounded/Sora/JetBrains Mono
    ═══════════════════════════════════════════════════════════════ */
 :root {
@@ -1198,32 +1198,35 @@ kbd { padding: 2px 7px; background: var(--bg-surface); border: 1px solid #cbd5e1
   line-height: 1.5;
 }
 .layout-indicator.manual {
-  background: linear-gradient(135deg, #eff6ff, #dbeafe);
-  border: 1px solid #93c5fd;
-  color: #1e40af;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-bd);
+  color: var(--accent-text);
 }
 .layout-indicator.auto {
-  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
-  border: 1px solid #86efac;
-  color: #166534;
+  background: var(--ok-soft);
+  border: 1px solid var(--ok-bd);
+  color: var(--ok);
 }
 .layout-indicator-icon {
   font-size: 22px;
   flex-shrink: 0;
 }
-.layout-indicator strong { font-weight: 700; }
+.layout-indicator strong { font-weight: 700; color: var(--tx-primary); }
 .layout-indicator .li-action {
   margin-left: auto;
-  padding: 6px 12px;
-  background: var(--bg-surface);
-  border: 1px solid currentColor;
+  padding: 7px 14px;
+  background: linear-gradient(180deg, var(--accent-hover), var(--accent));
+  border: 1px solid var(--accent);
   border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  color: inherit;
+  color: #fff;
+  white-space: nowrap;
+  transition: all var(--dur) var(--ease);
 }
-.layout-indicator .li-action:hover { background: rgba(255,255,255,0.7); }
+.layout-indicator .li-action:hover { transform: translateY(-1px); box-shadow: var(--sh-accent); }
+[data-theme="dark"] .layout-indicator strong { color: var(--tx-primary); }
 
 /* ═══════════════════════════════════════════════════════════════
    SIMULATOR MODE
