@@ -2534,21 +2534,24 @@ body.canvas-fullscreen-active .autosave-indicator {
 }
 .rail-badge {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  background: #dc2626;
-  color: white;
-  border-radius: 8px;
-  font-size: 10px;
+  top: 2px;
+  right: 2px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  background: var(--warn);
+  color: #0a0a12;
+  border: 1.5px solid var(--bg-surface);
+  border-radius: 999px;
+  font-size: 9px;
   font-weight: 700;
-  line-height: 16px;
+  line-height: 12px;
   text-align: center;
   display: none;
+  font-family: var(--font-mono);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
-.rail-badge:not(:empty) { display: block; }
+.rail-badge:not(:empty) { display: flex; align-items: center; justify-content: center; }
 
 /* Make room on the page for the side rail */
 .dashboard-header,
@@ -3510,7 +3513,6 @@ body.canvas-fullscreen-active .side-rail {
 ::-webkit-scrollbar-thumb:hover { background: var(--tx-tertiary); background-clip: padding-box; }
 
 /* ── Tab badge (validation) Vault ── */
-.rail-badge { font-family: var(--font-mono); font-weight: 700; }
 
 /* ── Pulse dot for "start" block indicators ── */
 .cv-node.cv-shape-start::before {
@@ -3878,3 +3880,60 @@ body.canvas-fullscreen-active .side-rail {
   border-color: var(--bd-default) !important;
   color: var(--tx-primary) !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   DARK FIX v3 — validation, preview-end, profile modal
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Validation section head was #fafbfc (white) */
+[data-theme="dark"] .validation-section { background: var(--bg-surface); border-color: var(--bd-default); }
+[data-theme="dark"] .validation-section-head { background: var(--bg-surface-2); border-bottom-color: var(--bd-subtle); }
+[data-theme="dark"] .vs-title { color: var(--tx-primary); }
+[data-theme="dark"] .vs-count { background: var(--bg-surface-3); color: var(--tx-secondary); }
+[data-theme="dark"] .validation-item { border-bottom-color: var(--bd-subtle); }
+[data-theme="dark"] .validation-item:hover { background: var(--bg-hover); }
+[data-theme="dark"] .vi-id { background: var(--bg-surface-3); color: var(--tx-secondary); }
+[data-theme="dark"] .vi-text { color: var(--tx-secondary); }
+[data-theme="dark"] .vi-text strong { color: var(--tx-primary); }
+[data-theme="dark"] .vi-action { border-color: var(--bd-default); color: var(--tx-secondary); }
+[data-theme="dark"] .vi-action:hover { background: var(--bg-surface-3); border-color: var(--accent); color: var(--tx-primary); }
+[data-theme="dark"] .validation-empty {
+  background: var(--ok-soft);
+  border-color: var(--ok-bd);
+  color: var(--ok);
+}
+
+/* Preview END card (pink) — text was invisible */
+[data-theme="dark"] .lp-card-end {
+  background: var(--err-soft) !important;
+  border-color: var(--err-bd) !important;
+  color: var(--tx-primary) !important;
+}
+[data-theme="dark"] .lp-card-end .lp-card-text,
+[data-theme="dark"] .lp-card-end .lp-card-title { color: var(--tx-primary) !important; }
+/* Generic preview card text always readable in dark */
+[data-theme="dark"] .lp-card-title { color: var(--tx-primary) !important; }
+[data-theme="dark"] .lp-card-text { color: var(--tx-primary) !important; }
+[data-theme="dark"] .lp-card-meta, [data-theme="dark"] .lp-card-id { color: var(--tx-tertiary) !important; }
+
+/* Preview breadcrumb chips */
+[data-theme="dark"] .lp-crumb, [data-theme="dark"] .preview-crumb {
+  background: var(--bg-surface-2) !important;
+  color: var(--tx-secondary) !important;
+  border-color: var(--bd-default) !important;
+}
+
+/* New profile modal — template cards (first one was white/selected) */
+[data-theme="dark"] .template-card {
+  background: var(--bg-surface-2) !important;
+  border-color: var(--bd-default) !important;
+  color: var(--tx-primary) !important;
+}
+[data-theme="dark"] .template-card.selected,
+[data-theme="dark"] .template-card:has(input:checked) {
+  background: var(--accent-soft) !important;
+  border-color: var(--accent) !important;
+}
+[data-theme="dark"] .template-card * { color: var(--tx-primary) !important; }
+[data-theme="dark"] .template-card .template-desc,
+[data-theme="dark"] .template-card div[style*="color"] { color: var(--tx-secondary) !important; }
