@@ -1,1 +1,0 @@
-# cybernet-script-builder
