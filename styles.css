@@ -817,7 +817,6 @@ kbd { padding: 2px 7px; background: var(--bg-surface); border: 1px solid #cbd5e1
 
 .cv-node {
   position: absolute;
-  width: 230px;
   min-height: 64px;
   max-height: 280px;
   background: var(--bg-surface);
@@ -899,29 +898,80 @@ kbd { padding: 2px 7px; background: var(--bg-surface); border: 1px solid #cbd5e1
 .cv-node[data-type="start"] {
   background: linear-gradient(135deg, #f0fdf4, #dcfce7);
   border-color: #86efac;
-  border-radius: 30px;
+  border-radius: 32px;
 }
-.cv-node[data-type="start"] .cv-node-head { background: rgba(255,255,255,0.6); }
+.cv-node[data-type="start"] .cv-node-head { background: rgba(255,255,255,0.6); border-radius: 32px 32px 0 0; }
 
 .cv-node[data-type="end"] {
   background: linear-gradient(135deg, #fef2f2, #fee2e2);
   border-color: #fca5a5;
-  border-radius: 30px;
+  border-radius: 32px;
 }
-.cv-node[data-type="end"] .cv-node-head { background: rgba(255,255,255,0.6); }
+.cv-node[data-type="end"] .cv-node-head { background: rgba(255,255,255,0.6); border-radius: 32px 32px 0 0; }
 
 .cv-node[data-type="question"] {
   background: #fde5c8;
   border-color: #f59e0b;
+  border-left: 4px solid #f59e0b;
 }
 .cv-node[data-type="question"] .cv-node-head { background: rgba(255,255,255,0.5); }
 
+/* Decision — diamond-style: cut corners + purple, with a ◆ marker */
 .cv-node[data-type="decision"] {
   background: linear-gradient(135deg, #faf5ff, #f3e8ff);
   border-color: #a855f7;
-  border-radius: 8px;
+  border-radius: 4px;
+  clip-path: polygon(14px 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 14px 100%, 0 50%);
+  border: none;
+  outline: 2px solid #a855f7;
+  outline-offset: -2px;
+  padding: 0 10px;
 }
-.cv-node[data-type="decision"] .cv-node-head { background: rgba(255,255,255,0.5); }
+.cv-node[data-type="decision"] .cv-node-head {
+  background: transparent;
+  border-bottom: 1px dashed rgba(168,85,247,0.4);
+  justify-content: center;
+  text-align: center;
+}
+.cv-node[data-type="decision"] .cv-node-head::before {
+  content: '◆';
+  color: #a855f7;
+  font-size: 10px;
+  margin-right: 5px;
+}
+.cv-node[data-type="decision"] .cv-node-body { text-align: center; }
+
+/* Dark theme shapes */
+[data-theme="dark"] .cv-node[data-type="start"] {
+  background: linear-gradient(135deg, rgba(52,211,153,0.14), rgba(52,211,153,0.06));
+  border-color: rgba(52,211,153,0.45);
+}
+[data-theme="dark"] .cv-node[data-type="start"] .cv-node-head { background: rgba(255,255,255,0.03); }
+[data-theme="dark"] .cv-node[data-type="end"] {
+  background: linear-gradient(135deg, rgba(255,77,109,0.14), rgba(255,77,109,0.06));
+  border-color: rgba(255,77,109,0.45);
+}
+[data-theme="dark"] .cv-node[data-type="end"] .cv-node-head { background: rgba(255,255,255,0.03); }
+[data-theme="dark"] .cv-node[data-type="question"] {
+  background: rgba(251,191,36,0.12);
+  border-color: rgba(251,191,36,0.5);
+  border-left: 4px solid #fbbf24;
+}
+[data-theme="dark"] .cv-node[data-type="question"] .cv-node-head { background: rgba(255,255,255,0.03); }
+[data-theme="dark"] .cv-node[data-type="decision"] {
+  background: linear-gradient(135deg, rgba(168,85,247,0.16), rgba(168,85,247,0.07));
+  outline-color: #a855f7;
+}
+[data-theme="dark"] .cv-node[data-type="normal"],
+[data-theme="dark"] .cv-node:not([data-type]) {
+  background: #181822;
+  border-color: var(--bd-default);
+}
+[data-theme="dark"] .cv-node-head { background: rgba(255,255,255,0.02); border-bottom-color: var(--bd-subtle); }
+[data-theme="dark"] .cv-node-title { color: var(--tx-primary); }
+[data-theme="dark"] .cv-node-body { color: var(--tx-secondary); }
+[data-theme="dark"] .cv-node:hover { border-color: var(--accent); }
+[data-theme="dark"] .cv-node.highlight-path { background: var(--ok-soft); border-color: var(--ok); }
 
 /* Validation badge */
 .cv-node-warn {
@@ -3626,3 +3676,64 @@ body.canvas-fullscreen-active .side-rail {
   color: var(--tx-primary) !important;
 }
 .auth-btn-alt:hover { background: var(--bg-hover) !important; border-color: var(--accent) !important; box-shadow: none !important; }
+
+/* ═══════════════════════════════════════════════════════════════
+   DARK THEME FIXES v2 — preview, validation, export
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Preview / live-play bot bubble — was bright green */
+[data-theme="dark"] .lp-card-start,
+[data-theme="dark"] .preview-bot,
+[data-theme="dark"] .lp-card-bot {
+  background: var(--ok-soft) !important;
+  border-color: var(--ok-bd) !important;
+  color: var(--tx-primary) !important;
+}
+[data-theme="dark"] .lp-card-start .lp-card-text,
+[data-theme="dark"] .lp-card-bot .lp-card-text { color: var(--tx-primary) !important; }
+[data-theme="dark"] .lp-card-question {
+  background: var(--warn-soft) !important;
+  border-color: var(--warn-bd) !important;
+}
+
+/* Preview choice buttons */
+[data-theme="dark"] .lp-choice-yes:hover { background: var(--ok-soft) !important; border-color: var(--ok) !important; }
+[data-theme="dark"] .lp-choice-yes .lp-choice-label { background: var(--ok-soft) !important; color: var(--ok) !important; }
+[data-theme="dark"] .lp-choice { background: var(--bg-surface-2) !important; border-color: var(--bd-default) !important; color: var(--tx-primary) !important; }
+[data-theme="dark"] .lp-choice:hover { border-color: var(--accent) !important; }
+
+/* Simulator bubbles */
+[data-theme="dark"] .sim-choice { background: var(--bg-surface-2) !important; border-color: var(--bd-default) !important; color: var(--tx-primary) !important; }
+[data-theme="dark"] .sim-choice.yes:hover { background: var(--ok-soft) !important; border-color: var(--ok) !important; }
+[data-theme="dark"] .sim-choice.yes .sim-choice-label { background: var(--ok-soft) !important; color: var(--ok) !important; }
+[data-theme="dark"] .sim-bot-card,
+[data-theme="dark"] .sim-msg-bot { background: var(--ok-soft) !important; border-color: var(--ok-bd) !important; color: var(--tx-primary) !important; }
+
+/* Connection labels (yes/no) */
+[data-theme="dark"] .cs-conn-label.cl-yes { background: var(--ok-soft) !important; color: var(--ok) !important; }
+
+/* Validation issue cards */
+[data-theme="dark"] .val-section,
+[data-theme="dark"] .validation-section { background: var(--bg-surface) !important; border-color: var(--bd-default) !important; }
+[data-theme="dark"] .val-issue-row,
+[data-theme="dark"] .issue-row { background: var(--bg-surface) !important; border-color: var(--bd-subtle) !important; color: var(--tx-secondary) !important; }
+[data-theme="dark"] .val-issue-row:hover { background: var(--bg-hover) !important; }
+
+/* Export tab cards — already use vars but force dark surface */
+[data-theme="dark"] .export-card { background: var(--bg-surface) !important; border-color: var(--bd-default) !important; }
+[data-theme="dark"] .export-card .btn { background: var(--bg-surface-2); color: var(--tx-primary); border-color: var(--bd-default); }
+[data-theme="dark"] .export-card .btn:hover { background: var(--bg-hover); border-color: var(--accent); }
+
+/* Generic: any leftover bright-green pastel surfaces in dark */
+[data-theme="dark"] [style*="#f0fdf4"],
+[data-theme="dark"] [style*="#dcfce7"] {
+  background: var(--ok-soft) !important;
+  color: var(--tx-primary) !important;
+}
+
+/* warning info box (validation header) */
+[data-theme="dark"] .val-info, [data-theme="dark"] .validation-info {
+  background: var(--accent-soft) !important;
+  color: var(--accent-text) !important;
+  border-color: var(--accent-soft-bd) !important;
+}
