@@ -3343,7 +3343,7 @@ function canvasRender() {
     node.innerHTML = `
       ${hasWarn ? '<div class="cv-node-warn" title="Есть проблема — откройте вкладку «Валидация»">!</div>' : ''}
       <div class="cv-node-head" title="${esc(b.id)}">
-        <div class="cv-node-title">${esc(b.title || '(без названия)')}</div>
+        <div class="cv-node-title">${esc(b.title || '')}</div>
       </div>
       ${showText ? `<div class="cv-node-body">${esc(text || '— пусто —')}</div>` : ''}
     `;
