@@ -3320,6 +3320,21 @@ function canvasRender() {
     node.dataset.type = type;
     node.style.left = x + 'px';
     node.style.top = y + 'px';
+    // Auto-size width by content length (Draw.io-like: longer text = wider block)
+    const titleLen = (b.title || '').length;
+    const bodyLen = (text || '').length;
+    const contentLen = Math.max(titleLen * 1.5, bodyLen);
+    let nodeW = 200;
+    if (contentLen > 260) nodeW = 300;
+    else if (contentLen > 160) nodeW = 270;
+    else if (contentLen > 90) nodeW = 240;
+    else if (contentLen > 40) nodeW = 210;
+    else nodeW = 180;
+    // decision/start/end tend to be shorter labels — keep compact
+    if (type === 'decision') nodeW = Math.min(nodeW, 220);
+    if (type === 'start' || type === 'end') nodeW = Math.min(nodeW, 200);
+    if (typeof b.w === 'number' && b.w > 80) nodeW = Math.min(Math.max(b.w, 150), 340); // respect imported width
+    node.style.width = nodeW + 'px';
     if (b.color) {
       node.style.background = b.color;
       const isDark = isColorDark(b.color);
@@ -5365,10 +5380,15 @@ async function _doImproveBlock(b, mode, currentRu, currentUz, uiMode) {
   }
 }
 
+let _pendingAISuggestion = null;
+
 function showAISuggestion(blockId, newRu, newUz, label) {
   const sidebar = document.getElementById('canvas-sidebar');
   const existing = sidebar.querySelector('#ai-suggestion');
   if (existing) existing.remove();
+
+  // Store payload so the Apply button doesn't depend on inline-escaping
+  _pendingAISuggestion = { blockId, newRu, newUz };
 
   const panel = document.createElement('div');
   panel.id = 'ai-suggestion';
@@ -5379,19 +5399,26 @@ function showAISuggestion(blockId, newRu, newUz, label) {
       <button class="ai-sugg-close" onclick="document.getElementById('ai-suggestion').remove()">×</button>
     </div>
     <div class="ai-sugg-text">
-      <div class="ai-sugg-lang">🇷🇺 Русский</div>
+      <div class="ai-sugg-lang">RU Русский</div>
       <div class="ai-sugg-content">${esc(newRu)}</div>
-      <div class="ai-sugg-lang" style="margin-top:10px;">🇺🇿 O'zbek</div>
+      <div class="ai-sugg-lang" style="margin-top:10px;">UZ O'zbek</div>
       <div class="ai-sugg-content">${esc(newUz)}</div>
     </div>
     <div class="ai-sugg-actions">
       <button class="btn btn-sm" onclick="document.getElementById('ai-suggestion').remove()">Отменить</button>
-      <button class="btn btn-sm btn-primary" onclick='applyAISuggestion(${JSON.stringify(blockId)}, ${JSON.stringify(newRu)}, ${JSON.stringify(newUz)})'>✓ Применить</button>
+      <button class="btn btn-sm btn-primary" onclick="applyPendingAISuggestion()">✓ Применить</button>
     </div>
   `;
 
   const aiGroup = sidebar.querySelector('.ai-block-group');
   if (aiGroup) aiGroup.after(panel);
+}
+
+function applyPendingAISuggestion() {
+  if (!_pendingAISuggestion) return;
+  const { blockId, newRu, newUz } = _pendingAISuggestion;
+  applyAISuggestion(blockId, newRu, newUz);
+  _pendingAISuggestion = null;
 }
 
 function applyAISuggestion(blockId, newRu, newUz) {
@@ -5685,18 +5712,21 @@ async function generateObjectionResponses(blockId) {
     }
     if (!parsed.variants || !parsed.variants.length) throw new Error('AI не вернул варианты');
 
+    // Store variants so Apply buttons don't depend on inline-escaping (apostrophes break onclick)
+    _pendingObjectionVariants = { blockId, variants: parsed.variants };
+
     const variantsHtml = parsed.variants.map((v, i) => `
       <div class="ai-variant">
         <div class="ai-variant-head">
           <span class="ai-variant-style">${esc(v.style || 'вариант ' + (i+1))}</span>
         </div>
         <div class="ai-variant-body">
-          <div class="ai-variant-lang">🇷🇺</div>
+          <div class="ai-variant-lang">RU</div>
           <div class="ai-variant-text">${esc(v.ru || '')}</div>
-          <div class="ai-variant-lang" style="margin-top:6px;">🇺🇿</div>
+          <div class="ai-variant-lang" style="margin-top:6px;">UZ</div>
           <div class="ai-variant-text">${esc(v.uz || '')}</div>
         </div>
-        <button class="btn btn-sm btn-primary" onclick='applyObjectionVariant(${JSON.stringify(blockId)}, ${JSON.stringify(v.ru || "")}, ${JSON.stringify(v.uz || "")})'>✓ Вставить в блок</button>
+        <button class="btn btn-sm btn-primary" onclick="applyPendingObjectionVariant(${i})">✓ Вставить в блок</button>
       </div>
     `).join('');
 
@@ -5716,6 +5746,15 @@ async function generateObjectionResponses(blockId) {
       <div style="padding:12px; font-size:13px; color:#dc2626;">${esc(err.message)}</div>
     `;
   }
+}
+
+let _pendingObjectionVariants = null;
+function applyPendingObjectionVariant(index) {
+  if (!_pendingObjectionVariants) return;
+  const { blockId, variants } = _pendingObjectionVariants;
+  const v = variants[index];
+  if (!v) return;
+  applyObjectionVariant(blockId, v.ru || '', v.uz || '');
 }
 
 function applyObjectionVariant(blockId, newRu, newUz) {
