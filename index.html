@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@400;500;600;700&family=Unbounded:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20251029zb">
+  <link rel="stylesheet" href="styles.css?v=20251029zc">
 </head>
 <body>
 
@@ -368,25 +368,13 @@
           <label class="field-label">Название профиля</label>
           <input id="modal-profile-name" class="input" placeholder="Например: Hamkor bank" value="Новый банк">
         </div>
-        <label class="field-label" style="margin-bottom: 10px; display: block;">Выберите шаблон</label>
+        <label class="field-label" style="margin-bottom: 10px; display: block;">Шаблон</label>
         <div class="template-grid">
           <label class="template-card">
-            <input type="radio" name="tpl" value="avo_limit" checked>
-            <div class="tpl-check">✓</div>
-            <div class="tpl-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>AVO — Кредитный лимит</div>
-            <div class="tpl-desc">Входящая линия: вопросы по лимиту, погашению, приложению. 14 блоков.</div>
-          </label>
-          <label class="template-card">
-            <input type="radio" name="tpl" value="collection">
-            <div class="tpl-check">✓</div>
-            <div class="tpl-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>Pre-script Collection</div>
-            <div class="tpl-desc">Исходящий звонок-напоминание. Счётчики 1/2/3 раза, родственники, отказы, переводы, мошенничество. 40+ блоков.</div>
-          </label>
-          <label class="template-card">
-            <input type="radio" name="tpl" value="blank">
+            <input type="radio" name="tpl" value="blank" checked>
             <div class="tpl-check">✓</div>
             <div class="tpl-title"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/></svg>Пустой профиль</div>
-            <div class="tpl-desc">Один стартовый блок. Стройте всё с нуля.</div>
+            <div class="tpl-desc">Один стартовый блок. Стройте всё с нуля или импортируйте из Draw.io.</div>
           </label>
         </div>
       </div>
@@ -644,7 +632,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="supabase-client.js?v=20251029zb"></script>
-  <script src="script.js?v=20251029zb"></script>
+  <script src="supabase-client.js?v=20251029zc"></script>
+  <script src="script.js?v=20251029zc"></script>
 </body>
 </html>
