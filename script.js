@@ -2060,8 +2060,25 @@ function exportDrawio() {
     if (type === 'question') fill = '#fde5c8';
     if (type === 'decision') shapeStyle = 'rhombus';
     if (type === 'start' || type === 'end') shapeStyle = 'ellipse';
-    const txt = svgText(b.title);
-    cells += `<mxCell id="${cellId}" value="${txt}" style="${shapeStyle};whiteSpace=wrap;html=1;fillColor=${fill};strokeColor=#333333;fontSize=11;fontStyle=1;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="${x}" y="${y}" width="${NW}" height="${NH}" as="geometry"/></mxCell>`;
+    if (b.color) fill = b.color;
+    // Build cell content: bold title + body text (ru, then uz if present)
+    const titlePart = (b.title || '').trim();
+    const ruPart = (b.ru || '').trim();
+    const uzPart = (b.uz || '').trim();
+    let bodyLines = [];
+    if (titlePart) bodyLines.push('<b>' + svgText(titlePart) + '</b>');
+    if (ruPart) bodyLines.push(svgText(ruPart));
+    if (uzPart) bodyLines.push('<i>' + svgText(uzPart) + '</i>');
+    const txt = bodyLines.join('<br>');
+    // Auto-height by content length so text fits
+    const totalLen = titlePart.length + ruPart.length + uzPart.length;
+    let cellH = NH;
+    if (totalLen > 240) cellH = 180;
+    else if (totalLen > 140) cellH = 140;
+    else if (totalLen > 70) cellH = 100;
+    else if (totalLen > 30) cellH = 80;
+    const cellW = totalLen > 70 ? 240 : NW;
+    cells += `<mxCell id="${cellId}" value="${txt}" style="${shapeStyle};whiteSpace=wrap;html=1;fillColor=${fill};strokeColor=#333333;fontSize=10;align=left;verticalAlign=top;spacing=6;" vertex="1" parent="1"><mxGeometry x="${x}" y="${y}" width="${cellW}" height="${cellH}" as="geometry"/></mxCell>`;
     idMap[b.id] = cellId;
     cellId++;
   });
@@ -2070,12 +2087,21 @@ function exportDrawio() {
     const from = idMap[b.id]; if (!from) return;
     const addEdge = (toId, label, color) => {
       const to = idMap[toId]; if (!to) return;
-      cells += `<mxCell id="${cellId}" value="${label}" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=${color};fontSize=10;fontStyle=1;" edge="1" parent="1" source="${from}" target="${to}"><mxGeometry relative="1" as="geometry"/></mxCell>`;
+      cells += `<mxCell id="${cellId}" value="${svgText(label || '')}" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=${color};fontSize=10;fontStyle=1;" edge="1" parent="1" source="${from}" target="${to}"><mxGeometry relative="1" as="geometry"/></mxCell>`;
       cellId++;
     };
-    addEdge(b.next_default, '', '#333333');
-    addEdge(b.next_yes, 'да', '#16a34a');
-    addEdge(b.next_no, 'нет', '#dc2626');
+    // Prefer modern branches[]; fall back to legacy next_* fields
+    if (Array.isArray(b.branches) && b.branches.length) {
+      b.branches.forEach(br => {
+        if (!br.target) return;
+        const color = br.color && br.color !== BRANCH_COLOR_DEFAULT ? br.color : '#333333';
+        addEdge(br.target, br.label || '', color);
+      });
+    } else {
+      addEdge(b.next_default, '', '#333333');
+      addEdge(b.next_yes, 'да', '#16a34a');
+      addEdge(b.next_no, 'нет', '#dc2626');
+    }
   });
 
   const xml = `<mxfile host="app.diagrams.net"><diagram name="${esc(d.name)}"><mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="${canvasW}" pageHeight="2000" math="0" shadow="0"><root><mxCell id="0"/><mxCell id="1" parent="0"/>${cells}</root></mxGraphModel></diagram></mxfile>`;
@@ -3697,42 +3723,46 @@ function attachNodeHandlers(node, id) {
 
     // Update selection BEFORE drag starts (so drag uses correct selection)
     if (e.shiftKey || e.ctrlKey || e.metaKey) {
-      // Shift+click — toggle membership in selection
+      // Shift+click — toggle membership (light update, no full re-render to keep rects valid)
       selectToggle(id);
-      canvasRender();
+      document.querySelectorAll('.cv-node').forEach(n => {
+        n.classList.toggle('selected', canvasState.selectedIds.has(n.dataset.id));
+      });
       renderCanvasSidebar(canvasState.selectedId);
-      // Don't start drag on shift-click — just toggle
       return;
     } else if (!isSelected(id)) {
-      // Click on un-selected block — select only this one
+      // Select only this one — light visual update (DON'T canvasRender, it rebuilds the node
+      // and invalidates getBoundingClientRect → block jumps)
       selectOnly(id);
-      canvasRender();
+      document.querySelectorAll('.cv-node').forEach(n => {
+        n.classList.toggle('selected', n.dataset.id === id);
+      });
       renderCanvasSidebar(id);
       applyPathHighlight(id);
     }
-    // (else: clicked on already-selected block → keep selection, start drag of group)
 
     const rect = node.getBoundingClientRect();
     const b = data().blocks.find(x => x.id === id);
     if (!b) return;
+    // Ensure block has numeric coords (new blocks may lack them)
+    if (typeof b.x !== 'number') b.x = 0;
+    if (typeof b.y !== 'number') b.y = 0;
 
     // Build group of all selected blocks with their offsets relative to clicked block
     const group = [];
     canvasState.selectedIds.forEach(sid => {
       const sb = data().blocks.find(x => x.id === sid);
       if (sb) {
-        group.push({
-          id: sid,
-          dx: (sb.x || 0) - (b.x || 0),
-          dy: (sb.y || 0) - (b.y || 0),
-          origX: sb.x,
-          origY: sb.y
-        });
+        if (typeof sb.x !== 'number') sb.x = 0;
+        if (typeof sb.y !== 'number') sb.y = 0;
+        group.push({ id: sid, dx: sb.x - b.x, dy: sb.y - b.y, origX: sb.x, origY: sb.y });
       }
     });
 
     canvasState.dragging = {
       id,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
       offsetX: (e.clientX - rect.left) / canvasState.zoom,
       offsetY: (e.clientY - rect.top) / canvasState.zoom,
       moved: false,
@@ -3793,6 +3823,12 @@ function initCanvasHandlers() {
   document.addEventListener('mousemove', (e) => {
     if (canvasState.dragging) {
       const { id, offsetX, offsetY, group } = canvasState.dragging;
+      // Require a small real movement before starting to drag (prevents jump on plain click)
+      if (!canvasState.dragging.moved) {
+        const dxMove = Math.abs(e.clientX - canvasState.dragging.startClientX);
+        const dyMove = Math.abs(e.clientY - canvasState.dragging.startClientY);
+        if (dxMove < 4 && dyMove < 4) return;
+      }
       canvasState.dragging.moved = true;
       const b = data().blocks.find(x => x.id === id);
       if (!b) return;
@@ -3800,6 +3836,7 @@ function initCanvasHandlers() {
       const stageRect = stage.getBoundingClientRect();
       const newX = Math.round(((e.clientX - stageRect.left) / canvasState.zoom - offsetX) / 10) * 10;
       const newY = Math.round(((e.clientY - stageRect.top) / canvasState.zoom - offsetY) / 10) * 10;
+      if (isNaN(newX) || isNaN(newY)) return;
       const dx = newX - (b.x || 0);
       const dy = newY - (b.y || 0);
 
@@ -6354,18 +6391,20 @@ function handlePasswordSignup() {
   const user = await checkAuthSession();
   if (user) {
     showApp();
-    bootApp();
+    if (!window._appBooted) { window._appBooted = true; bootApp(); }
   } else {
     showAuthScreen();
   }
 
-  // Реагируем на вход/выход
+  // Реагируем на вход/выход (но bootApp — только один раз за сессию страницы)
   onAuthChange((event, u) => {
     if (event === 'SIGNED_IN' && u) {
       showApp();
-      bootApp();
+      if (!window._appBooted) { window._appBooted = true; bootApp(); }
     } else if (event === 'SIGNED_OUT') {
+      window._appBooted = false;
       showAuthScreen();
     }
+    // TOKEN_REFRESHED, USER_UPDATED и пр. — игнорируем, чтобы не сбрасывать профиль
   });
 })();
