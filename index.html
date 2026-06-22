@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@400;500;600;700&family=Unbounded:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20251029zi">
+  <link rel="stylesheet" href="styles.css?v=20251029zj">
 </head>
 <body>
 
@@ -152,6 +152,32 @@
     </div>
 
     <div id="tab-vars" style="display: none;">
+      <div class="meta-editor">
+        <div class="meta-editor-title">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/></svg>
+          Шапка скрипта (попадёт в экспорт схемы)
+        </div>
+        <div class="meta-grid">
+          <div class="cs-field">
+            <label class="field-label">Автор</label>
+            <input class="input" id="meta-author" placeholder="Имя Фамилия" oninput="markMetaDirty()">
+          </div>
+          <div class="cs-field">
+            <label class="field-label">Версия</label>
+            <input class="input" id="meta-version" placeholder="1.0" oninput="markMetaDirty()">
+          </div>
+          <div class="cs-field" style="grid-column: 1 / -1;">
+            <label class="field-label">Описание</label>
+            <input class="input" id="meta-description" placeholder="ТМ скрипт для карты Visa Start Sum" oninput="markMetaDirty()">
+          </div>
+          <div class="cs-field" style="grid-column: 1 / -1;">
+            <label class="field-label">Цель</label>
+            <input class="input" id="meta-goal" placeholder="Рассказать о преимуществах и вернуть клиентов" oninput="markMetaDirty()">
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="saveMeta()" style="margin-top: 12px;">Сохранить шапку</button>
+      </div>
+
       <div class="info-box">
         Используйте переменные в тексте блоков в формате <span class="var-chip">{BANK_NAME}</span>. Они автоматически подставятся при предпросмотре и экспорте.
       </div>
@@ -632,7 +658,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="supabase-client.js?v=20251029zi"></script>
-  <script src="script.js?v=20251029zi"></script>
+  <script src="supabase-client.js?v=20251029zj"></script>
+  <script src="script.js?v=20251029zj"></script>
 </body>
 </html>
