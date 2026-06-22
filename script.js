@@ -3442,6 +3442,15 @@ function findPathSets(focusId) {
   return { upstream, downstream };
 }
 
+function togglePathsCheckbox() {
+  const on = document.getElementById('canvas-show-paths')?.checked;
+  if (!on) {
+    clearPathHighlight(true);
+  } else if (canvasState.selectedId) {
+    applyPathHighlight(canvasState.selectedId);
+  }
+}
+
 function applyPathHighlight(focusId) {
   const showPaths = document.getElementById('canvas-show-paths')?.checked ?? true;
   if (!focusId || !showPaths) {
@@ -4409,8 +4418,8 @@ function renderCanvasSidebar(id) {
       <div class="cs-field">
         <label class="field-label">Цвет блока</label>
         <div class="cs-color-row">
-          <input type="color" class="cs-color-picker" id="cs-color" value="${blockColor || '#ffffff'}" title="Выбрать цвет">
-          <button class="cs-color-reset" onclick="document.getElementById('cs-color').value='#ffffff';" title="Сбросить (белый)">⟲</button>
+          <input type="color" class="cs-color-picker" id="cs-color" value="${blockColor || '#ffffff'}" title="Выбрать цвет" onchange="liveApplyBlockColor('${esc(id)}', this.value)">
+          <button class="cs-color-reset" onclick="document.getElementById('cs-color').value='#ffffff'; liveApplyBlockColor('${esc(id)}', '#ffffff');" title="Сбросить (белый)">⟲</button>
         </div>
       </div>
     </div>
@@ -4599,6 +4608,14 @@ function canvasSaveBlock(id) {
   renderCanvasSidebar(id);
   renderStats();
   toast(`Блок «${b.title}» сохранён`);
+}
+
+function liveApplyBlockColor(id, color) {
+  const b = data().blocks.find(x => x.id === id);
+  if (!b) return;
+  b.color = (color && color.toLowerCase() !== '#ffffff') ? color : '';
+  canvasRender();
+  saveToStorage();
 }
 
 function canvasDeleteBlock(id) {
@@ -5024,7 +5041,9 @@ async function cloudPullReferences() {
     tone: row.tone,
     tags: row.tags || [],
     notes: row.notes,
-    profileData: row.profile_data,
+    profile: row.profile_data,       // code uses r.profile everywhere
+    profileData: row.profile_data,   // keep for cloud push
+    active: row.is_active !== false, // generation filters by r.active
     isActive: row.is_active
   }));
   return true;
@@ -5628,6 +5647,102 @@ async function generateScript() {
   });
 
   try {
+    // ════════════════════════════════════════════════════════════
+    // STRUCTURE MODE: 1 reference + exact → keep skeleton, rewrite only texts
+    // ════════════════════════════════════════════════════════════
+    if (activeRefs.length === 1 && genMode === 'exact') {
+      const ref = activeRefs[0];
+      const refBlocks = ref.profile.blocks || [];
+      if (!refBlocks.length) throw new Error('В эталоне нет блоков');
+
+      // Send AI a compact map of id→{title, ru, uz} and ask to rewrite texts only
+      const textMap = refBlocks.map(b => ({
+        id: b.id,
+        title: b.title || '',
+        ru: b.ru || '',
+        uz: b.uz || ''
+      }));
+
+      const structPrompt = `Ты — эксперт по скриптам колл-центра. У тебя есть ЭТАЛОННЫЙ скрипт. Твоя задача — переписать ТОЛЬКО ТЕКСТЫ блоков (title, ru, uz) под новую сферу, СОХРАНИВ СМЫСЛ И РОЛЬ каждого блока. НЕ добавляй и НЕ удаляй блоки. НЕ меняй id.
+
+НОВАЯ СФЕРА: ${niche}
+ЦЕЛЬ: ${goal}
+КАНАЛ: ${channel}
+ТОН: ${tone}
+ДОП. ТРЕБОВАНИЯ: ${extras || '(нет)'}
+
+ПРАВИЛА:
+- Для каждого блока перепиши title (краткое название), ru (русский текст реплики), uz (узбекский перевод) под новую сферу
+- Служебные блоки («Ответ клиента», «Завершение звонка», «Молчание», «Автоответчик» и т.п.) — сохрани их роль, текст можешь оставить похожим
+- Блоки-решения и вопросы — адаптируй под новую сферу
+- Сохрани тот же тон и манеру
+- Верни СТРОГО JSON-массив: [{"id":"...","title":"...","ru":"...","uz":"..."}, ...] для ВСЕХ ${textMap.length} блоков, ничего кроме JSON
+
+ЭТАЛОННЫЕ ТЕКСТЫ (${textMap.length} блоков):
+${JSON.stringify(textMap, null, 1)}`;
+
+      const raw = await geminiGenerate(structPrompt, 'Перепиши все тексты под новую сферу и верни JSON-массив.', {
+        json: true, temperature: 0.7, maxTokens: 16000
+      });
+      let rewritten;
+      try { rewritten = JSON.parse(raw); } catch {
+        const m = raw.match(/\[[\s\S]*\]/);
+        if (!m) throw new Error('Не могу распарсить ответ AI');
+        rewritten = JSON.parse(m[0]);
+      }
+      const textById = {};
+      rewritten.forEach(r => { if (r.id) textById[r.id] = r; });
+
+      // Build new profile by DEEP-COPYING the reference structure, swapping texts
+      const profileName = `${niche} (по эталону ${ref.name})`;
+      const uniqueName = profiles[profileName] ? `${profileName} ${Date.now().toString().slice(-4)}` : profileName;
+      const newProfile = {
+        name: uniqueName,
+        vars: JSON.parse(JSON.stringify(ref.profile.vars || { BANK_NAME: '', PHONE: '', AGENT_NAME: '' })),
+        sections: JSON.parse(JSON.stringify(ref.profile.sections || [{ id: 's1', label: 'Основной раздел' }])),
+        blocks: refBlocks.map(b => {
+          const t = textById[b.id] || {};
+          return {
+            id: b.id,
+            sec: b.sec || 's1',
+            title: t.title || b.title || '',
+            intent: b.intent || '',
+            type: b.type || 'normal',
+            ru: t.ru !== undefined ? t.ru : (b.ru || ''),
+            uz: t.uz !== undefined ? t.uz : (b.uz || ''),
+            color: b.color || '',
+            x: b.x,  // keep exact coordinates
+            y: b.y,
+            w: b.w,
+            branches: (b.branches || []).map(br => ({
+              id: branchId(),
+              label: br.label || '',
+              color: br.color || BRANCH_COLOR_DEFAULT,
+              next: br.next || ''
+            })),
+            next_default: '', next_yes: '', next_no: ''
+          };
+        })
+      };
+      newProfile.blocks.forEach(b => syncLegacyNext(b));
+
+      snapshot('Генерация по структуре эталона');
+      profiles[uniqueName] = newProfile;
+      activeProfile = uniqueName;
+      // Mark as having coords so auto-layout won't override
+      const withCoords = newProfile.blocks.filter(b => typeof b.x === 'number').length;
+      if (withCoords >= newProfile.blocks.length * 0.5) canvasState.autoLaidOut.add(uniqueName);
+      closeGenScriptModal();
+      renderProfiles(); renderBlocks(); renderVars(); renderStats();
+      const canvasTab = document.querySelector('[data-tab="canvas"]');
+      if (canvasTab) switchTab('canvas', canvasTab);
+      saveToStorage();
+      toast(`✓ Создан профиль "${uniqueName}" · ${newProfile.blocks.length} блоков (структура эталона сохранена)`);
+      btn.disabled = false;
+      btn.textContent = origText;
+      return;
+    }
+
     const raw = await geminiGenerate(systemPrompt, userPrompt, {
       json: true,
       temperature: 0.8,
