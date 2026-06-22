@@ -3961,3 +3961,33 @@ body.canvas-fullscreen-active .side-rail {
 [data-theme="dark"] .cv-node.cv-node-custom {
   background: inherit; /* inline style wins */
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   SCRIPT META EDITOR (title header)
+   ═══════════════════════════════════════════════════════════════ */
+.meta-editor {
+  background: var(--bg-surface);
+  border: 1px solid var(--bd-default);
+  border-radius: var(--r-lg);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.meta-editor-title {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+}
+.meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.meta-grid .cs-field { display: flex; flex-direction: column; gap: 6px; }
+[data-theme="dark"] .meta-editor { background: var(--bg-surface); border-color: var(--bd-default); }
+@media (max-width: 640px) { .meta-grid { grid-template-columns: 1fr; } }
