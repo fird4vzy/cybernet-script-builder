@@ -856,6 +856,13 @@ function deleteSection(id) {
 // ═══════════════════════════════════════════════════════════════
 function renderVars() {
   const d = data();
+  // Load meta header fields
+  const meta = d.meta || {};
+  const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+  setVal('meta-author', meta.author);
+  setVal('meta-version', meta.version);
+  setVal('meta-description', meta.description);
+  setVal('meta-goal', meta.goal);
   const html = Object.entries(d.vars).map(([k, v]) => {
     const isDirty = dirtyVars.has(k);
     return `
@@ -868,6 +875,25 @@ function renderVars() {
     `;
   }).join('');
   document.getElementById('vars-grid').innerHTML = html || '<div class="empty">Нет переменных. Нажмите «+ добавить переменную» чтобы создать первую.</div>';
+}
+
+function markMetaDirty() {
+  const ind = document.getElementById('vars-saved-indicator');
+  if (ind) { ind.textContent = 'Есть несохранённые изменения шапки'; ind.style.color = 'var(--warn)'; }
+}
+
+function saveMeta() {
+  const d = data();
+  if (!d.meta) d.meta = {};
+  d.meta.author = document.getElementById('meta-author')?.value || '';
+  d.meta.version = document.getElementById('meta-version')?.value || '';
+  d.meta.description = document.getElementById('meta-description')?.value || '';
+  d.meta.goal = document.getElementById('meta-goal')?.value || '';
+  snapshot('Изменение шапки скрипта');
+  saveToStorage();
+  const ind = document.getElementById('vars-saved-indicator');
+  if (ind) { ind.textContent = '✓ Шапка сохранена'; ind.style.color = 'var(--ok)'; }
+  toast('✓ Шапка скрипта сохранена');
 }
 
 function markVarDirty(k) {
@@ -2051,6 +2077,19 @@ function exportDrawio() {
 
   let cells = '', cellId = 2;
   const idMap = {};
+
+  // ─── Title header card (company + script meta) ───
+  const meta = d.meta || {};
+  const titleLines = [
+    `<b style="font-size:18px;">${svgText(d.name || 'Скрипт')}</b>`,
+    meta.version ? `<b>Версия:</b> ${svgText(meta.version)}` : '',
+    meta.author ? `<b>Автор:</b> ${svgText(meta.author)}` : '',
+    meta.description ? `<b>Описание:</b> ${svgText(meta.description)}` : '',
+    meta.goal ? `<b>Цель:</b> ${svgText(meta.goal)}` : '',
+    `<i style="color:#5b8cff;">Cybernet AI · Конструктор скриптов</i>`
+  ].filter(Boolean).join('<br>');
+  // Place above the diagram (negative Y so it sits on top)
+  cells += `<mxCell id="title_header" value="${titleLines}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1e3a8a;strokeWidth=2;align=left;verticalAlign=top;spacing=14;fontSize=12;fontColor=#1e3a8a;" vertex="1" parent="1"><mxGeometry x="${PAD}" y="${PAD - 220}" width="380" height="180" as="geometry"/></mxCell>`;
 
   d.blocks.forEach(b => {
     if (!pos[b.id]) return;
@@ -4713,6 +4752,25 @@ document.addEventListener('keydown', (e) => {
     selectAll();
     return;
   }
+  // Copy selected blocks
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && canvasState.selectedIds.size > 0) {
+    e.preventDefault();
+    copySelectedBlocks();
+    return;
+  }
+  // Paste copied blocks
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && canvasClipboard.length) {
+    e.preventDefault();
+    pasteBlocks();
+    return;
+  }
+  // Duplicate selected (Ctrl+D)
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd' && canvasState.selectedIds.size > 0) {
+    e.preventDefault();
+    copySelectedBlocks();
+    pasteBlocks();
+    return;
+  }
   if (e.key === 'Escape') {
     if (canvasState.selectedIds.size > 0) {
       selectClear();
@@ -4725,6 +4783,64 @@ document.addEventListener('keydown', (e) => {
     deleteSelectedBlocks();
   }
 });
+
+// ── Copy / Paste blocks ───────────────────────────────────────
+let canvasClipboard = [];
+
+function copySelectedBlocks() {
+  const ids = [...canvasState.selectedIds];
+  if (!ids.length) return;
+  const d = data();
+  canvasClipboard = ids.map(id => {
+    const b = d.blocks.find(x => x.id === id);
+    return b ? JSON.parse(JSON.stringify(b)) : null;
+  }).filter(Boolean);
+  toast(`Скопировано ${canvasClipboard.length} ${canvasClipboard.length === 1 ? 'блок' : 'блоков'} (Ctrl+V — вставить)`);
+}
+
+function pasteBlocks() {
+  if (!canvasClipboard.length) return;
+  const d = data();
+  snapshot('Вставка блоков');
+
+  // Build id remap so internal branches between copied blocks stay connected
+  const idMap = {};
+  canvasClipboard.forEach(b => {
+    let newId = b.id + '_copy';
+    let n = 1;
+    while (d.blocks.some(x => x.id === newId) || idMap[b.id] === newId) {
+      n++; newId = b.id + '_copy' + n;
+    }
+    idMap[b.id] = newId;
+  });
+
+  const offset = 40;
+  const newBlocks = canvasClipboard.map(b => {
+    const nb = JSON.parse(JSON.stringify(b));
+    nb.id = idMap[b.id];
+    nb.x = (typeof b.x === 'number' ? b.x : 100) + offset;
+    nb.y = (typeof b.y === 'number' ? b.y : 100) + offset;
+    // Remap branches that point to other copied blocks; keep external as-is
+    (nb.branches || []).forEach(br => {
+      if (idMap[br.next]) br.next = idMap[br.next];
+      br.id = branchId();
+    });
+    if (idMap[nb.next_default]) nb.next_default = idMap[nb.next_default];
+    if (idMap[nb.next_yes]) nb.next_yes = idMap[nb.next_yes];
+    if (idMap[nb.next_no]) nb.next_no = idMap[nb.next_no];
+    return nb;
+  });
+
+  d.blocks.push(...newBlocks);
+  // Select the pasted blocks
+  canvasState.selectedIds = new Set(newBlocks.map(b => b.id));
+  canvasState.selectedId = newBlocks[0].id;
+  canvasRender();
+  renderCanvasSidebar(newBlocks.length === 1 ? newBlocks[0].id : null);
+  renderStats();
+  saveToStorage();
+  toast(`✓ Вставлено ${newBlocks.length} ${newBlocks.length === 1 ? 'блок' : 'блоков'}`);
+}
 
 // ── Multi-select bulk actions ─────────────────────────────────
 function deleteSelectedBlocks() {
@@ -5059,6 +5175,14 @@ const DEFAULT_PROMPTS = {
 - Обязательно есть один блок type:"start" и минимум один type:"end".
 - Используй переменные: {BANK_NAME}, {PHONE}, {AGENT_NAME}, {AMOUNT}, {DAY}, {MONTH} где это уместно.
 - Для сложных сценариев используй счётчики: если клиент повторяет одно и то же — нужны блоки intent_2, intent_3 со всё более жёсткими формулировками.
+
+🔴 КРИТИЧЕСКИ ВАЖНО про УЗБЕКСКИЙ ЯЗЫК (uz):
+- Узбекский текст должен быть ЕСТЕСТВЕННЫМ, грамотным, на латинице (o', g', sh, ch).
+- НЕ переводи дословно с русского — пиши так, как реально говорит узбекоязычный оператор.
+- Используй правильную банковскую терминологию: "limit", "kredit", "ilova" (приложение), "to'lov" (платёж), "muddat" (срок), "foiz" (процент), "qarz" (долг), "shartnoma" (договор).
+- Узбекский текст по смыслу = русскому, но звучит натурально для носителя.
+- Если дан ЭТАЛОН с узбекскими текстами — изучи их стиль, терминологию и манеру, и пиши в ТОЧНО ТАКОМ ЖЕ стиле. Эталонные uz-тексты — это образец качества, на который надо равняться.
+- Каждый блок ОБЯЗАТЕЛЬНО имеет непустой uz текст. Пустой uz недопустим.
 
 Возвращай строго валидный JSON формата:
 {
