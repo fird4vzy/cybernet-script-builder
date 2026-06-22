@@ -5517,7 +5517,7 @@ function renderGsRefsPicker() {
     return;
   }
   picker.innerHTML = aiReferences.map((r, idx) => {
-    const blockCount = (r.profile?.blocks || []).length;
+    const blockCount = (getRefProfile(r)?.blocks || []).length;
     const typeLabel = REF_TYPE_LABELS[r.scriptType] || '';
     const tags = Array.isArray(r.tags) ? r.tags : [];
     return `
@@ -5572,6 +5572,18 @@ function closeGenScriptModal() {
   document.getElementById('gen-script-modal').style.display = 'none';
 }
 
+// Get the script profile object from a reference, regardless of which field it's stored in
+function getRefProfile(r) {
+  if (!r) return null;
+  // Prefer whichever has actual blocks
+  const candidates = [r.profile, r.profileData, r.data];
+  for (const c of candidates) {
+    if (c && Array.isArray(c.blocks) && c.blocks.length) return c;
+  }
+  // Fallback to first non-empty object
+  return r.profile || r.profileData || r.data || null;
+}
+
 async function generateScript() {
   const niche = document.getElementById('gs-niche').value.trim();
   const goal = document.getElementById('gs-goal').value;
@@ -5606,7 +5618,7 @@ async function generateScript() {
         goal: r.goal || '',
         tone: r.tone || '',
         styleNotes: r.notes || '',
-        blocks: (r.profile.blocks || []).map(b => ({
+        blocks: (getRefProfile(r)?.blocks || []).map(b => ({
           id: b.id,
           title: b.title,
           intent: b.intent,
@@ -5652,7 +5664,8 @@ async function generateScript() {
     // ════════════════════════════════════════════════════════════
     if (activeRefs.length === 1 && genMode === 'exact') {
       const ref = activeRefs[0];
-      const refBlocks = ref.profile.blocks || [];
+      const refProfile = getRefProfile(ref);
+      const refBlocks = refProfile?.blocks || [];
       if (!refBlocks.length) throw new Error('В эталоне нет блоков');
 
       // Send AI a compact map of id→{title, ru, uz} and ask to rewrite texts only
@@ -5698,8 +5711,8 @@ ${JSON.stringify(textMap, null, 1)}`;
       const uniqueName = profiles[profileName] ? `${profileName} ${Date.now().toString().slice(-4)}` : profileName;
       const newProfile = {
         name: uniqueName,
-        vars: JSON.parse(JSON.stringify(ref.profile.vars || { BANK_NAME: '', PHONE: '', AGENT_NAME: '' })),
-        sections: JSON.parse(JSON.stringify(ref.profile.sections || [{ id: 's1', label: 'Основной раздел' }])),
+        vars: JSON.parse(JSON.stringify(refProfile?.vars || { BANK_NAME: '', PHONE: '', AGENT_NAME: '' })),
+        sections: JSON.parse(JSON.stringify(refProfile?.sections || [{ id: 's1', label: 'Основной раздел' }])),
         blocks: refBlocks.map(b => {
           const t = textById[b.id] || {};
           return {
@@ -5946,7 +5959,7 @@ function renderReferences() {
   }
 
   list.innerHTML = aiReferences.map((r, idx) => {
-    const blockCount = (r.profile?.blocks || []).length;
+    const blockCount = (getRefProfile(r)?.blocks || []).length;
     const sizeKb = Math.round(JSON.stringify(r.profile).length / 1024);
     const typeLabel = REF_TYPE_LABELS[r.scriptType] || r.scriptType || '';
     const tags = Array.isArray(r.tags) ? r.tags : [];
@@ -6211,7 +6224,7 @@ async function runAIReview() {
   const activeRefs = aiReferences.filter(r => r.active);
   let refsSection = '';
   if (activeRefs.length) {
-    const refsCompact = activeRefs.map(r => `Эталон "${r.name}" (${r.notes || 'наш фирменный стиль'}): ${r.profile.blocks.length} блоков, intents: ${[...new Set((r.profile.blocks||[]).map(b => b.intent).filter(Boolean))].slice(0, 20).join(', ')}`).join('\n');
+    const refsCompact = activeRefs.map(r => { const rp = getRefProfile(r); const bl = rp?.blocks || []; return `Эталон "${r.name}" (${r.notes || 'наш фирменный стиль'}): ${bl.length} блоков, intents: ${[...new Set(bl.map(b => b.intent).filter(Boolean))].slice(0, 20).join(', ')}`; }).join('\n');
     refsSection = `\n\nДля сравнения, наши эталонные скрипты:\n${refsCompact}\n\nЕсли проверяемый скрипт сильно отличается по структуре от эталонов (не хватает важных интентов, нет счётчиков повторов и т.п.) — отметь это.`;
   }
 
