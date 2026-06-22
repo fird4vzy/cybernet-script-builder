@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@400;500;600;700&family=Unbounded:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20251029zf">
+  <link rel="stylesheet" href="styles.css?v=20251029zh">
 </head>
 <body>
 
@@ -204,7 +204,7 @@
           <input type="checkbox" id="canvas-show-text" checked onchange="canvasRender()"> Текст в блоках
         </label>
         <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tx-secondary); cursor: pointer;" title="При клике на блок подсвечиваются все блоки-предки и потомки">
-          <input type="checkbox" id="canvas-show-paths" checked onchange="canvasRender()"> Пути
+          <input type="checkbox" id="canvas-show-paths" checked onchange="canvasRender(); togglePathsCheckbox()"> Пути
         </label>
         <select id="canvas-lang" class="select btn-sm" onchange="canvasRender()">
           <option value="ru">RU</option>
@@ -632,7 +632,7 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="supabase-client.js?v=20251029zf"></script>
-  <script src="script.js?v=20251029zf"></script>
+  <script src="supabase-client.js?v=20251029zh"></script>
+  <script src="script.js?v=20251029zh"></script>
 </body>
 </html>
