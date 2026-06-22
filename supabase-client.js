@@ -166,7 +166,7 @@ async function cloudSaveReference(ref, isShared, existingId) {
       tone: ref.tone || '',
       tags: ref.tags || [],
       notes: ref.notes || '',
-      profile_data: ref.profileData || ref.data || {},
+      profile_data: ref.profileData || ref.profile || ref.data || {},
       is_shared: !!isShared,
       is_active: ref.isActive !== false
     };
