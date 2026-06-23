@@ -2895,6 +2895,8 @@ function parseDrawioXML(xmlString) {
       branches: [],
       x: v.x,
       y: v.y,
+      w: v.w,
+      h: v.h,
       next_default: '', next_yes: '', next_no: ''
     });
   });
@@ -3640,8 +3642,10 @@ function canvasRender() {
     // decision/start/end tend to be shorter labels — keep compact
     if (type === 'decision') nodeW = Math.min(nodeW, 220);
     if (type === 'start' || type === 'end') nodeW = Math.min(nodeW, 200);
-    if (typeof b.w === 'number' && b.w > 80) nodeW = Math.min(Math.max(b.w, 150), 340); // respect imported width
+    if (typeof b.w === 'number' && b.w > 40) nodeW = Math.min(Math.max(b.w, 120), 600); // respect imported Draw.io width
     node.style.width = nodeW + 'px';
+    // Respect imported Draw.io height so edge endpoints line up with the original layout
+    if (typeof b.h === 'number' && b.h > 40) node.style.minHeight = Math.min(Math.max(b.h, 40), 600) + 'px';
     if (b.color) {
       node.style.background = b.color;
       const isDark = isColorDark(b.color);
@@ -3807,6 +3811,38 @@ function buildCanvasEdges(blocks, opts = {}) {
     return 200;
   };
 
+  const boxOf = (b) => {
+    let w;
+    if (typeof b.w === 'number' && b.w > 40) {
+      w = Math.min(Math.max(b.w, 120), 600);
+    } else {
+      const titleLen = (b.title || '').length;
+      const bodyLen = (b.ru || b.uz || '').length;
+      const contentLen = Math.max(titleLen * 1.5, bodyLen);
+      if (contentLen > 260) w = 300;
+      else if (contentLen > 160) w = 270;
+      else if (contentLen > 90) w = 240;
+      else if (contentLen > 40) w = 210;
+      else w = 180;
+      if (b.type === 'decision') w = Math.min(w, 220);
+      if (b.type === 'start' || b.type === 'end') w = Math.min(w, 200);
+    }
+    let h;
+    if (typeof b.h === 'number' && b.h > 40) h = Math.min(Math.max(b.h, 40), 600);
+    else h = approxH(b);
+    const x = b.x || 0, y = b.y || 0;
+    return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+  };
+  const boxPoint = (box, fx, fy) => ({ x: box.x + box.w * fx, y: box.y + box.h * fy });
+  const anchorToward = (box, target) => {
+    const dx = target.x - box.cx, dy = target.y - box.cy;
+    if (dx === 0 && dy === 0) return { x: box.cx, y: box.y + box.h };
+    const sx = dx === 0 ? Infinity : (box.w / 2) / Math.abs(dx);
+    const sy = dy === 0 ? Infinity : (box.h / 2) / Math.abs(dy);
+    const t = Math.min(sx, sy);
+    return { x: box.cx + dx * t, y: box.cy + dy * t };
+  };
+
   let maxX = 0, maxY = 0;
   blocks.forEach(b => {
     maxX = Math.max(maxX, (b.x || 0) + NW);
@@ -3901,19 +3937,24 @@ function buildCanvasEdges(blocks, opts = {}) {
 
     // ─── If branch carries imported Draw.io waypoints, reproduce that exact routing ──
     if (branch && branch.waypoints && branch.waypoints.length) {
-      const fxC = (from.x || 0) + NW / 2;
-      const fyC = (from.y || 0) + fh;
-      const txC = (to.x || 0) + NW / 2;
-      const tyC = (to.y || 0);
+      const sBox = boxOf(from);
+      const tBox = boxOf(to);
       const pts = branch.waypoints;
-      // Start from source center-bottom, go through waypoints, end at target center-top
-      let dpath = `M${fxC},${fyC}`;
+      // Start: explicit Draw.io exit fraction, else face the first waypoint
+      const start = (branch.exitX !== undefined && branch.exitY !== undefined)
+        ? boxPoint(sBox, branch.exitX, branch.exitY)
+        : anchorToward(sBox, pts[0]);
+      // End: explicit Draw.io entry fraction, else face the last waypoint
+      const end = (branch.entryX !== undefined && branch.entryY !== undefined)
+        ? boxPoint(tBox, branch.entryX, branch.entryY)
+        : anchorToward(tBox, pts[pts.length - 1]);
+      let dpath = `M${start.x},${start.y}`;
       pts.forEach(p => { dpath += ` L${p.x},${p.y}`; });
-      dpath += ` L${txC},${tyC}`;
+      dpath += ` L${end.x},${end.y}`;
       const markerId2 = colorToMarkerId[color] || colorToMarkerId[BRANCH_COLOR_DEFAULT];
       svg += `<path d="${dpath}" data-from="${from.id}" data-to="${to.id}" stroke="${color}" stroke-width="1.8" fill="none" marker-end="url(#${markerId2})" opacity="0.85"/>`;
       if (label) {
-        const mid = pts[Math.floor(pts.length / 2)] || { x: (fxC + txC) / 2, y: (fyC + tyC) / 2 };
+        const mid = pts[Math.floor(pts.length / 2)] || { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
         const cleanLabel = label.replace(/\n+/g, ' ').trim().slice(0, 40);
         const lblW = Math.max(36, cleanLabel.length * 7 + 14);
         svg += `<rect x="${mid.x - lblW/2}" y="${mid.y - 11}" width="${lblW}" height="22" rx="9" fill="white" stroke="${color}" stroke-width="1.5"/>`;
