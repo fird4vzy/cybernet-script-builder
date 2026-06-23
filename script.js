@@ -2726,10 +2726,30 @@ function parseDrawioPage(rootEl) {
       if (!label && cell.parentElement && cell.parentElement.tagName === 'UserObject') {
         label = cleanCellText(cell.parentElement.getAttribute('value') || cell.parentElement.getAttribute('label') || '');
       }
+      // Extract waypoints (bend points) so we can reproduce the Draw.io routing
+      let waypoints = [];
+      const egeom = cell.querySelector('mxGeometry');
+      if (egeom) {
+        const ptsArray = egeom.querySelector('Array[as="points"]');
+        if (ptsArray) {
+          ptsArray.querySelectorAll('mxPoint').forEach(p => {
+            const px = parseFloat(p.getAttribute('x'));
+            const py = parseFloat(p.getAttribute('y'));
+            if (!isNaN(px) && !isNaN(py)) waypoints.push({ x: px, y: py });
+          });
+        }
+      }
+      // Extract exit/entry connection styles (which side of the block the arrow attaches)
+      const est = parseDrawioStyle(styleStr);
       edges.push({
         source,
         target,
         label,
+        waypoints,
+        exitX: est.exitX !== undefined ? parseFloat(est.exitX) : undefined,
+        exitY: est.exitY !== undefined ? parseFloat(est.exitY) : undefined,
+        entryX: est.entryX !== undefined ? parseFloat(est.entryX) : undefined,
+        entryY: est.entryY !== undefined ? parseFloat(est.entryY) : undefined
       });
     }
   });
@@ -2851,7 +2871,10 @@ function parseDrawioXML(xmlString) {
       id: branchId(),
       label: e.label || '',
       color: BRANCH_COLOR_DEFAULT,
-      next: toBlock.id
+      next: toBlock.id,
+      // Preserve Draw.io routing geometry (waypoints) — used by edge renderer
+      waypoints: (e.waypoints && e.waypoints.length) ? e.waypoints.map(p => ({ x: p.x, y: p.y })) : undefined,
+      exitX: e.exitX, exitY: e.exitY, entryX: e.entryX, entryY: e.entryY
     });
   });
 
@@ -2868,6 +2891,12 @@ function parseDrawioXML(xmlString) {
     blocks.forEach(b => {
       b.x = (b.x || 0) + shiftX;
       b.y = (b.y || 0) + shiftY;
+      // Shift branch waypoints by the same offset so routing stays aligned
+      (b.branches || []).forEach(br => {
+        if (br.waypoints && br.waypoints.length) {
+          br.waypoints = br.waypoints.map(p => ({ x: p.x + shiftX, y: p.y + shiftY }));
+        }
+      });
     });
   }
 
@@ -3829,9 +3858,32 @@ function buildCanvasEdges(blocks, opts = {}) {
     return null; // none of the simple routes work
   };
 
-  const drawEdge = (from, to, label, color, sourceIdx, sourceTotal, targetIdx, targetTotal) => {
+  const drawEdge = (from, to, label, color, sourceIdx, sourceTotal, targetIdx, targetTotal, branch) => {
     if (!from || !to) return;
     const fh = approxH(from);
+
+    // ─── If branch carries imported Draw.io waypoints, reproduce that exact routing ──
+    if (branch && branch.waypoints && branch.waypoints.length) {
+      const fxC = (from.x || 0) + NW / 2;
+      const fyC = (from.y || 0) + fh;
+      const txC = (to.x || 0) + NW / 2;
+      const tyC = (to.y || 0);
+      const pts = branch.waypoints;
+      // Start from source center-bottom, go through waypoints, end at target center-top
+      let dpath = `M${fxC},${fyC}`;
+      pts.forEach(p => { dpath += ` L${p.x},${p.y}`; });
+      dpath += ` L${txC},${tyC}`;
+      const markerId2 = colorToMarkerId[color] || colorToMarkerId[BRANCH_COLOR_DEFAULT];
+      svg += `<path d="${dpath}" data-from="${from.id}" data-to="${to.id}" stroke="${color}" stroke-width="1.8" fill="none" marker-end="url(#${markerId2})" opacity="0.85"/>`;
+      if (label) {
+        const mid = pts[Math.floor(pts.length / 2)] || { x: (fxC + txC) / 2, y: (fyC + tyC) / 2 };
+        const cleanLabel = label.replace(/\n+/g, ' ').trim().slice(0, 40);
+        const lblW = Math.max(36, cleanLabel.length * 7 + 14);
+        svg += `<rect x="${mid.x - lblW/2}" y="${mid.y - 11}" width="${lblW}" height="22" rx="9" fill="white" stroke="${color}" stroke-width="1.5"/>`;
+        svg += `<text x="${mid.x}" y="${mid.y + 4}" text-anchor="middle" font-size="11" font-weight="700" fill="${color}">${esc(cleanLabel)}</text>`;
+      }
+      return;
+    }
 
     // ─── C: fan out exit point on source's bottom edge ──
     // For N outgoing: spread them evenly across center 60% of width
@@ -3930,7 +3982,7 @@ function buildCanvasEdges(blocks, opts = {}) {
       const targetTotal = inCount.get(br.next) || 1;
       const tIdx = inIndex.get(br.next) || 0;
       inIndex.set(br.next, tIdx + 1);
-      drawEdge(b, targetBlock, label, br.color || BRANCH_COLOR_DEFAULT, idx, total, tIdx, targetTotal);
+      drawEdge(b, targetBlock, label, br.color || BRANCH_COLOR_DEFAULT, idx, total, tIdx, targetTotal, br);
     });
   });
 
