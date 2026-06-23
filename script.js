@@ -2807,12 +2807,49 @@ function parseDrawioXML(xmlString) {
   const mainPage = pageRu || pages[0];
   const otherPage = pageUz || (pages.length > 1 && pages[1] !== mainPage ? pages[1] : null);
 
-  // ──── Build lookup of UZ texts by mxId (so we can merge by ID) ───
+  // ──── Build lookup of UZ texts ───
+  // Try by mxId first; if pages use different IDs (common in Visio→Drawio),
+  // fall back to matching by relative position on the page.
   const uzByMxId = new Map();
+  let uzByPosition = null;
   if (otherPage) {
     otherPage.vertices.forEach((v, id) => {
       if (v.title) uzByMxId.set(id, v.title);
     });
+
+    // Check how many IDs actually overlap between pages
+    let overlap = 0;
+    mainPage.vertices.forEach((_, id) => { if (uzByMxId.has(id)) overlap++; });
+
+    // If little/no ID overlap, build a position-based matcher
+    if (overlap < mainPage.vertices.size * 0.3) {
+      // Normalize both pages to their own min-corner, then match nearest blocks
+      const normBounds = (page) => {
+        let minX = Infinity, minY = Infinity;
+        page.vertices.forEach(v => { minX = Math.min(minX, v.x); minY = Math.min(minY, v.y); });
+        return { minX: isFinite(minX) ? minX : 0, minY: isFinite(minY) ? minY : 0 };
+      };
+      const ruB = normBounds(mainPage);
+      const uzB = normBounds(otherPage);
+      // List of UZ blocks with normalized coords
+      const uzList = [];
+      otherPage.vertices.forEach((v, id) => {
+        uzList.push({ id, nx: v.x - uzB.minX, ny: v.y - uzB.minY, title: v.title, used: false });
+      });
+      uzByPosition = (ruV) => {
+        const rnx = ruV.x - ruB.minX;
+        const rny = ruV.y - ruB.minY;
+        let best = null, bestD = Infinity;
+        for (const u of uzList) {
+          if (u.used) continue;
+          const d = Math.hypot(u.nx - rnx, u.ny - rny);
+          if (d < bestD) { bestD = d; best = u; }
+        }
+        // Accept match only if reasonably close (within ~120px after normalization)
+        if (best && bestD < 120) { best.used = true; return best.title; }
+        return '';
+      };
+    }
   }
 
   // ──── Compute incoming/outgoing on main page ─────
@@ -2832,7 +2869,7 @@ function parseDrawioXML(xmlString) {
     const id = makeIdFromTitle(title, usedIds);
     const type = detectBlockType(title, v.styleStr, incoming.get(mxId) || 0, outgoing.get(mxId) || 0);
     const ruText = v.title;
-    const uzText = uzByMxId.get(mxId) || '';
+    const uzText = uzByMxId.get(mxId) || (uzByPosition ? uzByPosition(v) : '') || '';
     // If RU text contains "Здравствуйте" and UZ identical, try to extract slash-separated translation
     let cleanRu = ruText, cleanUz = uzText;
     if (ruText && ruText.includes('/') && !uzText) {
@@ -3885,26 +3922,23 @@ function buildCanvasEdges(blocks, opts = {}) {
       return;
     }
 
-    // ─── C: fan out exit point on source's bottom edge ──
-    // For N outgoing: spread them evenly across center 60% of width
+    // ─── C: exit point on source's bottom edge ──
+    // Multiple OUTGOING arrows spread slightly (they go to different targets)
     const fxCenter = (from.x || 0) + NW / 2;
     const fyExit = (from.y || 0) + fh;
     let fx = fxCenter;
     if (sourceTotal > 1) {
-      const usableW = NW * 0.7;
+      const usableW = NW * 0.5;
       const step = usableW / (sourceTotal + 1);
       fx = (from.x || 0) + (NW - usableW) / 2 + step * (sourceIdx + 1);
     }
 
-    // Same for entry point on target's top edge
+    // Entry point on target's top edge — all INCOMING arrows CONVERGE to the
+    // same center point (like Draw.io), so they merge into one clean line
+    // instead of fanning out across the block width.
     const txCenter = (to.x || 0) + NW / 2;
     const tyEntry = (to.y || 0);
-    let tx = txCenter;
-    if (targetTotal > 1) {
-      const usableW = NW * 0.7;
-      const step = usableW / (targetTotal + 1);
-      tx = (to.x || 0) + (NW - usableW) / 2 + step * (targetIdx + 1);
-    }
+    let tx = txCenter; // always center — no fan-out on entry
 
     let path = null;
     // ─── D: only run obstacle-aware routing when not dragging ──
