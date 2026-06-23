@@ -1459,15 +1459,39 @@ function renderTree() {
 }
 
 // Static SVG render of Canvas-style flowchart — used for "Схема" tab and exports
-function buildStaticCanvasSVG(lang, scale) {
+function buildStaticCanvasSVG(lang, scale, theme) {
   const d = data();
   const blocks = d.blocks;
   if (!blocks.length) return '';
+  theme = theme || 'light';
+  const showBoth = (lang === 'both');
+
+  // Theme palette
+  const T = theme === 'dark' ? {
+    bg: '#0A0A12', nodeBg: '#181822', nodeStroke: '#3D3D4D',
+    headFill: '#22222E', title: '#FAFAFA', body: '#B4B4C4',
+    titleHeaderText: '#FAFAFA', metaCard: '#11111B', metaBorder: '#4F46E5',
+    metaText: '#B4B4C4', metaTitle: '#FAFAFA', accent: '#818CF8'
+  } : {
+    bg: '#ffffff', nodeBg: '#ffffff', nodeStroke: '#d1d5db',
+    headFill: '#f9fafb', title: '#0f1419', body: '#4b5563',
+    titleHeaderText: '#0f1419', metaCard: '#ffffff', metaBorder: '#1e3a8a',
+    metaText: '#4b5563', metaTitle: '#1e3a8a', accent: '#4f46e5'
+  };
 
   const NW = 230;
   const approxH = (b) => {
     if (b.type === 'start' || b.type === 'end') return 60;
-    const txt = (b[lang] || b.ru || b.uz || '').length;
+    const ruLen = (b.ru || '').length;
+    const uzLen = (b.uz || '').length;
+    const txt = showBoth ? (ruLen + uzLen) : (b[lang] || b.ru || b.uz || '').length;
+    if (showBoth) {
+      // Two language blocks need more height
+      if (txt < 60) return 110;
+      if (txt < 160) return 160;
+      if (txt < 320) return 230;
+      return 300;
+    }
     if (txt < 30) return 80;
     if (txt < 80) return 110;
     if (txt < 160) return 150;
@@ -1483,38 +1507,63 @@ function buildStaticCanvasSVG(lang, scale) {
     maxX = Math.max(maxX, x + NW);
     maxY = Math.max(maxY, y + h);
   });
+
+  // Reserve space for title header card above the diagram
+  const meta = d.meta || {};
+  const hasHeader = !!(meta.author || meta.description || meta.goal || meta.version || d.name);
+  const headerH = hasHeader ? 200 : 0;
+
   const PAD = 40;
   const width = (maxX - minX + PAD * 2);
-  const height = (maxY - minY + PAD * 2);
+  const height = (maxY - minY + PAD * 2 + headerH);
   const offX = -minX + PAD;
-  const offY = -minY + PAD;
+  const offY = -minY + PAD + headerH;
 
-  // Get edges SVG content (re-use Canvas edge builder)
-  // It returns a full <svg>...</svg> — we'll extract its inner content
   const edgesSvg = buildCanvasEdges(blocks, { obstacleAware: true });
   const edgesInner = edgesSvg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
 
-  // Outer container with proper viewport for printing/export
   const dispW = width * scale;
   const dispH = height * scale;
 
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${dispW}" height="${dispH}" viewBox="0 0 ${width} ${height}" style="background: white;">`;
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${dispW}" height="${dispH}" viewBox="0 0 ${width} ${height}" style="background: ${T.bg};">`;
+  // Background rect (so PNG/PDF have the theme bg, not transparent)
+  svg += `<rect x="0" y="0" width="${width}" height="${height}" fill="${T.bg}"/>`;
 
-  // Translate everything by offset so all positive coordinates
+  // ─── Title header card ───
+  if (hasHeader) {
+    const cardX = PAD, cardY = PAD, cardW = Math.min(440, width - PAD * 2), cardH = 170;
+    svg += `<rect x="${cardX}" y="${cardY}" width="${cardW}" height="${cardH}" rx="12" fill="${T.metaCard}" stroke="${T.metaBorder}" stroke-width="2"/>`;
+    let ty = cardY + 30;
+    svg += `<text x="${cardX + 22}" y="${ty}" font-size="11" font-weight="600" fill="${T.accent}" font-family="monospace" letter-spacing="1.5">CYBERNET AI · КОНСТРУКТОР СКРИПТОВ</text>`;
+    ty += 30;
+    svg += `<text x="${cardX + 22}" y="${ty}" font-size="22" font-weight="800" fill="${T.metaTitle}">${esc((d.name || 'Скрипт').slice(0, 40))}</text>`;
+    ty += 28;
+    const metaRow = (label, val) => {
+      if (!val) return;
+      svg += `<text x="${cardX + 22}" y="${ty}" font-size="12" fill="${T.metaText}"><tspan font-weight="700" fill="${T.metaTitle}">${esc(label)}:</tspan> ${esc(String(val).slice(0, 55))}</text>`;
+      ty += 22;
+    };
+    metaRow('Версия', meta.version);
+    metaRow('Автор', meta.author);
+    metaRow('Описание', meta.description);
+    metaRow('Цель', meta.goal);
+  }
+
   svg += `<g transform="translate(${offX},${offY})">`;
-
-  // 1) Render edges first (under blocks)
   svg += edgesInner;
 
-  // 2) Render blocks on top — each as <g> with proper shape
   blocks.forEach(b => {
     const x = b.x || 0;
     const y = b.y || 0;
     const h = approxH(b);
     const type = b.type || 'normal';
-    const text = interpolate(b[lang] || '', d.vars);
-    const title = b.title || '(без названия)';
-    svg += renderStaticNode(b, x, y, NW, h, type, title, text);
+    const title = b.title || '';
+    if (showBoth) {
+      svg += renderStaticNodeBoth(b, x, y, NW, h, type, title, interpolate(b.ru || '', d.vars), interpolate(b.uz || '', d.vars), T);
+    } else {
+      const text = interpolate(b[lang] || '', d.vars);
+      svg += renderStaticNode(b, x, y, NW, h, type, title, text, T);
+    }
   });
 
   svg += '</g></svg>';
@@ -1522,93 +1571,159 @@ function buildStaticCanvasSVG(lang, scale) {
 }
 
 // Render one block as static SVG matching Canvas visual style
-function renderStaticNode(b, x, y, w, h, type, title, text) {
+function renderStaticNode(b, x, y, w, h, type, title, text, T) {
+  T = T || { nodeBg:'#fff', nodeStroke:'#d1d5db', headFill:'#f9fafb', title:'#0f1419', body:'#4b5563' };
   // Color/border per type (matches CSS .cv-shape-*)
-  let fill = '#ffffff', stroke = '#d1d5db', rx = 10;
+  let fill = T.nodeBg, stroke = T.nodeStroke, rx = 10;
   let leftAccent = null, leftAccentColor = null;
   let cornerSymbol = null, cornerSymbolColor = null;
+  let customColor = false;
 
   if (b.color) {
     fill = b.color;
+    customColor = true;
   } else {
     if (type === 'start') {
-      fill = '#dcfce7';
-      stroke = '#86efac';
-      rx = 32;
+      fill = T === undefined || T.nodeBg === '#fff' ? '#dcfce7' : 'rgba(52,211,153,0.14)';
+      stroke = '#86efac'; rx = 32;
     } else if (type === 'end') {
-      fill = '#fee2e2';
-      stroke = '#fca5a5';
-      rx = 32;
+      fill = T.nodeBg === '#fff' ? '#fee2e2' : 'rgba(255,77,109,0.14)';
+      stroke = '#fca5a5'; rx = 32;
     } else if (type === 'decision') {
-      fill = '#fef3c7';
-      stroke = '#fbbf24';
-      leftAccent = 6;
-      leftAccentColor = '#f59e0b';
-      cornerSymbol = '◆';
-      cornerSymbolColor = '#f59e0b';
+      fill = T.nodeBg === '#fff' ? '#fef3c7' : 'rgba(168,85,247,0.16)';
+      stroke = '#fbbf24'; leftAccent = 6; leftAccentColor = '#f59e0b';
+      cornerSymbol = '◆'; cornerSymbolColor = '#a855f7';
     } else if (type === 'question') {
-      fill = '#ffedd5';
-      stroke = '#fb923c';
-      leftAccent = 6;
-      leftAccentColor = '#f97316';
-      cornerSymbol = '?';
-      cornerSymbolColor = '#f97316';
+      fill = T.nodeBg === '#fff' ? '#ffedd5' : 'rgba(251,191,36,0.12)';
+      stroke = '#fb923c'; leftAccent = 6; leftAccentColor = '#f97316';
+      cornerSymbol = '?'; cornerSymbolColor = '#f97316';
     }
   }
 
-  let s = `<g class="static-node" data-id="${esc(b.id)}">`;
-  // Main body
-  s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" ry="${rx}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
-
-  // Left accent strip (decision/question)
-  if (leftAccent) {
-    s += `<rect x="${x}" y="${y}" width="${leftAccent}" height="${h}" rx="${rx}" ry="${rx}" fill="${leftAccentColor}"/>`;
-    // Cover the right side of the accent strip with the main fill so corners look right
-    s += `<rect x="${x + leftAccent}" y="${y}" width="2" height="${h}" fill="${fill}"/>`;
+  // Text colors: on custom color, decide by darkness
+  let titleColor = T.title, bodyColor = T.body;
+  if (customColor) {
+    const darkBg = isColorDark(b.color);
+    titleColor = darkBg ? '#fafafa' : '#1a1a2e';
+    bodyColor = darkBg ? '#e5e5e5' : '#333333';
   }
 
-  // Corner symbol
+  let s = `<g class="static-node" data-id="${esc(b.id)}">`;
+  s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" ry="${rx}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+
+  if (leftAccent) {
+    s += `<rect x="${x}" y="${y}" width="${leftAccent}" height="${h}" rx="${rx}" ry="${rx}" fill="${leftAccentColor}"/>`;
+    s += `<rect x="${x + leftAccent}" y="${y}" width="2" height="${h}" fill="${fill}"/>`;
+  }
   if (cornerSymbol) {
     s += `<text x="${x + w - 10}" y="${y + 16}" font-size="13" font-weight="700" fill="${cornerSymbolColor}" text-anchor="end">${esc(cornerSymbol)}</text>`;
   }
 
-  // Header strip with title
   const headH = 28;
-  const headFill = type === 'start' || type === 'end' ? 'rgba(255,255,255,0.55)' : '#f9fafb';
-  // Header rect (drawn slightly inset to respect rounded corners)
+  let headFill = (type === 'start' || type === 'end') ? 'rgba(255,255,255,0.25)' : T.headFill;
+  if (customColor) headFill = 'rgba(255,255,255,0.25)';
   if (type === 'start' || type === 'end') {
-    // Capsule header — only top portion rounded
     s += `<path d="M ${x + rx} ${y} L ${x + w - rx} ${y} A ${rx} ${rx} 0 0 1 ${x + w} ${y + rx} L ${x + w} ${y + headH} L ${x} ${y + headH} L ${x} ${y + rx} A ${rx} ${rx} 0 0 1 ${x + rx} ${y} Z" fill="${headFill}" opacity="0.6"/>`;
   } else {
     s += `<rect x="${x + (leftAccent || 0)}" y="${y + 1}" width="${w - (leftAccent || 0) - 2}" height="${headH - 1}" fill="${headFill}" rx="${Math.max(0, rx - 2)}"/>`;
   }
 
-  // Title (bold, may wrap to 2 lines)
   const titlePadL = (leftAccent || 0) + 10;
   const titleMaxW = w - titlePadL - 20;
   const titleLines = wrapText(title, titleMaxW, 12, 700);
   const titleLineH = 14;
   const titleStartY = y + 11 + (titleLines.length === 1 ? 4 : 0);
   titleLines.slice(0, 2).forEach((line, i) => {
-    s += `<text x="${x + titlePadL}" y="${titleStartY + i * titleLineH}" font-size="12" font-weight="700" fill="#0f1419">${esc(line)}</text>`;
+    s += `<text x="${x + titlePadL}" y="${titleStartY + i * titleLineH}" font-size="12" font-weight="700" fill="${titleColor}">${esc(line)}</text>`;
   });
 
-  // Body text (multi-line, clipped to block height)
   if (text) {
     const bodyMaxLines = Math.floor((h - headH - 14) / 14);
     if (bodyMaxLines > 0) {
       const bodyLines = wrapText(text, titleMaxW, 11, 400);
       const visibleLines = bodyLines.slice(0, bodyMaxLines);
       if (bodyLines.length > bodyMaxLines && visibleLines.length) {
-        // Add ellipsis
         const last = visibleLines[visibleLines.length - 1];
         visibleLines[visibleLines.length - 1] = last.length > 25 ? last.substring(0, 25) + '…' : last + '…';
       }
       visibleLines.forEach((line, i) => {
-        s += `<text x="${x + titlePadL}" y="${y + headH + 14 + i * 14}" font-size="11" fill="#4b5563">${esc(line)}</text>`;
+        s += `<text x="${x + titlePadL}" y="${y + headH + 14 + i * 14}" font-size="11" fill="${bodyColor}">${esc(line)}</text>`;
       });
     }
   }
+
+  s += '</g>';
+  return s;
+}
+
+// Render block with BOTH languages (RU + UZ) for export
+function renderStaticNodeBoth(b, x, y, w, h, type, title, ruText, uzText, T) {
+  let fill = T.nodeBg, stroke = T.nodeStroke, rx = 10;
+  let leftAccent = null, leftAccentColor = null, cornerSymbol = null, cornerSymbolColor = null;
+  let customColor = false;
+
+  if (b.color) { fill = b.color; customColor = true; }
+  else {
+    if (type === 'start') { fill = T.nodeBg === '#ffffff' ? '#dcfce7' : 'rgba(52,211,153,0.14)'; stroke = '#86efac'; rx = 28; }
+    else if (type === 'end') { fill = T.nodeBg === '#ffffff' ? '#fee2e2' : 'rgba(255,77,109,0.14)'; stroke = '#fca5a5'; rx = 28; }
+    else if (type === 'decision') { fill = T.nodeBg === '#ffffff' ? '#fef3c7' : 'rgba(168,85,247,0.16)'; stroke = '#fbbf24'; leftAccent = 6; leftAccentColor = '#f59e0b'; cornerSymbol = '◆'; cornerSymbolColor = '#a855f7'; }
+    else if (type === 'question') { fill = T.nodeBg === '#ffffff' ? '#ffedd5' : 'rgba(251,191,36,0.12)'; stroke = '#fb923c'; leftAccent = 6; leftAccentColor = '#f97316'; cornerSymbol = '?'; cornerSymbolColor = '#f97316'; }
+  }
+
+  let titleColor = T.title, bodyColor = T.body, labelColor = T.accent;
+  if (customColor) {
+    const darkBg = isColorDark(b.color);
+    titleColor = darkBg ? '#fafafa' : '#1a1a2e';
+    bodyColor = darkBg ? '#e5e5e5' : '#333333';
+    labelColor = darkBg ? '#c7d2fe' : '#4f46e5';
+  }
+
+  let s = `<g class="static-node" data-id="${esc(b.id)}">`;
+  s += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" ry="${rx}" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>`;
+  if (leftAccent) {
+    s += `<rect x="${x}" y="${y}" width="${leftAccent}" height="${h}" rx="${rx}" ry="${rx}" fill="${leftAccentColor}"/>`;
+    s += `<rect x="${x + leftAccent}" y="${y}" width="2" height="${h}" fill="${fill}"/>`;
+  }
+  if (cornerSymbol) {
+    s += `<text x="${x + w - 10}" y="${y + 16}" font-size="13" font-weight="700" fill="${cornerSymbolColor}" text-anchor="end">${esc(cornerSymbol)}</text>`;
+  }
+
+  const headH = 26;
+  let headFill = (type === 'start' || type === 'end' || customColor) ? 'rgba(255,255,255,0.25)' : T.headFill;
+  if (type === 'start' || type === 'end') {
+    s += `<path d="M ${x + rx} ${y} L ${x + w - rx} ${y} A ${rx} ${rx} 0 0 1 ${x + w} ${y + rx} L ${x + w} ${y + headH} L ${x} ${y + headH} L ${x} ${y + rx} A ${rx} ${rx} 0 0 1 ${x + rx} ${y} Z" fill="${headFill}" opacity="0.6"/>`;
+  } else {
+    s += `<rect x="${x + (leftAccent || 0)}" y="${y + 1}" width="${w - (leftAccent || 0) - 2}" height="${headH - 1}" fill="${headFill}" rx="${Math.max(0, rx - 2)}"/>`;
+  }
+
+  const padL = (leftAccent || 0) + 10;
+  const maxW = w - padL - 20;
+  // Title
+  const titleLines = wrapText(title, maxW, 11, 700);
+  s += `<text x="${x + padL}" y="${y + 17}" font-size="11" font-weight="700" fill="${titleColor}">${esc(titleLines[0] || '')}</text>`;
+
+  let cursorY = y + headH + 14;
+  const remainingH = h - headH - 12;
+  const perLang = Math.floor((remainingH - 24) / 2); // split space between RU and UZ
+  const maxLinesPerLang = Math.max(1, Math.floor(perLang / 13));
+
+  // RU
+  s += `<text x="${x + padL}" y="${cursorY}" font-size="8" font-weight="700" fill="${labelColor}" font-family="monospace">RU</text>`;
+  cursorY += 12;
+  const ruLines = wrapText(ruText, maxW, 10, 400).slice(0, maxLinesPerLang);
+  ruLines.forEach(line => {
+    s += `<text x="${x + padL}" y="${cursorY}" font-size="10" fill="${bodyColor}">${esc(line)}</text>`;
+    cursorY += 13;
+  });
+  cursorY += 4;
+  // UZ
+  s += `<text x="${x + padL}" y="${cursorY}" font-size="8" font-weight="700" fill="${labelColor}" font-family="monospace">UZ</text>`;
+  cursorY += 12;
+  const uzLines = wrapText(uzText, maxW, 10, 400).slice(0, maxLinesPerLang);
+  uzLines.forEach(line => {
+    s += `<text x="${x + padL}" y="${cursorY}" font-size="10" fill="${bodyColor}" font-style="italic">${esc(line)}</text>`;
+    cursorY += 13;
+  });
 
   s += '</g>';
   return s;
@@ -1770,10 +1885,18 @@ function exportJSON() {
   toast('JSON скачан');
 }
 
+// Helper: read export options (lang + theme) from UI
+function getExportOptions() {
+  const lang = document.getElementById('export-lang')?.value || 'both';
+  const theme = document.getElementById('export-theme')?.value || 'light';
+  return { lang, theme };
+}
+
 // ─── SVG (standalone, full-size) ───────────────────────────────
 function exportSVG() {
   if (!data().blocks.length) { toast('Нет блоков для экспорта', 'error'); return; }
-  const svg = buildStaticCanvasSVG('ru', 1);
+  const { lang, theme } = getExportOptions();
+  const svg = buildStaticCanvasSVG(lang, 1, theme);
   downloadBlob(svg, activeProfile.replace(/[^\w.-]/g, '_') + '_flowchart.svg', 'image/svg+xml');
   toast('SVG схемы скачан');
 }
@@ -1781,7 +1904,9 @@ function exportSVG() {
 // ─── PNG via canvas ───────────────────────────────────────────
 function exportPNG() {
   if (!data().blocks.length) { toast('Нет блоков для экспорта', 'error'); return; }
-  const svgString = buildStaticCanvasSVG('ru', 1);
+  const { lang, theme } = getExportOptions();
+  const svgString = buildStaticCanvasSVG(lang, 1, theme);
+  const bgColor = theme === 'dark' ? '#0A0A12' : '#ffffff';
   const parser = new DOMParser();
   const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
   const svgEl = svgDoc.documentElement;
@@ -1798,7 +1923,7 @@ function exportPNG() {
     canvas.width = width * scale;
     canvas.height = height * scale;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = 'white';
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.scale(scale, scale);
     ctx.drawImage(img, 0, 0);
@@ -1833,7 +1958,9 @@ function exportFlowchartPDF() {
   }
 
   toast('Генерирую PDF...', 'info');
-  const svgString = buildStaticCanvasSVG('ru', 1);
+  const { lang, theme } = getExportOptions();
+  const svgString = buildStaticCanvasSVG(lang, 1, theme);
+  const bgColor = theme === 'dark' ? '#0A0A12' : '#ffffff';
 
   // Parse dimensions
   const parser = new DOMParser();
@@ -1854,7 +1981,7 @@ function exportFlowchartPDF() {
     canvas.width = width * scale;
     canvas.height = height * scale;
     const ctx = canvas.getContext('2d');
-    ctx.fillStyle = 'white';
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.scale(scale, scale);
     ctx.drawImage(img, 0, 0);
@@ -1867,6 +1994,11 @@ function exportFlowchartPDF() {
     const pdf = new jsPDFLib({ orientation, unit: 'pt', format: 'a3' });
     const pageW = pdf.internal.pageSize.getWidth();
     const pageH = pdf.internal.pageSize.getHeight();
+    // Fill page background for dark theme
+    if (theme === 'dark') {
+      pdf.setFillColor(10, 10, 18);
+      pdf.rect(0, 0, pageW, pageH, 'F');
+    }
 
     // Fit image into page preserving aspect ratio
     const margin = 20;
