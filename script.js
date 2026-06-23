@@ -263,7 +263,13 @@ function collectIntents() {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════
 function esc(s) { return (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-function interpolate(text, vars) { if (!text) return ''; return text.replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined && vars[k] !== '') ? vars[k] : m); }
+function interpolate(text, vars) {
+  if (!text) return '';
+  // Support both {VAR} and [VAR] placeholder styles (AI sometimes uses square brackets)
+  return text
+    .replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined && vars[k] !== '') ? vars[k] : m)
+    .replace(/\[(\w+)\]/g, (m, k) => (vars[k] !== undefined && vars[k] !== '') ? vars[k] : m);
+}
 function hl(text, q) { const e = esc(text); if (!q) return e; const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return e.replace(new RegExp(safe, 'gi'), m => `<span class="highlight">${m}</span>`); }
 function matches(block, q) {
   if (!q) return true;
@@ -5191,7 +5197,7 @@ const DEFAULT_PROMPTS = {
 - Каждый блок имеет id (латиница+цифры+_, уникальный), title (короткое название), intent (для распознавания), type ("start"|"normal"|"question"|"decision"|"end"), ru (текст), uz (текст), branches (ветки к следующим блокам).
 - Branches: массив объектов { label, next }. Label короткий (1-3 слова). Next — id следующего блока.
 - Обязательно есть один блок type:"start" и минимум один type:"end".
-- Используй переменные: {BANK_NAME}, {PHONE}, {AGENT_NAME}, {AMOUNT}, {DAY}, {MONTH} где это уместно.
+- Используй переменные ТОЛЬКО в ФИГУРНЫХ скобках: {BANK_NAME}, {PHONE}, {AGENT_NAME}, {AMOUNT}, {DAY}, {MONTH} где это уместно. НИКОГДА не используй квадратные скобки [AMOUNT] — только фигурные {AMOUNT}.
 - Для сложных сценариев используй счётчики: если клиент повторяет одно и то же — нужны блоки intent_2, intent_3 со всё более жёсткими формулировками.
 
 🔴 КРИТИЧЕСКИ ВАЖНО про УЗБЕКСКИЙ ЯЗЫК (uz):
