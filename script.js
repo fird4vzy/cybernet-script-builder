@@ -3323,11 +3323,11 @@ function renderValidation() {
   const badge = document.getElementById('validate-badge');
   if (badge) {
     if (total === 0) {
-      badge.textContent = '✓';
-      badge.className = 'tab-badge show ok';
+      badge.textContent = '';            // clean -> no badge (notification style)
+      badge.className = 'rail-badge';
     } else {
-      badge.textContent = total;
-      badge.className = 'tab-badge show' + (issues.brokenLinks.length || issues.noStart.length ? '' : ' warn');
+      badge.textContent = total > 99 ? '99+' : total;
+      badge.className = 'rail-badge';    // small yellow corner badge
     }
   }
 
@@ -3398,12 +3398,11 @@ function updateValidationBadge() {
   const badge = document.getElementById('validate-badge');
   if (!badge) return;
   if (total === 0) {
-    badge.textContent = '✓';
-    badge.className = 'tab-badge show ok';
+    badge.textContent = '';              // clean -> no badge (notification style)
+    badge.className = 'rail-badge';
   } else {
-    badge.textContent = total;
-    const hasErrors = issues.brokenLinks.length || issues.noStart.length || issues.selfLoop.length;
-    badge.className = 'tab-badge show' + (hasErrors ? '' : ' warn');
+    badge.textContent = total > 99 ? '99+' : total;
+    badge.className = 'rail-badge';      // small yellow corner badge
   }
 }
 
@@ -4730,7 +4729,7 @@ function renderCanvasSidebar(id) {
   if (!id) {
     sidebar.innerHTML = `
       <div class="canvas-sidebar-empty">
-        <div style="font-size: 36px; margin-bottom: 12px;">👆</div>
+        <div style="display:flex;justify-content:center;margin-bottom:12px;color:var(--tx-tertiary);"><svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V6a3 3 0 0 1 6 0v5"/><path d="M21 11a4 4 0 0 0-4-4h-2v8H9"/><path d="M9 15v3a3 3 0 0 0 6 0v-3"/><circle cx="12" cy="22" r="0.5" fill="currentColor"/></svg></div>
         <div style="font-weight: 600; color: #374151; margin-bottom: 6px;">Выберите блок</div>
         <div style="font-size: 13px; color: #6b7280; line-height: 1.5;">Кликните по любому блоку. Зажмите и тяните по пустому месту, чтобы выделить рамкой несколько блоков. Shift+клик — добавить к выделению.<br><br>Двигать холст: два пальца по тачпаду / колёсико мыши, либо <b>пробел</b> + перетаскивание (или средняя кнопка мыши). Ctrl/⌘ + колёсико — зум.</div>
       </div>`;
