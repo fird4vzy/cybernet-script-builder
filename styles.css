@@ -814,6 +814,10 @@ kbd { padding: 2px 7px; background: var(--bg-surface); border: 1px solid #cbd5e1
   pointer-events: none;
   overflow: visible;
 }
+.canvas-stage svg.canvas-edges path {
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
 
 .cv-node {
   position: absolute;
