@@ -4167,3 +4167,19 @@ body.canvas-fullscreen-active .side-rail {
   flex-shrink: 0;
 }
 .style-row-del:hover { background: var(--err-soft); border-color: var(--coral, #ff4d6d); }
+
+/* Export options (lang + theme selectors) */
+.export-options {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.export-opt-group { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.export-opt-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tx-tertiary);
+}
+.export-options select { width: 100%; }
