@@ -3991,3 +3991,79 @@ body.canvas-fullscreen-active .side-rail {
 .meta-grid .cs-field { display: flex; flex-direction: column; gap: 6px; }
 [data-theme="dark"] .meta-editor { background: var(--bg-surface); border-color: var(--bd-default); }
 @media (max-width: 640px) { .meta-grid { grid-template-columns: 1fr; } }
+
+/* ═══════════════════════════════════════════════════════════════
+   CANVAS TITLE CARD
+   ═══════════════════════════════════════════════════════════════ */
+.cv-title-card {
+  position: absolute;
+  width: 380px;
+  background: var(--bg-surface);
+  border: 2px solid var(--accent);
+  border-radius: 12px;
+  padding: 18px 20px;
+  z-index: 5;
+  box-shadow: var(--sh-lg);
+}
+.cv-title-brand {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-text);
+  margin-bottom: 8px;
+}
+.cv-title-name {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--tx-primary);
+  margin-bottom: 10px;
+}
+.cv-title-row {
+  font-size: 12px;
+  color: var(--tx-secondary);
+  line-height: 1.6;
+}
+.cv-title-row b { color: var(--tx-primary); }
+
+/* Custom AI style buttons */
+.ai-btn-custom {
+  background: var(--accent-soft) !important;
+  border-color: var(--accent-soft-bd) !important;
+  color: var(--accent-text) !important;
+}
+.ai-btn-custom:hover { background: var(--accent) !important; color: #fff !important; }
+.ai-btn-add {
+  background: transparent !important;
+  border: 1px dashed var(--bd-strong) !important;
+  color: var(--tx-secondary) !important;
+  font-size: 12px !important;
+}
+.ai-btn-add:hover { border-color: var(--accent) !important; color: var(--accent-text) !important; }
+
+/* Style manager rows */
+.style-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--bd-default);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.style-row-info { flex: 1; }
+.style-row-label { font-weight: 600; color: var(--tx-primary); margin-bottom: 4px; }
+.style-row-desc { font-size: 12px; color: var(--tx-secondary); line-height: 1.5; }
+.style-row-del {
+  width: 28px; height: 28px;
+  border: 1px solid var(--bd-default);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--coral, #ff4d6d);
+  cursor: pointer;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.style-row-del:hover { background: var(--err-soft); border-color: var(--coral, #ff4d6d); }
