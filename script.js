@@ -4142,10 +4142,42 @@ function initCanvasHandlers() {
   if (!viewport || viewport.dataset.handlersAttached) return;
   viewport.dataset.handlersAttached = '1';
 
+  viewport.style.overflow = 'hidden'; // pan via transform only — no conflicting native scrollbars
+
+  // Space-to-pan: track the Space key (ignored while typing in inputs)
+  if (!window.__cvSpacePanBound) {
+    window.__cvSpacePanBound = true;
+    document.addEventListener('keydown', (e) => {
+      if (e.code !== 'Space') return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      canvasState.spaceHeld = true;
+      const vp = document.getElementById('canvas-viewport');
+      if (vp) { vp.style.cursor = 'grab'; e.preventDefault(); }
+    });
+    document.addEventListener('keyup', (e) => {
+      if (e.code !== 'Space') return;
+      canvasState.spaceHeld = false;
+      const vp = document.getElementById('canvas-viewport');
+      if (vp) vp.style.cursor = '';
+    });
+  }
+
   viewport.addEventListener('mousedown', (e) => {
     if (e.target.closest('.cv-node')) return;
-    if (e.button !== 0) return;
     if (simState.active) return;
+
+    // Pan the canvas: middle mouse button, or Space held + left drag
+    if (e.button === 1 || (e.button === 0 && canvasState.spaceHeld)) {
+      e.preventDefault();
+      canvasState.panning = {
+        startX: e.clientX, startY: e.clientY,
+        origPanX: canvasState.panX, origPanY: canvasState.panY
+      };
+      viewport.classList.add('panning');
+      return;
+    }
+    if (e.button !== 0) return;
 
     // Shift on empty area = additive box-select; plain click on empty = clear + box-select
     const stage = document.getElementById('canvas-stage');
@@ -4306,7 +4338,14 @@ function initCanvasHandlers() {
 
   // Wheel zoom (Ctrl+wheel only)
   viewport.addEventListener('wheel', (e) => {
-    if (!e.ctrlKey && !e.metaKey) return;
+    // No Ctrl/Cmd -> pan (trackpad two-finger swipe / mouse wheel). With Ctrl/Cmd -> zoom.
+    if (!e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      canvasState.panX -= e.deltaX;
+      canvasState.panY -= e.deltaY;
+      applyCanvasTransform();
+      return;
+    }
     e.preventDefault();
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
     const newZoom = Math.max(0.25, Math.min(2, canvasState.zoom * delta));
@@ -4693,7 +4732,7 @@ function renderCanvasSidebar(id) {
       <div class="canvas-sidebar-empty">
         <div style="font-size: 36px; margin-bottom: 12px;">👆</div>
         <div style="font-weight: 600; color: #374151; margin-bottom: 6px;">Выберите блок</div>
-        <div style="font-size: 13px; color: #6b7280; line-height: 1.5;">Кликните по любому блоку. Зажмите и тяните по пустому месту, чтобы выделить рамкой несколько блоков. Shift+клик — добавить к выделению.</div>
+        <div style="font-size: 13px; color: #6b7280; line-height: 1.5;">Кликните по любому блоку. Зажмите и тяните по пустому месту, чтобы выделить рамкой несколько блоков. Shift+клик — добавить к выделению.<br><br>Двигать холст: два пальца по тачпаду / колёсико мыши, либо <b>пробел</b> + перетаскивание (или средняя кнопка мыши). Ctrl/⌘ + колёсико — зум.</div>
       </div>`;
     return;
   }
