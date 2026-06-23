@@ -1957,77 +1957,93 @@ function exportFlowchartPDF() {
     return;
   }
 
-  toast('Генерирую PDF...', 'info');
   const { lang, theme } = getExportOptions();
-  const svgString = buildStaticCanvasSVG(lang, 1, theme);
   const bgColor = theme === 'dark' ? '#0A0A12' : '#ffffff';
+  // If "both" — render two separate single-language pages (RU page, then UZ page)
+  const langPages = lang === 'both' ? ['ru', 'uz'] : [lang];
 
-  // Parse dimensions
-  const parser = new DOMParser();
-  const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
-  const svgEl = svgDoc.documentElement;
-  const vb = (svgEl.getAttribute('viewBox') || '0 0 1000 1000').split(/\s+/).map(Number);
-  const width = vb[2] || 1000;
-  const height = vb[3] || 1000;
+  toast('Генерирую PDF...', 'info');
 
-  const img = new Image();
-  const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(svgBlob);
+  // Render each language to a PNG dataURL (async via Image), then assemble PDF
+  const renderLangToImage = (oneLang) => new Promise((resolve, reject) => {
+    const svgString = buildStaticCanvasSVG(oneLang, 1, theme);
+    const parser = new DOMParser();
+    const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+    const svgEl = svgDoc.documentElement;
+    const vb = (svgEl.getAttribute('viewBox') || '0 0 1000 1000').split(/\s+/).map(Number);
+    const width = vb[2] || 1000;
+    const height = vb[3] || 1000;
+    const img = new Image();
+    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    img.onload = function() {
+      const scale = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      resolve({ imgData: canvas.toDataURL('image/png'), width, height });
+    };
+    img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('SVG render failed')); };
+    img.src = url;
+  });
 
-  img.onload = function() {
-    // Render to canvas at 2x for crisp text
-    const scale = 2;
-    const canvas = document.createElement('canvas');
-    canvas.width = width * scale;
-    canvas.height = height * scale;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = bgColor;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.scale(scale, scale);
-    ctx.drawImage(img, 0, 0);
-    URL.revokeObjectURL(url);
+  (async () => {
+    try {
+      const pages = [];
+      for (const oneLang of langPages) {
+        pages.push({ lang: oneLang, ...(await renderLangToImage(oneLang)) });
+      }
 
-    const imgData = canvas.toDataURL('image/png');
+      let pdf = null;
+      pages.forEach((page, idx) => {
+        const orientation = page.width >= page.height ? 'landscape' : 'portrait';
+        if (idx === 0) {
+          pdf = new jsPDFLib({ orientation, unit: 'pt', format: 'a3' });
+        } else {
+          pdf.addPage('a3', orientation);
+        }
+        const pageW = pdf.internal.pageSize.getWidth();
+        const pageH = pdf.internal.pageSize.getHeight();
+        if (theme === 'dark') {
+          pdf.setFillColor(10, 10, 18);
+          pdf.rect(0, 0, pageW, pageH, 'F');
+        }
+        // Language label at top corner
+        const labelTxt = page.lang === 'uz' ? 'UZ · O\'ZBEK' : 'RU · РУССКИЙ';
+        pdf.setFontSize(11);
+        pdf.setTextColor(theme === 'dark' ? 129 : 79, theme === 'dark' ? 140 : 70, theme === 'dark' ? 248 : 229);
+        pdf.text(labelTxt, 24, 28);
 
-    // Choose orientation based on aspect ratio
-    const orientation = width >= height ? 'landscape' : 'portrait';
-    const pdf = new jsPDFLib({ orientation, unit: 'pt', format: 'a3' });
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-    // Fill page background for dark theme
-    if (theme === 'dark') {
-      pdf.setFillColor(10, 10, 18);
-      pdf.rect(0, 0, pageW, pageH, 'F');
+        const margin = 20;
+        const topReserve = 36;
+        const availW = pageW - margin * 2;
+        const availH = pageH - margin * 2 - topReserve;
+        const imgRatio = page.width / page.height;
+        const availRatio = availW / availH;
+        let drawW, drawH;
+        if (imgRatio > availRatio) { drawW = availW; drawH = availW / imgRatio; }
+        else { drawH = availH; drawW = availH * imgRatio; }
+        const offsetX = (pageW - drawW) / 2;
+        const offsetY = topReserve + (availH - drawH) / 2 + margin;
+        pdf.addImage(page.imgData, 'PNG', offsetX, offsetY, drawW, drawH);
+      });
+
+      pdf.save(activeProfile.replace(/[^\w.-]/g, '_') + '_flowchart.pdf');
+      toast(`✓ PDF скачан${langPages.length > 1 ? ' (RU + UZ, 2 страницы)' : ''}`);
+    } catch (e) {
+      console.error(e);
+      toast('Не удалось создать PDF, скачиваю PNG', 'error');
+      exportPNG();
     }
-
-    // Fit image into page preserving aspect ratio
-    const margin = 20;
-    const availW = pageW - margin * 2;
-    const availH = pageH - margin * 2;
-    const imgRatio = width / height;
-    const availRatio = availW / availH;
-    let drawW, drawH;
-    if (imgRatio > availRatio) {
-      drawW = availW;
-      drawH = availW / imgRatio;
-    } else {
-      drawH = availH;
-      drawW = availH * imgRatio;
-    }
-    const offsetX = (pageW - drawW) / 2;
-    const offsetY = (pageH - drawH) / 2;
-
-    pdf.addImage(imgData, 'PNG', offsetX, offsetY, drawW, drawH);
-    pdf.save(activeProfile.replace(/[^\w.-]/g, '_') + '_flowchart.pdf');
-    toast('✓ PDF скачан');
-  };
-  img.onerror = function() {
-    URL.revokeObjectURL(url);
-    toast('Не удалось создать PDF, скачиваю PNG', 'error');
-    exportPNG();
-  };
-  img.src = url;
+  })();
 }
+
 
 // ─── Markdown ─────────────────────────────────────────────────
 function exportMarkdown() {
