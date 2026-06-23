@@ -263,7 +263,7 @@ function collectIntents() {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════
 function esc(s) { return (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-function interpolate(text, vars) { if (!text) return ''; return text.replace(/\{(\w+)\}/g, (m, k) => vars[k] !== undefined ? vars[k] : m); }
+function interpolate(text, vars) { if (!text) return ''; return text.replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined && vars[k] !== '') ? vars[k] : m); }
 function hl(text, q) { const e = esc(text); if (!q) return e; const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); return e.replace(new RegExp(safe, 'gi'), m => `<span class="highlight">${m}</span>`); }
 function matches(block, q) {
   if (!q) return true;
@@ -716,11 +716,7 @@ function renderBlocks() {
               <span class="ai-status-badge" onclick="openLLMSettings()" title="Настроить API ключ">⚙</span>
             </div>
             <div class="ai-buttons-grid">
-              <button class="ai-btn" onclick="improveBlockTextInList('${b.id}', 'sell')">🎯 Продающий</button>
-              <button class="ai-btn" onclick="improveBlockTextInList('${b.id}', 'short')">✂️ Короче</button>
-              <button class="ai-btn" onclick="improveBlockTextInList('${b.id}', 'pressure')">⚡ Давление</button>
-              <button class="ai-btn" onclick="improveBlockTextInList('${b.id}', 'soft')">🤗 Мягче</button>
-              <button class="ai-btn" onclick="improveBlockTextInList('${b.id}', 'fix')" style="grid-column: 1 / -1;">✍️ Исправить стиль</button>
+              ${renderStyleButtons(b.id, 'improveBlockTextInList')}
             </div>
           </div>
           <div class="block-actions">
@@ -3368,6 +3364,32 @@ function canvasRender() {
   const edgesSvg = buildCanvasEdges(d.blocks);
   stage.insertAdjacentHTML('beforeend', edgesSvg);
 
+  // ─── Title header card on canvas (if meta filled) ───
+  const meta = d.meta || {};
+  const hasMeta = meta.author || meta.description || meta.goal || meta.version;
+  if (hasMeta || d.name) {
+    // Position above topmost block
+    let minX = Infinity, minY = Infinity;
+    d.blocks.forEach(b => {
+      if (typeof b.x === 'number') minX = Math.min(minX, b.x);
+      if (typeof b.y === 'number') minY = Math.min(minY, b.y);
+    });
+    if (!isFinite(minX)) { minX = 40; minY = 40; }
+    const titleCard = document.createElement('div');
+    titleCard.className = 'cv-title-card';
+    titleCard.style.left = minX + 'px';
+    titleCard.style.top = (minY - 200) + 'px';
+    titleCard.innerHTML = `
+      <div class="cv-title-brand">CYBERNET AI · Конструктор скриптов</div>
+      <div class="cv-title-name">${esc(d.name || 'Скрипт')}</div>
+      ${meta.version ? `<div class="cv-title-row"><b>Версия:</b> ${esc(meta.version)}</div>` : ''}
+      ${meta.author ? `<div class="cv-title-row"><b>Автор:</b> ${esc(meta.author)}</div>` : ''}
+      ${meta.description ? `<div class="cv-title-row"><b>Описание:</b> ${esc(meta.description)}</div>` : ''}
+      ${meta.goal ? `<div class="cv-title-row"><b>Цель:</b> ${esc(meta.goal)}</div>` : ''}
+    `;
+    stage.appendChild(titleCard);
+  }
+
   // Nodes
   d.blocks.forEach(b => {
     const x = typeof b.x === 'number' ? b.x : 40;
@@ -4489,11 +4511,7 @@ function renderCanvasSidebar(id) {
         <span class="ai-status-badge" onclick="openLLMSettings()" title="Настроить API ключ">⚙</span>
       </div>
       <div class="ai-buttons-grid">
-        <button class="ai-btn" onclick="improveBlockText('${esc(b.id)}', 'sell')">🎯 Продающий</button>
-        <button class="ai-btn" onclick="improveBlockText('${esc(b.id)}', 'short')">✂️ Короче</button>
-        <button class="ai-btn" onclick="improveBlockText('${esc(b.id)}', 'pressure')">⚡ Давление</button>
-        <button class="ai-btn" onclick="improveBlockText('${esc(b.id)}', 'soft')">🤗 Мягче</button>
-        <button class="ai-btn" onclick="improveBlockText('${esc(b.id)}', 'fix')" style="grid-column: 1 / -1;">✍️ Исправить стиль</button>
+        ${renderStyleButtons(b.id, 'improveBlockText')}
         <button class="ai-btn ai-btn-special" onclick="generateObjectionResponses('${esc(b.id)}')" style="grid-column: 1 / -1;">💬 Ответы на возражение</button>
       </div>
     </div>
@@ -5477,6 +5495,142 @@ const IMPROVE_PROMPTS = {
   fix:      { label: '✍️ Исправить',   desc: 'Улучшить грамматику и стиль' }
 };
 
+// User-defined custom styles (saved to storage + cloud)
+const CUSTOM_STYLES_KEY = 'cybernet_ai_styles_v1';
+let customStyles = {};  // { styleId: { label, desc } }
+
+function loadCustomStyles() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_STYLES_KEY);
+    if (raw) customStyles = JSON.parse(raw);
+  } catch (e) { customStyles = {}; }
+  // Seed a couple of useful Uzbek-focused defaults on first run
+  if (!Object.keys(customStyles).length && !localStorage.getItem(CUSTOM_STYLES_KEY + '_seeded')) {
+    customStyles = {
+      uz_spoken: { label: '🗣 Разговорный UZ', desc: 'Перепиши узбекский (uz) текст более живым, разговорным, естественным — как реально говорит человек, а не книжный/официальный язык. Русский (ru) оставь близким по смыслу. Сохрани суть.' },
+      formal:    { label: '👔 Официальный',     desc: 'Сделать тон более официальным, деловым и уважительным на обоих языках.' }
+    };
+    try {
+      localStorage.setItem(CUSTOM_STYLES_KEY, JSON.stringify(customStyles));
+      localStorage.setItem(CUSTOM_STYLES_KEY + '_seeded', '1');
+    } catch (e) {}
+  }
+}
+
+function saveCustomStyles() {
+  try { localStorage.setItem(CUSTOM_STYLES_KEY, JSON.stringify(customStyles)); } catch (e) {}
+  // Sync to cloud settings if available
+  if (typeof cloudSaveSettings === 'function' && getCurrentUserId()) {
+    cloudSaveSettings(llmSettings, { ...aiPrompts, _customStyles: customStyles }, document.documentElement.getAttribute('data-theme'));
+  }
+}
+
+// Get style info from either built-in or custom
+function getStyleInfo(mode) {
+  return IMPROVE_PROMPTS[mode] || customStyles[mode] || { label: mode, desc: mode };
+}
+
+// Render all style buttons (built-in + custom) for a block
+function renderStyleButtons(blockId, handlerName) {
+  const builtins = Object.entries(IMPROVE_PROMPTS).filter(([k]) => k !== 'fix');
+  const customs = Object.entries(customStyles);
+  let html = '';
+  builtins.forEach(([k, v]) => {
+    html += `<button class="ai-btn" onclick="${handlerName}('${esc(blockId)}', '${k}')">${v.label}</button>`;
+  });
+  customs.forEach(([k, v]) => {
+    html += `<button class="ai-btn ai-btn-custom" onclick="${handlerName}('${esc(blockId)}', '${k}')">${esc(v.label)}</button>`;
+  });
+  // Fix style (full width) + Add style button
+  html += `<button class="ai-btn" onclick="${handlerName}('${esc(blockId)}', 'fix')" style="grid-column: 1 / -1;">✍️ Исправить стиль</button>`;
+  html += `<button class="ai-btn ai-btn-add" onclick="openStyleManager()" style="grid-column: 1 / -1;">+ Добавить свой стиль</button>`;
+  return html;
+}
+
+// ── Custom AI Style Manager ───────────────────────────────────
+function openStyleManager() {
+  let modal = document.getElementById('style-manager-modal');
+  if (modal) modal.remove();
+  modal = document.createElement('div');
+  modal.id = 'style-manager-modal';
+  modal.className = 'modal-backdrop';
+  modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+  modal.innerHTML = `
+    <div class="modal" style="max-width: 540px;">
+      <div class="modal-head">
+        <div class="modal-title">✨ Мои стили AI</div>
+        <button class="modal-x" onclick="document.getElementById('style-manager-modal').remove()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="info-box" style="margin-bottom:16px;">
+          Создайте свои стили переписывания текста. Например «Разговорный UZ» с описанием задачи для AI. Они появятся кнопками рядом со встроенными.
+        </div>
+        <div id="custom-styles-list"></div>
+        <div style="border-top:1px solid var(--bd-subtle); margin-top:16px; padding-top:16px;">
+          <div class="cs-field" style="margin-bottom:10px;">
+            <label class="field-label">Название стиля (с эмодзи)</label>
+            <input class="input" id="new-style-label" placeholder="🗣 Разговорный UZ">
+          </div>
+          <div class="cs-field" style="margin-bottom:10px;">
+            <label class="field-label">Что должен сделать AI (описание задачи)</label>
+            <textarea class="input" id="new-style-desc" rows="3" placeholder="Перепиши узбекский текст более живым, разговорным, естественным — как реально говорит человек. Русский оставь близким по смыслу."></textarea>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="addCustomStyle()">+ Добавить стиль</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  renderCustomStylesList();
+}
+
+function renderCustomStylesList() {
+  const list = document.getElementById('custom-styles-list');
+  if (!list) return;
+  const entries = Object.entries(customStyles);
+  if (!entries.length) {
+    list.innerHTML = '<div style="color:var(--tx-tertiary); font-size:13px; padding:8px 0;">Пока нет своих стилей. Добавьте первый ниже.</div>';
+    return;
+  }
+  list.innerHTML = entries.map(([k, v]) => `
+    <div class="style-row">
+      <div class="style-row-info">
+        <div class="style-row-label">${esc(v.label)}</div>
+        <div class="style-row-desc">${esc(v.desc)}</div>
+      </div>
+      <button class="style-row-del" onclick="deleteCustomStyle('${esc(k)}')" title="Удалить">×</button>
+    </div>
+  `).join('');
+}
+
+function addCustomStyle() {
+  const label = document.getElementById('new-style-label')?.value.trim();
+  const desc = document.getElementById('new-style-desc')?.value.trim();
+  if (!label || !desc) { toast('Заполните название и описание', 'error'); return; }
+  // Generate a unique key
+  const key = 'custom_' + Date.now().toString(36);
+  customStyles[key] = { label, desc };
+  saveCustomStyles();
+  document.getElementById('new-style-label').value = '';
+  document.getElementById('new-style-desc').value = '';
+  renderCustomStylesList();
+  // Refresh open editors so new button appears
+  if (canvasState.selectedId) renderCanvasSidebar(canvasState.selectedId);
+  renderBlocks();
+  toast('✓ Стиль добавлен');
+}
+
+function deleteCustomStyle(key) {
+  if (!customStyles[key]) return;
+  if (!confirm(`Удалить стиль «${customStyles[key].label}»?`)) return;
+  delete customStyles[key];
+  saveCustomStyles();
+  renderCustomStylesList();
+  if (canvasState.selectedId) renderCanvasSidebar(canvasState.selectedId);
+  renderBlocks();
+  toast('Стиль удалён');
+}
+
 async function improveBlockText(blockId, mode) {
   const d = data();
   const b = d.blocks.find(x => x.id === blockId);
@@ -5518,7 +5672,7 @@ async function improveBlockTextInList(blockId, mode) {
 }
 
 async function _doImproveBlock(b, mode, currentRu, currentUz, uiMode) {
-  const modeInfo = IMPROVE_PROMPTS[mode];
+  const modeInfo = getStyleInfo(mode);
   const systemPrompt = aiPrompts.improve_system;
   const userPrompt = fillTemplate(aiPrompts.improve_user, {
     title: b.title || '',
@@ -6545,6 +6699,29 @@ async function bootApp() {
   loadLLMSettings();
   loadReferences();
   loadPrompts();
+  loadCustomStyles();
+  // Pull cloud settings (API key, prompts, custom styles) so they sync across devices
+  try {
+    if (typeof cloudLoadSettings === 'function' && getCurrentUserId()) {
+      const s = await cloudLoadSettings();
+      if (s) {
+        if (s.llm_settings && s.llm_settings.apiKey) {
+          llmSettings = { ...llmSettings, ...s.llm_settings };
+          try { localStorage.setItem(LLM_SETTINGS_KEY, JSON.stringify(llmSettings)); } catch (e) {}
+        }
+        if (s.prompts) {
+          if (s.prompts._customStyles && Object.keys(s.prompts._customStyles).length) {
+            customStyles = s.prompts._customStyles;
+            try { localStorage.setItem(CUSTOM_STYLES_KEY, JSON.stringify(customStyles)); } catch (e) {}
+          }
+          const { _customStyles, ...promptsOnly } = s.prompts;
+          if (Object.keys(promptsOnly).length) {
+            aiPrompts = { ...aiPrompts, ...promptsOnly };
+          }
+        }
+      }
+    }
+  } catch (e) { console.error('Cloud settings load failed:', e); }
   // Подтянуть эталоны из облака
   try { await cloudPullReferences(); } catch (e) { console.error(e); }
   renderProfiles();
