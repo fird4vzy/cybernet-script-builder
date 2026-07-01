@@ -3980,8 +3980,16 @@ function buildCanvasEdges(blocks, opts = {}) {
     let tx = txCenter; // always center — no fan-out on entry
 
     let path = null;
+    // Aligned source/target on X -> ONE straight vertical (single-trunk look),
+    // but only when that direct line is clear of other blocks.
+    if (obstacleAware && Math.abs(fxCenter - txCenter) <= 10 && tyEntry > fyExit + 10) {
+      const ax = Math.round((fxCenter + txCenter) / 2);
+      if (!segmentHitsBlock(ax, fyExit, ax, tyEntry, from.id, to.id)) {
+        path = `M${ax},${fyExit} L${ax},${tyEntry}`;
+      }
+    }
     // ─── D: only run obstacle-aware routing when not dragging ──
-    if (obstacleAware && tyEntry > fyExit + 30) {
+    if (!path && obstacleAware && tyEntry > fyExit + 30) {
       path = routeAvoiding(fx, fyExit, tx, tyEntry, from.id, to.id);
     }
 
@@ -4730,6 +4738,15 @@ function renderCanvasSidebar(id) {
         </div>
 
         <div class="cs-multi-section">
+          <label class="field-label">Выровнять / собрать стрелки в линию</label>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn btn-sm" style="flex:1;" onclick="alignSelected('col')" title="Одинаковый центр по X — блоки встают в вертикальную колонну, стрелки между ними сливаются в одну линию">↕ В столбец</button>
+            <button class="btn btn-sm" style="flex:1;" onclick="alignSelected('row')" title="Одинаковый центр по Y — блоки встают в горизонтальный ряд">↔ В ряд</button>
+            <button class="btn btn-sm" style="flex:1;" onclick="alignSelected('vdist')" title="Равные вертикальные промежутки между блоками">≡ Разровнять</button>
+          </div>
+        </div>
+
+        <div class="cs-multi-section">
           <button class="btn btn-danger" style="width: 100%;" onclick="deleteSelectedBlocks()">
             🗑 Удалить ${count} ${count === 1 ? 'блок' : 'блоков'}
             <span style="opacity: 0.7; margin-left: 6px; font-size: 11px;">(Delete)</span>
@@ -5249,6 +5266,52 @@ function bulkSetType() {
   const type = document.getElementById('bulk-type')?.value;
   if (!type) return;
   applyToSelected(b => { b.type = type; }, 'Тип: ' + type);
+}
+
+// Measure a node's ACTUAL rendered size so alignment centres are exact.
+function cvNodeSize(id) {
+  const el = document.querySelector(`.cv-node[data-id="${CSS.escape(id)}"]`);
+  return el ? { w: el.offsetWidth, h: el.offsetHeight } : { w: 200, h: 80 };
+}
+
+// Align / distribute selected blocks. Arrows attach centre-to-centre, so aligning
+// blocks to a shared axis makes the arrows between them collapse into one clean line.
+function alignSelected(mode) {
+  const ids = [...canvasState.selectedIds];
+  if (ids.length < 2) { toast('Выделите минимум 2 блока'); return; }
+  const d = data();
+  const items = ids.map(id => {
+    const b = d.blocks.find(x => x.id === id);
+    if (!b) return null;
+    const sz = cvNodeSize(id);
+    return { b, w: sz.w, h: sz.h };
+  }).filter(Boolean);
+  if (items.length < 2) return;
+  snapshot('Выравнивание блоков');
+
+  if (mode === 'col') {
+    const cx = Math.round(items.reduce((a, it) => a + (it.b.x || 0) + it.w / 2, 0) / items.length);
+    items.forEach(it => { it.b.x = Math.round(cx - it.w / 2); });
+  } else if (mode === 'row') {
+    const cy = Math.round(items.reduce((a, it) => a + (it.b.y || 0) + it.h / 2, 0) / items.length);
+    items.forEach(it => { it.b.y = Math.round(cy - it.h / 2); });
+  } else if (mode === 'vdist') {
+    const sorted = items.slice().sort((p, q) => (p.b.y || 0) - (q.b.y || 0));
+    const y0 = (sorted[0].b.y || 0);
+    const y1 = (sorted[sorted.length - 1].b.y || 0);
+    const step = (y1 - y0) / (sorted.length - 1);
+    sorted.forEach((it, i) => { it.b.y = Math.round(y0 + step * i); });
+  }
+
+  // Moving blocks invalidates imported Draw.io waypoints on their edges — drop them
+  // so arrows re-route straight along the new alignment.
+  const movedSet = new Set(ids);
+  d.blocks.forEach(bl => (bl.branches || []).forEach(br => {
+    if (br.waypoints && (movedSet.has(bl.id) || movedSet.has(br.next))) br.waypoints = undefined;
+  }));
+
+  canvasRender();
+  saveToStorage();
 }
 
 // ═══════════════════════════════════════════════════════════════
