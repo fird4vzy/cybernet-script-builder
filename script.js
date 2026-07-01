@@ -3647,6 +3647,7 @@ function canvasRender() {
     if (typeof b.h === 'number' && b.h > 40) node.style.minHeight = Math.min(Math.max(b.h, 40), 600) + 'px';
     if (b.color) {
       node.style.background = b.color;
+      node.style.setProperty('--user-color', b.color);  // CSS .cv-node-custom reads var(--user-color) !important
       const isDark = isColorDark(b.color);
       if (isDark) node.classList.add('cv-node-dark');
     }
@@ -3877,13 +3878,10 @@ function buildCanvasEdges(blocks, opts = {}) {
 
   // ─── Build obstacle list (other blocks) for path avoidance ─────
   // Used in obstacleAware mode to detour around blocks the path would cross
-  const obstacles = blocks.map(b => ({
-    id: b.id,
-    x1: (b.x || 0) - 8,
-    y1: (b.y || 0) - 8,
-    x2: (b.x || 0) + NW + 8,
-    y2: (b.y || 0) + approxH(b) + 8
-  }));
+  const obstacles = blocks.map(b => {
+    const bx = boxOf(b);
+    return { id: b.id, x1: bx.x - 8, y1: bx.y - 8, x2: bx.x + bx.w + 8, y2: bx.y + bx.h + 8 };
+  });
 
   // Returns true if [x1,y1]→[x2,y2] horizontal/vertical segment crosses any block other than fromId/toId
   const segmentHitsBlock = (sx, sy, ex, ey, fromId, toId) => {
@@ -3964,20 +3962,21 @@ function buildCanvasEdges(blocks, opts = {}) {
 
     // ─── C: exit point on source's bottom edge ──
     // Multiple OUTGOING arrows spread slightly (they go to different targets)
-    const fxCenter = (from.x || 0) + NW / 2;
-    const fyExit = (from.y || 0) + fh;
+    const sBoxF = boxOf(from);
+    const tBoxF = boxOf(to);
+    const fxCenter = sBoxF.cx;
+    const fyExit = sBoxF.y + sBoxF.h;
     let fx = fxCenter;
     if (sourceTotal > 1) {
-      const usableW = NW * 0.5;
+      const usableW = sBoxF.w * 0.5;
       const step = usableW / (sourceTotal + 1);
-      fx = (from.x || 0) + (NW - usableW) / 2 + step * (sourceIdx + 1);
+      fx = sBoxF.x + (sBoxF.w - usableW) / 2 + step * (sourceIdx + 1);
     }
 
     // Entry point on target's top edge — all INCOMING arrows CONVERGE to the
-    // same center point (like Draw.io), so they merge into one clean line
-    // instead of fanning out across the block width.
-    const txCenter = (to.x || 0) + NW / 2;
-    const tyEntry = (to.y || 0);
+    // same center point (like Draw.io), so they merge into one clean line.
+    const txCenter = tBoxF.cx;
+    const tyEntry = tBoxF.y;
     let tx = txCenter; // always center — no fan-out on entry
 
     let path = null;
@@ -4306,9 +4305,19 @@ function initCanvasHandlers() {
       const nodeEl = document.querySelector(`.cv-node.dragging`);
       if (nodeEl) nodeEl.classList.remove('dragging');
       const wasMoved = canvasState.dragging.moved;
+      const movedIds = new Set((canvasState.dragging.group || []).map(g => g.id));
       canvasState.dragging = null;
       // After release: re-render edges with FULL obstacle-aware routing
       if (wasMoved) {
+        // Imported Draw.io waypoints were baked for the OLD positions; once an endpoint
+        // moves they no longer line up (diagonal "floating" arrows). Drop waypoints ONLY
+        // on edges touching a moved block so they re-route cleanly; untouched edges keep theirs.
+        if (movedIds.size) {
+          data().blocks.forEach(bl => (bl.branches || []).forEach(br => {
+            if (br.waypoints && (movedIds.has(bl.id) || movedIds.has(br.next))) br.waypoints = undefined;
+          }));
+          saveToStorage();
+        }
         const edgesEl = document.querySelector('.canvas-edges');
         if (edgesEl) edgesEl.outerHTML = buildCanvasEdges(data().blocks, { obstacleAware: true });
       }
@@ -4387,6 +4396,18 @@ function canvasResetZoom() {
   canvasState.panY = 0;
   applyCanvasTransform();
   updateZoomIndicator();
+}
+
+function resetAllRouting() {
+  const d = data();
+  const has = (d.blocks || []).some(b => (b.branches || []).some(br => br.waypoints && br.waypoints.length));
+  if (!has) { toast('Изгибов из Draw.io нет — стрелки строятся автоматически'); return; }
+  snapshot('Перерисовка связей');
+  let n = 0;
+  (d.blocks || []).forEach(b => (b.branches || []).forEach(br => { if (br.waypoints) { br.waypoints = undefined; n++; } }));
+  canvasRender();
+  saveToStorage();
+  toast(`Связи перестроены: ${n}`);
 }
 
 function canvasFitToView() {
