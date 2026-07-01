@@ -3582,7 +3582,7 @@ function canvasRender() {
   stage.innerHTML = '';
 
   // Edges SVG layer
-  const edgesSvg = buildCanvasEdges(d.blocks);
+  const edgesSvg = buildCanvasEdges(d.blocks, { obstacleAware: true });
   stage.insertAdjacentHTML('beforeend', edgesSvg);
 
   // ─── Title header card on canvas (if meta filled) ───
@@ -3980,36 +3980,41 @@ function buildCanvasEdges(blocks, opts = {}) {
     let tx = txCenter; // always center — no fan-out on entry
 
     let path = null;
-    // Aligned source/target on X -> ONE straight vertical (single-trunk look),
-    // but only when that direct line is clear of other blocks.
-    if (obstacleAware && Math.abs(fxCenter - txCenter) <= 10 && tyEntry > fyExit + 10) {
-      const ax = Math.round((fxCenter + txCenter) / 2);
-      if (!segmentHitsBlock(ax, fyExit, ax, tyEntry, from.id, to.id)) {
-        path = `M${ax},${fyExit} L${ax},${tyEntry}`;
-      }
-    }
-    // ─── D: only run obstacle-aware routing when not dragging ──
-    if (!path && obstacleAware && tyEntry > fyExit + 30) {
-      path = routeAvoiding(fx, fyExit, tx, tyEntry, from.id, to.id);
-      if (!path) {
-        // Direct route crosses blocks (long / skip edge). Bus it through a CLEAR vertical
-        // corridor to the side, grid-snapped so parallel long edges share ONE trunk line.
-        // Blocks are NOT moved — only the arrow path.
-        const STEP = 24;
-        const yTop = Math.min(fyExit, tyEntry) + 6, yBot = Math.max(fyExit, tyEntry) - 6;
-        const findCorridor = (startX, dir) => {
-          for (let i = 1; i <= 18; i++) {
-            const cxs = Math.round((startX + dir * i * STEP) / STEP) * STEP;
-            if (!segmentHitsBlock(cxs, yTop, cxs, yBot, from.id, to.id)) return cxs;
+    // Downward edge: route through a grid-snapped SHARED vertical channel, so parallel
+    // arrows in the same corridor collapse into ONE trunk. Blocks are NOT moved.
+    if (obstacleAware && tyEntry > fyExit + 16) {
+      const STEP = 16;
+      const yTopC = fyExit + 8, yBotC = tyEntry - 8;
+      if (yBotC - yTopC >= 2) {
+        // preferred channel = grid-snapped midpoint of the two centres (siblings merge)
+        let chX = Math.round(((fxCenter + txCenter) / 2) / STEP) * STEP;
+        if (segmentHitsBlock(chX, yTopC, chX, yBotC, from.id, to.id)) {
+          // blocked (long / skip edge) -> scan for a clear grid-aligned corridor.
+          // Scan RIGHT fully first, then LEFT, so parallel edges converge to the SAME
+          // corridor (deterministic side) instead of splitting left/right.
+          let found = null;
+          for (let i = 1; i <= 60 && found === null; i++) {
+            const r = chX + i * STEP;
+            if (!segmentHitsBlock(r, yTopC, r, yBotC, from.id, to.id)) found = r;
           }
-          return null;
-        };
-        let cx = findCorridor(Math.max(fxCenter, txCenter) + 24, +1);
-        if (cx === null) cx = findCorridor(Math.min(fxCenter, txCenter) - 24, -1);
-        if (cx !== null) {
-          path = `M${fx},${fyExit} L${fx},${fyExit + 10} L${cx},${fyExit + 10} L${cx},${tyEntry - 10} L${tx},${tyEntry - 10} L${tx},${tyEntry}`;
+          for (let i = 1; i <= 60 && found === null; i++) {
+            const l = chX - i * STEP;
+            if (!segmentHitsBlock(l, yTopC, l, yBotC, from.id, to.id)) found = l;
+          }
+          chX = found;
+        }
+        if (chX !== null) {
+          if (Math.abs(fxCenter - chX) < 2 && Math.abs(txCenter - chX) < 2) {
+            path = `M${chX},${fyExit} L${chX},${tyEntry}`;
+          } else {
+            path = `M${fxCenter},${fyExit} L${fxCenter},${fyExit + 8} L${chX},${fyExit + 8} L${chX},${tyEntry - 8} L${txCenter},${tyEntry - 8} L${txCenter},${tyEntry}`;
+          }
         }
       }
+    }
+    // Fallback: obstacle-aware Z-routing when the channel could not be placed
+    if (!path && obstacleAware && tyEntry > fyExit + 30) {
+      path = routeAvoiding(fx, fyExit, tx, tyEntry, from.id, to.id);
     }
 
     // Fallback: simple 3-segment path
@@ -4427,14 +4432,12 @@ function canvasResetZoom() {
 
 function resetAllRouting() {
   const d = data();
-  const has = (d.blocks || []).some(b => (b.branches || []).some(br => br.waypoints && br.waypoints.length));
-  if (!has) { toast('Изгибов из Draw.io нет — стрелки строятся автоматически'); return; }
   snapshot('Перерисовка связей');
   let n = 0;
   (d.blocks || []).forEach(b => (b.branches || []).forEach(br => { if (br.waypoints) { br.waypoints = undefined; n++; } }));
-  canvasRender();
+  canvasRender(); // canvasRender now uses obstacle-aware channel routing
   saveToStorage();
-  toast(`Связи перестроены: ${n}`);
+  toast(n ? `Связи перестроены (сброшено изгибов: ${n})` : 'Связи перестроены');
 }
 
 function canvasFitToView() {
