@@ -3797,6 +3797,83 @@ function clearPathHighlight(updateSelection = true) {
 }
 
 
+// ═══════════════════════════════════════════════════════════════
+// MANUAL EDGE ROUTING — shared geometry + live editing helpers
+// ═══════════════════════════════════════════════════════════════
+function csBlockBox(b) {
+  let w;
+  if (typeof b.w === 'number' && b.w > 40) {
+    w = Math.min(Math.max(b.w, 120), 600);
+  } else {
+    const titleLen = (b.title || '').length;
+    const bodyLen = (b.ru || b.uz || '').length;
+    const contentLen = Math.max(titleLen * 1.5, bodyLen);
+    if (contentLen > 260) w = 300;
+    else if (contentLen > 160) w = 270;
+    else if (contentLen > 90) w = 240;
+    else if (contentLen > 40) w = 210;
+    else w = 180;
+    if (b.type === 'decision') w = Math.min(w, 220);
+    if (b.type === 'start' || b.type === 'end') w = Math.min(w, 200);
+  }
+  let h;
+  if (typeof b.h === 'number' && b.h > 40) h = Math.min(Math.max(b.h, 40), 600);
+  else if (b.type === 'start' || b.type === 'end') h = 60;
+  else { const t = (b.ru || b.uz || '').length; h = t < 30 ? 80 : t < 80 ? 110 : t < 160 ? 150 : 200; }
+  const x = b.x || 0, y = b.y || 0;
+  return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+}
+function csEdgeGeom(from, to, branch) {
+  const s = csBlockBox(from), t = csBlockBox(to);
+  const wps = (branch && branch.waypoints) || [];
+  const boxPoint = (bx, fx, fy) => ({ x: bx.x + bx.w * fx, y: bx.y + bx.h * fy });
+  const anchorToward = (bx, tp) => {
+    const dx = tp.x - bx.cx, dy = tp.y - bx.cy;
+    if (dx === 0 && dy === 0) return { x: bx.cx, y: bx.y + bx.h };
+    const sx = dx === 0 ? Infinity : (bx.w / 2) / Math.abs(dx);
+    const sy = dy === 0 ? Infinity : (bx.h / 2) / Math.abs(dy);
+    const k = Math.min(sx, sy);
+    return { x: bx.cx + dx * k, y: bx.cy + dy * k };
+  };
+  const start = (branch && branch.exitX != null && branch.exitY != null)
+    ? boxPoint(s, branch.exitX, branch.exitY)
+    : anchorToward(s, wps[0] || { x: t.cx, y: t.cy });
+  const end = (branch && branch.entryX != null && branch.entryY != null)
+    ? boxPoint(t, branch.entryX, branch.entryY)
+    : anchorToward(t, wps.length ? wps[wps.length - 1] : { x: s.cx, y: s.cy });
+  return { start, end, poly: [start, ...wps, end] };
+}
+function csEdgeD(from, to, branch) {
+  const g = csEdgeGeom(from, to, branch);
+  return 'M' + g.poly.map(pt => pt.x + ',' + pt.y).join(' L');
+}
+function csFindBlock(id) { return (data().blocks || []).find(b => b.id === id) || null; }
+function csGetBranch(fromId, toId) {
+  const b = csFindBlock(fromId);
+  return (b && b.branches) ? (b.branches.find(br => br.next === toId) || null) : null;
+}
+function csStagePoint(e) {
+  const stage = document.getElementById('canvas-stage');
+  const r = stage.getBoundingClientRect();
+  return { x: Math.round((e.clientX - r.left) / canvasState.zoom), y: Math.round((e.clientY - r.top) / canvasState.zoom) };
+}
+function csUpdateEdgeLive(ef, et) {
+  const from = csFindBlock(ef), to = csFindBlock(et), br = csGetBranch(ef, et);
+  if (!from || !to) return;
+  const d = csEdgeD(from, to, br);
+  document.querySelectorAll('.canvas-edges path[data-ef="' + CSS.escape(ef) + '"][data-et="' + CSS.escape(et) + '"]').forEach(el => el.setAttribute('d', d));
+  if (canvasState.wpDrag && br && br.waypoints) {
+    const wp = br.waypoints[canvasState.wpDrag.idx];
+    const h = document.querySelector('.edge-wp[data-ef="' + CSS.escape(ef) + '"][data-et="' + CSS.escape(et) + '"][data-idx="' + canvasState.wpDrag.idx + '"]');
+    if (h && wp) { h.setAttribute('cx', wp.x); h.setAttribute('cy', wp.y); }
+  }
+}
+function csStraightenEdge() {
+  if (!canvasState.selEdge) return;
+  const br = csGetBranch(canvasState.selEdge.from, canvasState.selEdge.to);
+  if (br && br.waypoints) { snapshot('Выпрямление стрелки'); br.waypoints = undefined; canvasRender(); saveToStorage(); renderCanvasSidebar(null); }
+}
+
 function buildCanvasEdges(blocks, opts = {}) {
   const obstacleAware = opts.obstacleAware !== false;  // default = true; pass false during drag
   const byId = {};
@@ -3932,26 +4009,27 @@ function buildCanvasEdges(blocks, opts = {}) {
     if (!from || !to) return;
     const fh = approxH(from);
 
-    // ─── If branch carries imported Draw.io waypoints, reproduce that exact routing ──
-    if (branch && branch.waypoints && branch.waypoints.length) {
-      const sBox = boxOf(from);
-      const tBox = boxOf(to);
-      const pts = branch.waypoints;
-      // Start: explicit Draw.io exit fraction, else face the first waypoint
-      const start = (branch.exitX !== undefined && branch.exitY !== undefined)
-        ? boxPoint(sBox, branch.exitX, branch.exitY)
-        : anchorToward(sBox, pts[0]);
-      // End: explicit Draw.io entry fraction, else face the last waypoint
-      const end = (branch.entryX !== undefined && branch.entryY !== undefined)
-        ? boxPoint(tBox, branch.entryX, branch.entryY)
-        : anchorToward(tBox, pts[pts.length - 1]);
-      let dpath = `M${start.x},${start.y}`;
-      pts.forEach(p => { dpath += ` L${p.x},${p.y}`; });
-      dpath += ` L${end.x},${end.y}`;
+    // ── Selected edge OR edge with manual waypoints -> editable polyline ──
+    const isSelEdge = canvasState.selEdge && canvasState.selEdge.from === from.id && canvasState.selEdge.to === to.id;
+    const hasWps = branch && branch.waypoints && branch.waypoints.length;
+    if (isSelEdge || hasWps) {
+      const geom = csEdgeGeom(from, to, branch);
+      const dpath = 'M' + geom.poly.map(pt => pt.x + ',' + pt.y).join(' L');
       const markerId2 = colorToMarkerId[color] || colorToMarkerId[BRANCH_COLOR_DEFAULT];
-      svg += `<path d="${dpath}" data-from="${from.id}" data-to="${to.id}" stroke="${color}" stroke-width="1.8" fill="none" marker-end="url(#${markerId2})" opacity="0.85"/>`;
-      if (label) {
-        const mid = pts[Math.floor(pts.length / 2)] || { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+      svg += `<path d="${dpath}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit" data-ef="${from.id}" data-et="${to.id}" style="pointer-events:stroke;cursor:pointer;"/>`;
+      svg += `<path d="${dpath}" data-from="${from.id}" data-to="${to.id}" data-ef="${from.id}" data-et="${to.id}" stroke="${isSelEdge ? '#2563eb' : color}" stroke-width="${isSelEdge ? 2.6 : 1.8}" fill="none" marker-end="url(#${markerId2})" opacity="${isSelEdge ? 1 : 0.85}"/>`;
+      if (isSelEdge) {
+        const poly = geom.poly;
+        for (let i = 0; i < poly.length - 1; i++) {
+          const mx = (poly[i].x + poly[i + 1].x) / 2, my = (poly[i].y + poly[i + 1].y) / 2;
+          svg += `<circle cx="${mx}" cy="${my}" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="1.6" class="edge-wp-add" data-ef="${from.id}" data-et="${to.id}" data-seg="${i}" style="pointer-events:all;cursor:copy;" opacity="0.9"/>`;
+        }
+        ((branch && branch.waypoints) || []).forEach((pt, i) => {
+          svg += `<circle cx="${pt.x}" cy="${pt.y}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" class="edge-wp" data-ef="${from.id}" data-et="${to.id}" data-idx="${i}" style="pointer-events:all;cursor:move;"/>`;
+        });
+      } else if (label) {
+        const pts = (branch && branch.waypoints) || [];
+        const mid = pts[Math.floor(pts.length / 2)] || { x: (geom.start.x + geom.end.x) / 2, y: (geom.start.y + geom.end.y) / 2 };
         const cleanLabel = label.replace(/\n+/g, ' ').trim().slice(0, 40);
         const lblW = Math.max(36, cleanLabel.length * 7 + 14);
         svg += `<rect x="${mid.x - lblW/2}" y="${mid.y - 11}" width="${lblW}" height="22" rx="9" fill="white" stroke="${color}" stroke-width="1.5"/>`;
@@ -4033,6 +4111,7 @@ function buildCanvasEdges(blocks, opts = {}) {
     }
 
     const markerId = colorToMarkerId[color] || colorToMarkerId[BRANCH_COLOR_DEFAULT];
+    svg += `<path d="${path}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit" data-ef="${from.id}" data-et="${to.id}" style="pointer-events:stroke;cursor:pointer;"/>`;
     svg += `<path d="${path}" data-from="${from.id}" data-to="${to.id}" stroke="${color}" stroke-width="1.8" fill="none" marker-end="url(#${markerId})" opacity="0.85"/>`;
 
     if (label) {
@@ -4197,6 +4276,40 @@ function initCanvasHandlers() {
     if (e.target.closest('.cv-node')) return;
     if (simState.active) return;
 
+    // ── Manual edge editing (waypoint handles / add-handles / edge select) ──
+    const _wp = e.target.closest('.edge-wp');
+    const _add = e.target.closest('.edge-wp-add');
+    const _hit = e.target.closest('.edge-hit');
+    if (_wp) {
+      e.preventDefault(); e.stopPropagation();
+      const br = csGetBranch(_wp.dataset.ef, _wp.dataset.et);
+      if (br && br.waypoints) { snapshot('Изгиб стрелки'); canvasState.wpDrag = { ef: _wp.dataset.ef, et: _wp.dataset.et, idx: +_wp.dataset.idx }; }
+      return;
+    }
+    if (_add) {
+      e.preventDefault(); e.stopPropagation();
+      const br = csGetBranch(_add.dataset.ef, _add.dataset.et);
+      if (br) {
+        snapshot('Изгиб стрелки');
+        if (!br.waypoints) br.waypoints = [];
+        const seg = +_add.dataset.seg;
+        br.waypoints.splice(seg, 0, csStagePoint(e));
+        canvasState.wpDrag = { ef: _add.dataset.ef, et: _add.dataset.et, idx: seg };
+        const edgesEl = document.querySelector('.canvas-edges');
+        if (edgesEl) edgesEl.outerHTML = buildCanvasEdges(data().blocks, { obstacleAware: false });
+      }
+      return;
+    }
+    if (_hit) {
+      e.preventDefault(); e.stopPropagation();
+      canvasState.selEdge = { from: _hit.dataset.ef, to: _hit.dataset.et };
+      canvasState.selectedId = null; canvasState.selectedIds.clear();
+      canvasRender();
+      renderCanvasSidebar(null);
+      return;
+    }
+    if (canvasState.selEdge) { canvasState.selEdge = null; canvasRender(); renderCanvasSidebar(null); }
+
     // Pan the canvas: middle mouse button, or Space held + left drag
     if (e.button === 1 || (e.button === 0 && canvasState.spaceHeld)) {
       e.preventDefault();
@@ -4234,6 +4347,15 @@ function initCanvasHandlers() {
   });
 
   document.addEventListener('mousemove', (e) => {
+    if (canvasState.wpDrag) {
+      const { ef, et, idx } = canvasState.wpDrag;
+      const br = csGetBranch(ef, et);
+      if (br && br.waypoints && br.waypoints[idx]) {
+        br.waypoints[idx] = csStagePoint(e);
+        csUpdateEdgeLive(ef, et);
+      }
+      return;
+    }
     if (canvasState.dragging) {
       const { id, offsetX, offsetY, group } = canvasState.dragging;
       // Require a small real movement before starting to drag (prevents jump on plain click)
@@ -4309,6 +4431,12 @@ function initCanvasHandlers() {
   });
 
   document.addEventListener('mouseup', (e) => {
+    if (canvasState.wpDrag) {
+      canvasState.wpDrag = null;
+      canvasRender();
+      saveToStorage();
+      return;
+    }
     if (canvasState.dragging) {
       if (canvasState.dragging.moved) {
         const { group } = canvasState.dragging;
@@ -4377,6 +4505,19 @@ function initCanvasHandlers() {
   });
 
   // Wheel zoom (Ctrl+wheel only)
+  viewport.addEventListener('dblclick', (e) => {
+    const wp = e.target.closest('.edge-wp');
+    if (!wp) return;
+    e.preventDefault(); e.stopPropagation();
+    const br = csGetBranch(wp.dataset.ef, wp.dataset.et);
+    if (br && br.waypoints) {
+      snapshot('Удаление изгиба');
+      br.waypoints.splice(+wp.dataset.idx, 1);
+      if (!br.waypoints.length) br.waypoints = undefined;
+      canvasRender(); saveToStorage();
+    }
+  });
+
   viewport.addEventListener('wheel', (e) => {
     // No Ctrl/Cmd -> pan (trackpad two-finger swipe / mouse wheel). With Ctrl/Cmd -> zoom.
     if (!e.ctrlKey && !e.metaKey) {
@@ -4726,6 +4867,26 @@ function simSetLang(lang) {
 function renderCanvasSidebar(id) {
   const sidebar = document.getElementById('canvas-sidebar');
   if (!sidebar) return;
+  if (id) canvasState.selEdge = null;
+  if (canvasState.selEdge) {
+    const fromB = csFindBlock(canvasState.selEdge.from), toB = csFindBlock(canvasState.selEdge.to);
+    const br = csGetBranch(canvasState.selEdge.from, canvasState.selEdge.to);
+    const nWp = (br && br.waypoints) ? br.waypoints.length : 0;
+    sidebar.innerHTML = `
+      <div class="canvas-sidebar-empty" style="text-align:left;">
+        <div style="font-weight:700;font-size:15px;margin-bottom:10px;color:var(--tx-primary);">Стрелка выбрана</div>
+        <div style="font-size:13px;color:var(--tx-secondary);line-height:1.7;">
+          ${esc((fromB && fromB.title) || '?')} → ${esc((toB && toB.title) || '?')}<br><br>
+          Точек изгиба: <b>${nWp}</b><br><br>
+          • Тяни <b style="color:#2563eb;">синие</b> точки — гнёшь стрелку.<br>
+          • Тяни белую точку на линии — добавляешь изгиб.<br>
+          • Двойной клик по синей точке — удалить.<br>
+          • Esc — снять выделение.
+        </div>
+        <button class="btn btn-sm btn-ghost" style="margin-top:14px;" onclick="csStraightenEdge()">Выпрямить (убрать изгибы)</button>
+      </div>`;
+    return;
+  }
 
   // Multi-select panel — when 2+ blocks selected
   if (canvasState.selectedIds.size > 1) {
@@ -4782,7 +4943,7 @@ function renderCanvasSidebar(id) {
       <div class="canvas-sidebar-empty">
         <div style="display:flex;justify-content:center;margin-bottom:12px;color:var(--tx-tertiary);"><svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V6a3 3 0 0 1 6 0v5"/><path d="M21 11a4 4 0 0 0-4-4h-2v8H9"/><path d="M9 15v3a3 3 0 0 0 6 0v-3"/><circle cx="12" cy="22" r="0.5" fill="currentColor"/></svg></div>
         <div style="font-weight: 600; color: #374151; margin-bottom: 6px;">Выберите блок</div>
-        <div style="font-size: 13px; color: #6b7280; line-height: 1.5;">Кликните по любому блоку. Зажмите и тяните по пустому месту, чтобы выделить рамкой несколько блоков. Shift+клик — добавить к выделению.<br><br>Двигать холст: два пальца по тачпаду / колёсико мыши, либо <b>пробел</b> + перетаскивание (или средняя кнопка мыши). Ctrl/⌘ + колёсико — зум.</div>
+        <div style="font-size: 13px; color: #6b7280; line-height: 1.5;">Кликните по любому блоку. Зажмите и тяните по пустому месту, чтобы выделить рамкой несколько блоков. Shift+клик — добавить к выделению.<br><br>Двигать холст: два пальца по тачпаду / колёсико мыши, либо <b>пробел</b> + перетаскивание (или средняя кнопка мыши). Ctrl/⌘ + колёсико — зум.<br><br>Кликни по <b>стрелке</b> — появятся точки, которыми её можно гнуть вручную (как в Draw.io).</div>
       </div>`;
     return;
   }
@@ -5160,6 +5321,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.key === 'Escape') {
+    if (canvasState.selEdge) { canvasState.selEdge = null; canvasRender(); renderCanvasSidebar(null); e.preventDefault(); return; }
     if (canvasState.selectedIds.size > 0) {
       selectClear();
       e.preventDefault();
