@@ -5289,6 +5289,95 @@ const autosave = {
   dirty: false
 };
 
+// ═══════════════════════════════════════════════════════════════
+// LOCAL VERSION HISTORY — rolling backups that SURVIVE page refresh
+// (the in-memory undo stack does not; this does)
+// ═══════════════════════════════════════════════════════════════
+const HISTORY_STORE_KEY = 'cybernet_sb_history_v1';
+const HISTORY_KEEP = 8;
+const HISTORY_MIN_GAP_MS = 45000;
+let _lastHistoryPush = 0;
+
+function pushVersionBackup(reason) {
+  try {
+    const now = Date.now();
+    if (now - _lastHistoryPush < HISTORY_MIN_GAP_MS) return;
+    if (!Object.keys(profiles).length) return;
+    const cleaned = {};
+    Object.entries(profiles).forEach(([name, p]) => { const { _migrated, ...rest } = p; cleaned[name] = rest; });
+    let arr = [];
+    try { arr = JSON.parse(localStorage.getItem(HISTORY_STORE_KEY) || '[]'); } catch { arr = []; }
+    // skip if identical to the newest backup (no real change)
+    const last = arr[arr.length - 1];
+    const sig = JSON.stringify(cleaned);
+    if (last && JSON.stringify(last.profiles) === sig) { _lastHistoryPush = now; return; }
+    arr.push({ ts: now, reason: reason || '', activeProfile, profiles: cleaned });
+    while (arr.length > HISTORY_KEEP) arr.shift();
+    let saved = false;
+    while (!saved && arr.length) {
+      try { localStorage.setItem(HISTORY_STORE_KEY, JSON.stringify(arr)); saved = true; }
+      catch (e) { arr.shift(); } // quota -> drop oldest, retry
+    }
+    _lastHistoryPush = now;
+  } catch (e) { /* backups are best-effort */ }
+}
+
+function getVersionBackups() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_STORE_KEY) || '[]'); } catch { return []; }
+}
+
+function restoreVersionBackup(ts) {
+  const snap = getVersionBackups().find(s => s.ts === ts);
+  if (!snap) { toast('Версия не найдена', 'error'); return; }
+  if (!confirm('Восстановить эту версию? Текущее состояние будет заменено (его можно вернуть через Ctrl+Z).')) return;
+  snapshot('Восстановление версии');
+  Object.keys(profiles).forEach(k => delete profiles[k]);
+  Object.entries(snap.profiles).forEach(([k, v]) => { profiles[k] = v; });
+  activeProfile = profiles[snap.activeProfile] ? snap.activeProfile : Object.keys(profiles)[0];
+  if (typeof renderProfiles === 'function') renderProfiles();
+  if (typeof renderBlocks === 'function') renderBlocks();
+  if (typeof renderVars === 'function') renderVars();
+  if (typeof renderStats === 'function') renderStats();
+  if (typeof canvasRender === 'function') canvasRender();
+  saveToStorage();
+  closeVersionHistory();
+  toast('✓ Версия восстановлена');
+}
+
+function closeVersionHistory() {
+  const m = document.getElementById('version-history-modal');
+  if (m) m.remove();
+}
+
+function openVersionHistory() {
+  closeVersionHistory();
+  const arr = getVersionBackups().slice().reverse();
+  const fmt = (ts) => {
+    const d = new Date(ts);
+    const mins = Math.round((Date.now() - ts) / 60000);
+    const ago = mins < 1 ? 'только что' : mins < 60 ? mins + ' мин назад' : Math.round(mins / 60) + ' ч назад';
+    return d.toLocaleString('ru-RU') + ' · ' + ago;
+  };
+  const rows = arr.length ? arr.map(s => {
+    const nBlocks = ((s.profiles[s.activeProfile] || {}).blocks || []).length;
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--bd-default);border-radius:8px;margin-bottom:8px;">'
+      + '<div><div style="font-weight:600;font-size:13px;">' + fmt(s.ts) + '</div>'
+      + '<div style="font-size:12px;color:var(--tx-tertiary);">Профиль: ' + esc(s.activeProfile || '—') + ' · блоков: ' + nBlocks + (s.reason ? ' · ' + esc(s.reason) : '') + '</div></div>'
+      + '<button class="btn btn-sm btn-primary" onclick="restoreVersionBackup(' + s.ts + ')">Восстановить</button>'
+      + '</div>';
+  }).join('') : '<div style="color:var(--tx-tertiary);padding:20px;text-align:center;">Пока нет сохранённых версий. Они копятся автоматически по мере работы.</div>';
+  const modal = document.createElement('div');
+  modal.id = 'version-history-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000;';
+  modal.innerHTML = '<div style="background:var(--bg-surface);color:var(--tx-primary);border-radius:12px;max-width:560px;width:92%;max-height:80vh;overflow:auto;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,0.4);">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div style="font-weight:700;font-size:16px;">История версий</div>'
+    + '<button class="btn btn-sm btn-ghost" onclick="closeVersionHistory()">✕</button></div>'
+    + '<div style="font-size:12px;color:var(--tx-tertiary);margin-bottom:14px;">Автоматические резервные копии в этом браузере, переживают обновление страницы. Выбери версию и нажми «Восстановить» (текущее можно вернуть через Ctrl+Z). Для надёжного бэкапа используй «Скачать → JSON».</div>'
+    + rows + '</div>';
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeVersionHistory(); });
+  document.body.appendChild(modal);
+}
+
 function saveToStorage() {
   if (!autosave.enabled) return;
   try {
@@ -5308,6 +5397,7 @@ function saveToStorage() {
     autosave.lastSaveAt = Date.now();
     autosave.dirty = false;
     updateAutosaveIndicator('saved');
+    pushVersionBackup('автосохранение');
     // Also sync to cloud (debounced, only if logged in)
     scheduleCloudSync();
   } catch (err) {
@@ -7039,6 +7129,7 @@ function resetSinglePrompt(key) {
 async function bootApp() {
   // 1. Сначала локальный кеш (быстро)
   let restored = loadFromStorage();
+  pushVersionBackup('старт сессии');
 
   // 2. Пробуем подтянуть из облака (источник истины для команды)
   let fromCloud = false;
