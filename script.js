@@ -5655,7 +5655,7 @@ async function geminiGenerate(systemPrompt, userPrompt, opts = {}) {
     throw new Error('API ключ не настроен. Нажмите "⚙️ Настройки AI" чтобы его добавить.');
   }
   const model = opts.model || llmSettings.model || 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(llmSettings.apiKey)}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   const body = {
     contents: [
@@ -5674,7 +5674,7 @@ async function geminiGenerate(systemPrompt, userPrompt, opts = {}) {
 
   const resp = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': llmSettings.apiKey },
     body: JSON.stringify(body)
   });
   if (!resp.ok) {
@@ -5750,8 +5750,8 @@ async function listAvailableModels() {
   if (!key) { toast('Сначала введите ключ', 'error'); return; }
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`;
-    const resp = await fetch(url);
+    const url = `https://generativelanguage.googleapis.com/v1beta/models`;
+    const resp = await fetch(url, { headers: { 'x-goog-api-key': key } });
     if (!resp.ok) {
       const err = await resp.text();
       let msg = `Ошибка ${resp.status}`;
@@ -7025,7 +7025,7 @@ async function bootApp() {
       const s = await cloudLoadSettings();
       if (s) {
         if (s.llm_settings && s.llm_settings.apiKey) {
-          llmSettings = { ...llmSettings, ...s.llm_settings };
+          Object.assign(llmSettings, s.llm_settings);
           try { localStorage.setItem(LLM_SETTINGS_KEY, JSON.stringify(llmSettings)); } catch (e) {}
         }
         if (s.prompts) {
