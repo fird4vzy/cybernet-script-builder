@@ -5946,31 +5946,52 @@ function fillTemplate(tpl, vars) {
 }
 
 const llmSettings = {
-  apiKey: '',
-  model: 'gemini-2.5-flash',  // newest, fast and capable
+  provider: 'gemini',        // 'gemini' | 'openai'
+  apiKey: '',                // mirror of the ACTIVE provider's key (kept in sync — everything else in the app reads this)
+  model: 'gemini-3.5-flash', // mirror of the ACTIVE provider's model
+  geminiApiKey: '',
+  geminiModel: 'gemini-3.5-flash',
+  openaiApiKey: '',
+  openaiModel: 'gpt-4o-mini',
   loaded: false
 };
+function csSyncActiveLLM() {
+  if (llmSettings.provider === 'openai') { llmSettings.apiKey = llmSettings.openaiApiKey; llmSettings.model = llmSettings.openaiModel; }
+  else { llmSettings.apiKey = llmSettings.geminiApiKey; llmSettings.model = llmSettings.geminiModel; }
+}
 
 function loadLLMSettings() {
   try {
     const raw = localStorage.getItem(LLM_SETTINGS_KEY);
     if (raw) {
       const s = JSON.parse(raw);
-      llmSettings.apiKey = s.apiKey || '';
-      llmSettings.model = s.model || 'gemini-2.5-flash';
-      // Migrate stale/deprecated model names that no longer work
+      // Migrate stale/deprecated Gemini model names that no longer work
       const migrations = {
-        'gemini-1.5-flash': 'gemini-2.5-flash',
-        'gemini-1.5-pro': 'gemini-2.5-pro',
-        'gemini-2.0-flash-exp': 'gemini-2.0-flash',
-        'gemini-pro': 'gemini-2.5-flash'
+        'gemini-1.5-flash': 'gemini-3.5-flash',
+        'gemini-1.5-pro': 'gemini-3.1-pro-preview',
+        'gemini-1.5-flash-latest': 'gemini-3.5-flash',
+        'gemini-1.5-pro-latest': 'gemini-3.1-pro-preview',
+        'gemini-1.5-flash-8b-latest': 'gemini-2.5-flash-lite',
+        'gemini-2.0-flash-exp': 'gemini-3.5-flash',
+        'gemini-2.0-flash': 'gemini-2.5-flash',      // shut down by Google
+        'gemini-2.0-flash-lite': 'gemini-2.5-flash-lite', // shut down by Google
+        'gemini-pro': 'gemini-3.5-flash'
       };
-      if (migrations[llmSettings.model]) {
-        console.log(`Migrated model ${llmSettings.model} → ${migrations[llmSettings.model]}`);
-        llmSettings.model = migrations[llmSettings.model];
-        // Persist the migration
-        try { localStorage.setItem(LLM_SETTINGS_KEY, JSON.stringify({ apiKey: llmSettings.apiKey, model: llmSettings.model })); } catch {}
+      if (s.provider) {
+        // Current (multi-provider) shape
+        llmSettings.provider = s.provider === 'openai' ? 'openai' : 'gemini';
+        llmSettings.geminiApiKey = s.geminiApiKey || '';
+        llmSettings.geminiModel = migrations[s.geminiModel] || s.geminiModel || 'gemini-3.5-flash';
+        llmSettings.openaiApiKey = s.openaiApiKey || '';
+        llmSettings.openaiModel = s.openaiModel || 'gpt-4o-mini';
+      } else {
+        // Legacy single-provider (Gemini-only) shape — migrate in place
+        llmSettings.provider = 'gemini';
+        llmSettings.geminiApiKey = s.apiKey || '';
+        llmSettings.geminiModel = migrations[s.model] || s.model || 'gemini-3.5-flash';
       }
+      csSyncActiveLLM();
+      saveLLMSettings(); // persist migration/new shape
     }
   } catch (err) { console.error('LLM settings load failed:', err); }
   llmSettings.loaded = true;
@@ -5979,8 +6000,11 @@ function loadLLMSettings() {
 function saveLLMSettings() {
   try {
     localStorage.setItem(LLM_SETTINGS_KEY, JSON.stringify({
-      apiKey: llmSettings.apiKey,
-      model: llmSettings.model
+      provider: llmSettings.provider,
+      geminiApiKey: llmSettings.geminiApiKey,
+      geminiModel: llmSettings.geminiModel,
+      openaiApiKey: llmSettings.openaiApiKey,
+      openaiModel: llmSettings.openaiModel
     }));
   } catch (err) { console.error('LLM settings save failed:', err); }
 }
@@ -5988,10 +6012,11 @@ function saveLLMSettings() {
 // ─── Call Gemini REST API ───────────────────────────────────
 // Returns plain text response.
 async function geminiGenerate(systemPrompt, userPrompt, opts = {}) {
-  if (!llmSettings.apiKey) {
-    throw new Error('API ключ не настроен. Нажмите "⚙️ Настройки AI" чтобы его добавить.');
+  const apiKey = opts.apiKey || llmSettings.geminiApiKey;
+  if (!apiKey) {
+    throw new Error('API ключ Gemini не настроен. Нажмите "⚙️ Настройки AI" чтобы его добавить.');
   }
-  const model = opts.model || llmSettings.model || 'gemini-2.5-flash';
+  const model = opts.model || llmSettings.geminiModel || 'gemini-3.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   const body = {
@@ -6011,7 +6036,7 @@ async function geminiGenerate(systemPrompt, userPrompt, opts = {}) {
 
   const resp = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': llmSettings.apiKey },
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify(body)
   });
   if (!resp.ok) {
@@ -6032,13 +6057,87 @@ async function geminiGenerate(systemPrompt, userPrompt, opts = {}) {
   return text.trim();
 }
 
+// ─── Call OpenAI Chat Completions API ────────────────────────
+// Returns plain text response. Same signature/shape as geminiGenerate.
+async function openaiGenerate(systemPrompt, userPrompt, opts = {}) {
+  const apiKey = opts.apiKey || llmSettings.openaiApiKey;
+  if (!apiKey) {
+    throw new Error('API ключ OpenAI не настроен. Нажмите "⚙️ Настройки AI" чтобы его добавить.');
+  }
+  const model = opts.model || llmSettings.openaiModel || 'gpt-4o-mini';
+  let sys = systemPrompt || '';
+  // OpenAI's json_object mode requires the word "json" to appear in the prompt, or it 400s
+  if (opts.json && !/json/i.test(sys) && !/json/i.test(userPrompt || '')) {
+    sys += (sys ? '\n\n' : '') + 'Отвечай строго в формате JSON.';
+  }
+  const messages = [];
+  if (sys) messages.push({ role: 'system', content: sys });
+  messages.push({ role: 'user', content: userPrompt });
+  const body = {
+    model,
+    messages,
+    temperature: opts.temperature ?? 0.7,
+    max_tokens: opts.maxTokens ?? 4096
+  };
+  if (opts.json) body.response_format = { type: 'json_object' };
+
+  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+    body: JSON.stringify(body)
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    let msg = `OpenAI API ${resp.status}`;
+    try {
+      const errJson = JSON.parse(errText);
+      msg = errJson?.error?.message || msg;
+    } catch {}
+    throw new Error(msg);
+  }
+  const data = await resp.json();
+  const text = data?.choices?.[0]?.message?.content || '';
+  if (!text) {
+    const reason = data?.choices?.[0]?.finish_reason;
+    throw new Error(reason === 'content_filter' ? 'Модель заблокировала ответ по content-фильтрам. Переформулируйте запрос.' : 'Пустой ответ от OpenAI');
+  }
+  return text.trim();
+}
+
+// ─── Provider router — every AI feature in the app calls THIS, never the two above directly ───
+async function aiGenerate(systemPrompt, userPrompt, opts = {}) {
+  const provider = opts.provider || llmSettings.provider || 'gemini';
+  return provider === 'openai'
+    ? openaiGenerate(systemPrompt, userPrompt, opts)
+    : geminiGenerate(systemPrompt, userPrompt, opts);
+}
+
+
+// ─── Provider tabs inside the AI settings modal ──────────────
+function activeModalProvider() {
+  return document.getElementById('llm-tab-openai')?.classList.contains('btn-primary') ? 'openai' : 'gemini';
+}
+function setLLMProviderTab(provider) {
+  const isOpenai = provider === 'openai';
+  document.getElementById('llm-tab-gemini')?.classList.toggle('btn-primary', !isOpenai);
+  document.getElementById('llm-tab-openai')?.classList.toggle('btn-primary', isOpenai);
+  const gf = document.getElementById('llm-gemini-fields'), of = document.getElementById('llm-openai-fields');
+  if (gf) gf.style.display = isOpenai ? 'none' : '';
+  if (of) of.style.display = isOpenai ? '' : 'none';
+  const gi = document.getElementById('llm-gemini-info'), oi = document.getElementById('llm-openai-info');
+  if (gi) gi.style.display = isOpenai ? 'none' : '';
+  if (oi) oi.style.display = isOpenai ? '' : 'none';
+}
 
 function openLLMSettings() {
   const modal = document.getElementById('llm-settings-modal');
-  document.getElementById('llm-key-input').value = llmSettings.apiKey;
-  document.getElementById('llm-model-select').value = llmSettings.model;
+  document.getElementById('llm-key-input').value = llmSettings.geminiApiKey;
+  document.getElementById('llm-model-select').value = llmSettings.geminiModel;
+  document.getElementById('llm-openai-key-input').value = llmSettings.openaiApiKey;
+  document.getElementById('llm-openai-model-select').value = llmSettings.openaiModel;
+  setLLMProviderTab(llmSettings.provider);
   modal.style.display = 'flex';
-  setTimeout(() => document.getElementById('llm-key-input').focus(), 50);
+  setTimeout(() => document.getElementById(llmSettings.provider === 'openai' ? 'llm-openai-key-input' : 'llm-key-input').focus(), 50);
 }
 
 function closeLLMSettings() {
@@ -6046,71 +6145,91 @@ function closeLLMSettings() {
 }
 
 function saveLLMSettingsFromModal() {
-  const key = document.getElementById('llm-key-input').value.trim();
-  const model = document.getElementById('llm-model-select').value;
-  llmSettings.apiKey = key;
-  llmSettings.model = model;
+  // Save BOTH providers' fields (whichever tab isn't active keeps its value, just hidden)
+  llmSettings.geminiApiKey = document.getElementById('llm-key-input').value.trim();
+  llmSettings.geminiModel = document.getElementById('llm-model-select').value;
+  llmSettings.openaiApiKey = document.getElementById('llm-openai-key-input').value.trim();
+  llmSettings.openaiModel = document.getElementById('llm-openai-model-select').value;
+  llmSettings.provider = activeModalProvider();
+  csSyncActiveLLM();
   saveLLMSettings();
   updateAIStatusBadge();
   closeLLMSettings();
-  toast(key ? '✓ API ключ сохранён' : 'API ключ удалён');
+  toast(llmSettings.apiKey ? `✓ Настройки сохранены (${llmSettings.provider === 'openai' ? 'OpenAI' : 'Gemini'})` : 'API ключ удалён');
 }
 
 async function testLLMKey() {
-  const key = document.getElementById('llm-key-input').value.trim();
+  const provider = activeModalProvider();
+  const isOpenai = provider === 'openai';
+  const keyInput = document.getElementById(isOpenai ? 'llm-openai-key-input' : 'llm-key-input');
+  const modelSelect = document.getElementById(isOpenai ? 'llm-openai-model-select' : 'llm-model-select');
+  const key = keyInput.value.trim();
   if (!key) { toast('Сначала введите ключ', 'error'); return; }
-  const selectedModel = document.getElementById('llm-model-select')?.value || 'gemini-2.5-flash';
+  const selectedModel = modelSelect?.value || (isOpenai ? 'gpt-4o-mini' : 'gemini-3.5-flash');
   const btn = document.getElementById('llm-test-btn');
   const origText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Проверяю…';
-  const savedKey = llmSettings.apiKey;
-  const savedModel = llmSettings.model;
-  llmSettings.apiKey = key;
-  llmSettings.model = selectedModel;
   try {
-    const result = await geminiGenerate(null, 'Ответь одним словом "OK"', { maxTokens: 20, model: selectedModel });
+    const result = isOpenai
+      ? await openaiGenerate(null, 'Ответь одним словом "OK"', { maxTokens: 20, model: selectedModel, apiKey: key })
+      : await geminiGenerate(null, 'Ответь одним словом "OK"', { maxTokens: 20, model: selectedModel, apiKey: key });
     toast(`✓ Ключ работает с моделью ${selectedModel}! Ответ: ${result.slice(0, 40)}`);
+    // Persist on success so a subsequent AI action works even without hitting "Сохранить"
+    if (isOpenai) { llmSettings.openaiApiKey = key; llmSettings.openaiModel = selectedModel; }
+    else { llmSettings.geminiApiKey = key; llmSettings.geminiModel = selectedModel; }
   } catch (err) {
     toast('Ошибка: ' + err.message, 'error');
-    llmSettings.apiKey = savedKey; // rollback on failure
-    llmSettings.model = savedModel;
   } finally {
     btn.disabled = false;
     btn.textContent = origText;
   }
 }
 
-// ─── List available models for the API key ──────────────────
+// ─── List available models for the API key (per active provider tab) ─────
 async function listAvailableModels() {
-  const key = document.getElementById('llm-key-input').value.trim();
+  const provider = activeModalProvider();
+  const isOpenai = provider === 'openai';
+  const keyInput = document.getElementById(isOpenai ? 'llm-openai-key-input' : 'llm-key-input');
+  const key = keyInput.value.trim();
   if (!key) { toast('Сначала введите ключ', 'error'); return; }
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models`;
-    const resp = await fetch(url, { headers: { 'x-goog-api-key': key } });
-    if (!resp.ok) {
-      const err = await resp.text();
-      let msg = `Ошибка ${resp.status}`;
-      try { msg = JSON.parse(err)?.error?.message || msg; } catch {}
-      throw new Error(msg);
+    let models = [];
+    if (isOpenai) {
+      const resp = await fetch('https://api.openai.com/v1/models', { headers: { 'Authorization': 'Bearer ' + key } });
+      if (!resp.ok) {
+        const err = await resp.text();
+        let msg = `Ошибка ${resp.status}`;
+        try { msg = JSON.parse(err)?.error?.message || msg; } catch {}
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      const EXCLUDE = /embedding|whisper|tts|dall-e|davinci|babbage|ada|curie|moderation|realtime|audio|image|transcribe/i;
+      models = (data.data || []).map(m => m.id).filter(id => !EXCLUDE.test(id)).sort();
+    } else {
+      const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models', { headers: { 'x-goog-api-key': key } });
+      if (!resp.ok) {
+        const err = await resp.text();
+        let msg = `Ошибка ${resp.status}`;
+        try { msg = JSON.parse(err)?.error?.message || msg; } catch {}
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      models = (data.models || [])
+        .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+        .map(m => m.name.replace('models/', ''));
     }
-    const data = await resp.json();
-    const models = (data.models || [])
-      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
-      .map(m => m.name.replace('models/', ''));
 
     if (!models.length) {
       toast('Нет доступных моделей. Возможно нужно подключить billing.', 'error');
       return;
     }
 
-    // Show in a quick alert with copyable list
     const text = `Доступные модели для вашего ключа (${models.length}):\n\n${models.join('\n')}\n\n💡 Если в выпадающем списке выше нет нужной модели — скопируйте её точное имя и сообщите разработчику.`;
     alert(text);
 
-    // Also update the dropdown to highlight which models are available
-    const sel = document.getElementById('llm-model-select');
+    const sel = document.getElementById(isOpenai ? 'llm-openai-model-select' : 'llm-model-select');
     if (sel) {
       Array.from(sel.querySelectorAll('option')).forEach(opt => {
         if (models.includes(opt.value)) {
@@ -6340,7 +6459,7 @@ async function _doImproveBlock(b, mode, currentRu, currentUz, uiMode) {
   });
 
   try {
-    const raw = await geminiGenerate(systemPrompt, userPrompt, { json: true, temperature: 0.6 });
+    const raw = await aiGenerate(systemPrompt, userPrompt, { json: true, temperature: 0.6 });
     let parsed;
     try { parsed = JSON.parse(raw); } catch {
       const m = raw.match(/\{[\s\S]*\}/);
@@ -6628,7 +6747,7 @@ async function generateScript() {
 ЭТАЛОННЫЕ ТЕКСТЫ (${textMap.length} блоков):
 ${JSON.stringify(textMap, null, 1)}`;
 
-      const raw = await geminiGenerate(structPrompt, 'Перепиши все тексты под новую сферу и верни JSON-массив.', {
+      const raw = await aiGenerate(structPrompt, 'Перепиши все тексты под новую сферу и верни JSON-массив.', {
         json: true, temperature: 0.7, maxTokens: 16000
       });
       let rewritten;
@@ -6690,7 +6809,7 @@ ${JSON.stringify(textMap, null, 1)}`;
       return;
     }
 
-    const raw = await geminiGenerate(systemPrompt, userPrompt, {
+    const raw = await aiGenerate(systemPrompt, userPrompt, {
       json: true,
       temperature: 0.8,
       maxTokens: 16000
@@ -6802,7 +6921,7 @@ async function generateObjectionResponses(blockId) {
 Каждый вариант на обоих языках (ru и uz). Используй переменные: {BANK_NAME}, {AMOUNT}, {PHONE}. Возвращай JSON.`;
 
   try {
-    const raw = await geminiGenerate(systemPrompt, userPrompt, { json: true, temperature: 0.8, maxTokens: 3000 });
+    const raw = await aiGenerate(systemPrompt, userPrompt, { json: true, temperature: 0.8, maxTokens: 3000 });
     let parsed;
     try { parsed = JSON.parse(raw); } catch {
       const m = raw.match(/\{[\s\S]*\}/);
@@ -7170,7 +7289,7 @@ async function runAIReview() {
   });
 
   try {
-    const raw = await geminiGenerate(aiPrompts.review_system, userPrompt, {
+    const raw = await aiGenerate(aiPrompts.review_system, userPrompt, {
       json: true,
       temperature: 0.3,
       maxTokens: 8000
