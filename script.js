@@ -3843,9 +3843,35 @@ function csEdgeGeom(from, to, branch) {
     : anchorToward(t, wps.length ? wps[wps.length - 1] : { x: s.cx, y: s.cy });
   return { start, end, poly: [start, ...wps, end] };
 }
+function csOrthoD(points) {
+  if (!points.length) return '';
+  let d = 'M' + points[0].x + ',' + points[0].y;
+  for (let i = 1; i < points.length; i++) {
+    const c = points[i - 1], n = points[i];
+    if (Math.abs(n.x - c.x) < 2 || Math.abs(n.y - c.y) < 2) {
+      d += ' L' + n.x + ',' + n.y;
+    } else {
+      d += ' L' + c.x + ',' + n.y + ' L' + n.x + ',' + n.y;
+    }
+  }
+  return d;
+}
 function csEdgeD(from, to, branch) {
-  const g = csEdgeGeom(from, to, branch);
-  return 'M' + g.poly.map(pt => pt.x + ',' + pt.y).join(' L');
+  return csOrthoD(csEdgeGeom(from, to, branch).poly);
+}
+function csNearestSeg(poly, P) {
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < poly.length - 1; i++) {
+    const A = poly[i], B = poly[i + 1];
+    const dx = B.x - A.x, dy = B.y - A.y;
+    const len2 = dx * dx + dy * dy || 1;
+    let t = ((P.x - A.x) * dx + (P.y - A.y) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const cx = A.x + t * dx, cy = A.y + t * dy;
+    const dist = (P.x - cx) * (P.x - cx) + (P.y - cy) * (P.y - cy);
+    if (dist < bestD) { bestD = dist; best = i; }
+  }
+  return best;
 }
 function csFindBlock(id) { return (data().blocks || []).find(b => b.id === id) || null; }
 function csGetBranch(fromId, toId) {
@@ -3855,7 +3881,8 @@ function csGetBranch(fromId, toId) {
 function csStagePoint(e) {
   const stage = document.getElementById('canvas-stage');
   const r = stage.getBoundingClientRect();
-  return { x: Math.round((e.clientX - r.left) / canvasState.zoom), y: Math.round((e.clientY - r.top) / canvasState.zoom) };
+  const G = 10;
+  return { x: Math.round((e.clientX - r.left) / canvasState.zoom / G) * G, y: Math.round((e.clientY - r.top) / canvasState.zoom / G) * G };
 }
 function csUpdateEdgeLive(ef, et) {
   const from = csFindBlock(ef), to = csFindBlock(et), br = csGetBranch(ef, et);
@@ -4014,16 +4041,11 @@ function buildCanvasEdges(blocks, opts = {}) {
     const hasWps = branch && branch.waypoints && branch.waypoints.length;
     if (isSelEdge || hasWps) {
       const geom = csEdgeGeom(from, to, branch);
-      const dpath = 'M' + geom.poly.map(pt => pt.x + ',' + pt.y).join(' L');
+      const dpath = csOrthoD(geom.poly);
       const markerId2 = colorToMarkerId[color] || colorToMarkerId[BRANCH_COLOR_DEFAULT];
       svg += `<path d="${dpath}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit" data-ef="${from.id}" data-et="${to.id}" style="pointer-events:stroke;cursor:pointer;"/>`;
       svg += `<path d="${dpath}" data-from="${from.id}" data-to="${to.id}" data-ef="${from.id}" data-et="${to.id}" stroke="${isSelEdge ? '#2563eb' : color}" stroke-width="${isSelEdge ? 2.6 : 1.8}" fill="none" marker-end="url(#${markerId2})" opacity="${isSelEdge ? 1 : 0.85}"/>`;
       if (isSelEdge) {
-        const poly = geom.poly;
-        for (let i = 0; i < poly.length - 1; i++) {
-          const mx = (poly[i].x + poly[i + 1].x) / 2, my = (poly[i].y + poly[i + 1].y) / 2;
-          svg += `<circle cx="${mx}" cy="${my}" r="5" fill="#ffffff" stroke="#2563eb" stroke-width="1.6" class="edge-wp-add" data-ef="${from.id}" data-et="${to.id}" data-seg="${i}" style="pointer-events:all;cursor:copy;" opacity="0.9"/>`;
-        }
         ((branch && branch.waypoints) || []).forEach((pt, i) => {
           svg += `<circle cx="${pt.x}" cy="${pt.y}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" class="edge-wp" data-ef="${from.id}" data-et="${to.id}" data-idx="${i}" style="pointer-events:all;cursor:move;"/>`;
         });
@@ -4276,9 +4298,9 @@ function initCanvasHandlers() {
     if (e.target.closest('.cv-node')) return;
     if (simState.active) return;
 
-    // ── Manual edge editing (waypoint handles / add-handles / edge select) ──
+    // ── Manual edge editing (Draw.io-style): drag a bend, or grab the line
+    //    anywhere to create a bend; a plain click just selects the edge. ──
     const _wp = e.target.closest('.edge-wp');
-    const _add = e.target.closest('.edge-wp-add');
     const _hit = e.target.closest('.edge-hit');
     if (_wp) {
       e.preventDefault(); e.stopPropagation();
@@ -4286,26 +4308,9 @@ function initCanvasHandlers() {
       if (br && br.waypoints) { snapshot('Изгиб стрелки'); canvasState.wpDrag = { ef: _wp.dataset.ef, et: _wp.dataset.et, idx: +_wp.dataset.idx }; }
       return;
     }
-    if (_add) {
-      e.preventDefault(); e.stopPropagation();
-      const br = csGetBranch(_add.dataset.ef, _add.dataset.et);
-      if (br) {
-        snapshot('Изгиб стрелки');
-        if (!br.waypoints) br.waypoints = [];
-        const seg = +_add.dataset.seg;
-        br.waypoints.splice(seg, 0, csStagePoint(e));
-        canvasState.wpDrag = { ef: _add.dataset.ef, et: _add.dataset.et, idx: seg };
-        const edgesEl = document.querySelector('.canvas-edges');
-        if (edgesEl) edgesEl.outerHTML = buildCanvasEdges(data().blocks, { obstacleAware: false });
-      }
-      return;
-    }
     if (_hit) {
       e.preventDefault(); e.stopPropagation();
-      canvasState.selEdge = { from: _hit.dataset.ef, to: _hit.dataset.et };
-      canvasState.selectedId = null; canvasState.selectedIds.clear();
-      canvasRender();
-      renderCanvasSidebar(null);
+      canvasState.edgeGrab = { ef: _hit.dataset.ef, et: _hit.dataset.et, startX: e.clientX, startY: e.clientY };
       return;
     }
     if (canvasState.selEdge) { canvasState.selEdge = null; canvasRender(); renderCanvasSidebar(null); }
@@ -4347,6 +4352,26 @@ function initCanvasHandlers() {
   });
 
   document.addEventListener('mousemove', (e) => {
+    if (canvasState.edgeGrab) {
+      const g = canvasState.edgeGrab;
+      if (Math.abs(e.clientX - g.startX) < 4 && Math.abs(e.clientY - g.startY) < 4) return;
+      const br = csGetBranch(g.ef, g.et);
+      const from = csFindBlock(g.ef), to = csFindBlock(g.et);
+      if (br && from && to) {
+        snapshot('Изгиб стрелки');
+        if (!br.waypoints) br.waypoints = [];
+        const pt = csStagePoint(e);
+        const seg = csNearestSeg(csEdgeGeom(from, to, br).poly, pt);
+        br.waypoints.splice(seg, 0, pt);
+        canvasState.selEdge = { from: g.ef, to: g.et };
+        canvasState.selectedId = null; canvasState.selectedIds.clear();
+        canvasState.wpDrag = { ef: g.ef, et: g.et, idx: seg };
+        canvasState.edgeGrab = null;
+        const edgesEl = document.querySelector('.canvas-edges');
+        if (edgesEl) edgesEl.outerHTML = buildCanvasEdges(data().blocks, { obstacleAware: true });
+      } else { canvasState.edgeGrab = null; }
+      return;
+    }
     if (canvasState.wpDrag) {
       const { ef, et, idx } = canvasState.wpDrag;
       const br = csGetBranch(ef, et);
@@ -4431,6 +4456,15 @@ function initCanvasHandlers() {
   });
 
   document.addEventListener('mouseup', (e) => {
+    if (canvasState.edgeGrab) {
+      const g = canvasState.edgeGrab;
+      canvasState.edgeGrab = null;
+      canvasState.selEdge = { from: g.ef, to: g.et };
+      canvasState.selectedId = null; canvasState.selectedIds.clear();
+      canvasRender();
+      renderCanvasSidebar(null);
+      return;
+    }
     if (canvasState.wpDrag) {
       canvasState.wpDrag = null;
       canvasRender();
@@ -4876,7 +4910,7 @@ function renderCanvasSidebar(id) {
       <div class="canvas-sidebar-empty" style="text-align:left;">
         <div style="font-weight:700;font-size:15px;margin-bottom:10px;color:var(--tx-primary);">Стрелка выбрана</div>
         <div style="font-size:13px;color:var(--tx-secondary);line-height:1.7;">
-          ${esc((fromB && fromB.title) || '?')} → ${esc((toB && toB.title) || '?')}<br><br>
+          ${esc((fromB && (fromB.title || (fromB.ru || fromB.uz || '').replace(/\n/g, ' ').slice(0, 22))) || '?')} → ${esc((toB && (toB.title || (toB.ru || toB.uz || '').replace(/\n/g, ' ').slice(0, 22))) || '?')}<br><br>
           Точек изгиба: <b>${nWp}</b><br><br>
           • Тяни <b style="color:#2563eb;">синие</b> точки — гнёшь стрелку.<br>
           • Тяни белую точку на линии — добавляешь изгиб.<br>
