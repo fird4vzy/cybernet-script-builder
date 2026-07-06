@@ -107,6 +107,9 @@
         <button class="icon-btn" onclick="newProfile()" title="Новый профиль">+</button>
         <button class="icon-btn" onclick="renameProfile()" title="Переименовать">✎</button>
         <button class="icon-btn" onclick="deleteProfile()" title="Удалить">×</button>
+        <button class="icon-btn" onclick="openVersionHistory()" title="История версий — локальные резервные копии, переживают обновление страницы">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg>
+        </button>
       </div>
       <div class="ai-header-actions">
         <button class="ai-header-btn ai-header-btn-primary" onclick="openGenScriptModal()" title="Создать весь скрипт с помощью AI">
@@ -251,6 +254,9 @@
         <button class="btn btn-sm btn-ghost" onclick="canvasResetZoom()">100%</button>
         <button class="btn btn-sm btn-ghost" onclick="resetAllBranchColors()" title="Убрать зелёные/красные/цветные стрелки — все станут серыми (по умолчанию)">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.563-2.512 5.563-5.563C22 6.012 17.5 2 12 2z"/></svg>Сбросить цвета веток
+        </button>
+        <button class="btn btn-sm btn-ghost" onclick="resetAllRouting()" title="Перестроить все стрелки автоматически (сбросить изгибы из Draw.io). Полезно после того как двигали блоки. Ctrl+Z откатывает.">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>Перерисовать связи
         </button>
         <button class="btn btn-sm btn-ghost" onclick="applyEdgeLabelsAsTitles()" title="Если у блока 1 входящая стрелка с лейблом — этот лейбл становится названием блока. Не трогает intent. Можно откатить через Ctrl+Z.">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>Лейблы → названия
@@ -469,34 +475,69 @@
         <button class="icon-btn" onclick="closeLLMSettings()">×</button>
       </div>
       <div class="modal-body">
-        <div class="info-box" style="font-size: 12px; margin-bottom: 16px;">
+        <div style="display:flex; gap:6px; margin-bottom:14px; border-bottom:1px solid var(--bd-default); padding-bottom:10px;">
+          <button id="llm-tab-gemini" class="btn btn-sm btn-primary" style="flex:1;" onclick="setLLMProviderTab('gemini')">Gemini</button>
+          <button id="llm-tab-openai" class="btn btn-sm" style="flex:1;" onclick="setLLMProviderTab('openai')">OpenAI</button>
+        </div>
+
+        <div id="llm-gemini-info" class="info-box" style="font-size: 12px; margin-bottom: 16px;">
           🔑 Для работы AI-функций нужен API ключ Google Gemini.<br>
           <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#2563eb; text-decoration: underline;">aistudio.google.com/apikey</a> — получите бесплатно за 1 минуту.<br>
           Ключ сохраняется только в вашем браузере, никуда не отправляется.
         </div>
-        <div class="field" style="margin-bottom: 14px;">
-          <label class="field-label">API ключ</label>
-          <input id="llm-key-input" class="input" type="password" placeholder="AIza..." autocomplete="off">
+        <div id="llm-openai-info" class="info-box" style="font-size: 12px; margin-bottom: 16px; display:none;">
+          🔑 Для работы AI-функций нужен API ключ OpenAI.<br>
+          <a href="https://platform.openai.com/api-keys" target="_blank" style="color:#2563eb; text-decoration: underline;">platform.openai.com/api-keys</a> — создайте ключ в личном кабинете.<br>
+          Ключ сохраняется только в вашем браузере, никуда не отправляется.
         </div>
+
+        <div id="llm-gemini-fields">
+          <div class="field" style="margin-bottom: 14px;">
+            <label class="field-label">API ключ</label>
+            <input id="llm-key-input" class="input" type="password" placeholder="AIza..." autocomplete="off">
+          </div>
           <div class="field" style="margin-bottom: 14px;">
             <label class="field-label">Модель</label>
             <select id="llm-model-select" class="input">
-              <optgroup label="Gemini 2.5 (новейшие)">
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash (рекомендуем — быстрая и умная)</option>
-                <option value="gemini-2.5-pro">Gemini 2.5 Pro (самая мощная)</option>
-                <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (самая дешёвая)</option>
+              <optgroup label="Gemini 3 (новейшие)">
+                <option value="gemini-3.5-flash">Gemini 3.5 Flash (рекомендуем — быстрая и умная)</option>
+                <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro (самая мощная, preview)</option>
+                <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite (самая дешёвая)</option>
               </optgroup>
-              <optgroup label="Gemini 2.0">
-                <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
-              </optgroup>
-              <optgroup label="Gemini 1.5 (старые)">
-                <option value="gemini-1.5-pro-latest">Gemini 1.5 Pro Latest</option>
-                <option value="gemini-1.5-flash-latest">Gemini 1.5 Flash Latest</option>
-                <option value="gemini-1.5-flash-8b-latest">Gemini 1.5 Flash 8B Latest</option>
+              <optgroup label="Gemini 2.5 (прошлое поколение, ещё работает)">
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
               </optgroup>
             </select>
+            <div style="font-size:11px;color:var(--tx-tertiary);margin-top:4px;">Gemini 2.0 и 1.5 отключены Google — старые значения настроек мигрируют автоматически.</div>
           </div>
+        </div>
+
+        <div id="llm-openai-fields" style="display:none;">
+          <div class="field" style="margin-bottom: 14px;">
+            <label class="field-label">API ключ</label>
+            <input id="llm-openai-key-input" class="input" type="password" placeholder="sk-..." autocomplete="off">
+          </div>
+          <div class="field" style="margin-bottom: 14px;">
+            <label class="field-label">Модель</label>
+            <select id="llm-openai-model-select" class="input">
+              <optgroup label="Рекомендуемые">
+                <option value="gpt-4o-mini">GPT-4o mini (рекомендуем — быстрая и дешёвая)</option>
+                <option value="gpt-5.4-mini">GPT-5.4 mini</option>
+              </optgroup>
+              <optgroup label="Более мощные">
+                <option value="gpt-4o">GPT-4o</option>
+                <option value="gpt-4.1">GPT-4.1</option>
+                <option value="gpt-4.1-mini">GPT-4.1 mini</option>
+                <option value="gpt-5.4">GPT-5.4</option>
+                <option value="gpt-5.5">GPT-5.5 (самая мощная, дороже всех)</option>
+              </optgroup>
+            </select>
+            <div style="font-size:11px;color:var(--tx-tertiary);margin-top:4px;">Точный список моделей меняется у OpenAI — жмите «Доступные модели», чтобы свериться с вашим ключом.</div>
+          </div>
+        </div>
+
           <div style="display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;">
             <button id="llm-test-btn" class="btn btn-sm" onclick="testLLMKey()">🧪 Проверить ключ</button>
             <button class="btn btn-sm" onclick="listAvailableModels()" title="Показать какие модели доступны для этого ключа">📋 Доступные модели</button>
