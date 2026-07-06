@@ -3582,7 +3582,7 @@ function canvasRender() {
   stage.innerHTML = '';
 
   // Edges SVG layer
-  const edgesSvg = buildCanvasEdges(d.blocks);
+  const edgesSvg = buildCanvasEdges(d.blocks, { obstacleAware: true });
   stage.insertAdjacentHTML('beforeend', edgesSvg);
 
   // ─── Title header card on canvas (if meta filled) ───
@@ -3647,6 +3647,7 @@ function canvasRender() {
     if (typeof b.h === 'number' && b.h > 40) node.style.minHeight = Math.min(Math.max(b.h, 40), 600) + 'px';
     if (b.color) {
       node.style.background = b.color;
+      node.style.setProperty('--user-color', b.color);  // CSS .cv-node-custom reads var(--user-color) !important
       const isDark = isColorDark(b.color);
       if (isDark) node.classList.add('cv-node-dark');
     }
@@ -3796,6 +3797,110 @@ function clearPathHighlight(updateSelection = true) {
 }
 
 
+// ═══════════════════════════════════════════════════════════════
+// MANUAL EDGE ROUTING — shared geometry + live editing helpers
+// ═══════════════════════════════════════════════════════════════
+function csBlockBox(b) {
+  let w;
+  if (typeof b.w === 'number' && b.w > 40) {
+    w = Math.min(Math.max(b.w, 120), 600);
+  } else {
+    const titleLen = (b.title || '').length;
+    const bodyLen = (b.ru || b.uz || '').length;
+    const contentLen = Math.max(titleLen * 1.5, bodyLen);
+    if (contentLen > 260) w = 300;
+    else if (contentLen > 160) w = 270;
+    else if (contentLen > 90) w = 240;
+    else if (contentLen > 40) w = 210;
+    else w = 180;
+    if (b.type === 'decision') w = Math.min(w, 220);
+    if (b.type === 'start' || b.type === 'end') w = Math.min(w, 200);
+  }
+  let h;
+  if (typeof b.h === 'number' && b.h > 40) h = Math.min(Math.max(b.h, 40), 600);
+  else if (b.type === 'start' || b.type === 'end') h = 60;
+  else { const t = (b.ru || b.uz || '').length; h = t < 30 ? 80 : t < 80 ? 110 : t < 160 ? 150 : 200; }
+  const x = b.x || 0, y = b.y || 0;
+  return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+}
+function csEdgeGeom(from, to, branch) {
+  const s = csBlockBox(from), t = csBlockBox(to);
+  const wps = (branch && branch.waypoints) || [];
+  const boxPoint = (bx, fx, fy) => ({ x: bx.x + bx.w * fx, y: bx.y + bx.h * fy });
+  const anchorToward = (bx, tp) => {
+    const dx = tp.x - bx.cx, dy = tp.y - bx.cy;
+    if (dx === 0 && dy === 0) return { x: bx.cx, y: bx.y + bx.h };
+    const sx = dx === 0 ? Infinity : (bx.w / 2) / Math.abs(dx);
+    const sy = dy === 0 ? Infinity : (bx.h / 2) / Math.abs(dy);
+    const k = Math.min(sx, sy);
+    return { x: bx.cx + dx * k, y: bx.cy + dy * k };
+  };
+  const start = (branch && branch.exitX != null && branch.exitY != null)
+    ? boxPoint(s, branch.exitX, branch.exitY)
+    : anchorToward(s, wps[0] || { x: t.cx, y: t.cy });
+  const end = (branch && branch.entryX != null && branch.entryY != null)
+    ? boxPoint(t, branch.entryX, branch.entryY)
+    : anchorToward(t, wps.length ? wps[wps.length - 1] : { x: s.cx, y: s.cy });
+  return { start, end, poly: [start, ...wps, end] };
+}
+function csOrthoD(points) {
+  if (!points.length) return '';
+  let d = 'M' + points[0].x + ',' + points[0].y;
+  for (let i = 1; i < points.length; i++) {
+    const c = points[i - 1], n = points[i];
+    if (Math.abs(n.x - c.x) < 2 || Math.abs(n.y - c.y) < 2) {
+      d += ' L' + n.x + ',' + n.y;
+    } else {
+      d += ' L' + c.x + ',' + n.y + ' L' + n.x + ',' + n.y;
+    }
+  }
+  return d;
+}
+function csEdgeD(from, to, branch) {
+  return csOrthoD(csEdgeGeom(from, to, branch).poly);
+}
+function csNearestSeg(poly, P) {
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < poly.length - 1; i++) {
+    const A = poly[i], B = poly[i + 1];
+    const dx = B.x - A.x, dy = B.y - A.y;
+    const len2 = dx * dx + dy * dy || 1;
+    let t = ((P.x - A.x) * dx + (P.y - A.y) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const cx = A.x + t * dx, cy = A.y + t * dy;
+    const dist = (P.x - cx) * (P.x - cx) + (P.y - cy) * (P.y - cy);
+    if (dist < bestD) { bestD = dist; best = i; }
+  }
+  return best;
+}
+function csFindBlock(id) { return (data().blocks || []).find(b => b.id === id) || null; }
+function csGetBranch(fromId, toId) {
+  const b = csFindBlock(fromId);
+  return (b && b.branches) ? (b.branches.find(br => br.next === toId) || null) : null;
+}
+function csStagePoint(e) {
+  const stage = document.getElementById('canvas-stage');
+  const r = stage.getBoundingClientRect();
+  const G = 10;
+  return { x: Math.round((e.clientX - r.left) / canvasState.zoom / G) * G, y: Math.round((e.clientY - r.top) / canvasState.zoom / G) * G };
+}
+function csUpdateEdgeLive(ef, et) {
+  const from = csFindBlock(ef), to = csFindBlock(et), br = csGetBranch(ef, et);
+  if (!from || !to) return;
+  const d = csEdgeD(from, to, br);
+  document.querySelectorAll('.canvas-edges path[data-ef="' + CSS.escape(ef) + '"][data-et="' + CSS.escape(et) + '"]').forEach(el => el.setAttribute('d', d));
+  if (canvasState.wpDrag && br && br.waypoints) {
+    const wp = br.waypoints[canvasState.wpDrag.idx];
+    const h = document.querySelector('.edge-wp[data-ef="' + CSS.escape(ef) + '"][data-et="' + CSS.escape(et) + '"][data-idx="' + canvasState.wpDrag.idx + '"]');
+    if (h && wp) { h.setAttribute('cx', wp.x); h.setAttribute('cy', wp.y); }
+  }
+}
+function csStraightenEdge() {
+  if (!canvasState.selEdge) return;
+  const br = csGetBranch(canvasState.selEdge.from, canvasState.selEdge.to);
+  if (br && br.waypoints) { snapshot('Выпрямление стрелки'); br.waypoints = undefined; canvasRender(); saveToStorage(); renderCanvasSidebar(null); }
+}
+
 function buildCanvasEdges(blocks, opts = {}) {
   const obstacleAware = opts.obstacleAware !== false;  // default = true; pass false during drag
   const byId = {};
@@ -3877,13 +3982,10 @@ function buildCanvasEdges(blocks, opts = {}) {
 
   // ─── Build obstacle list (other blocks) for path avoidance ─────
   // Used in obstacleAware mode to detour around blocks the path would cross
-  const obstacles = blocks.map(b => ({
-    id: b.id,
-    x1: (b.x || 0) - 8,
-    y1: (b.y || 0) - 8,
-    x2: (b.x || 0) + NW + 8,
-    y2: (b.y || 0) + approxH(b) + 8
-  }));
+  const obstacles = blocks.map(b => {
+    const bx = boxOf(b);
+    return { id: b.id, x1: bx.x - 8, y1: bx.y - 8, x2: bx.x + bx.w + 8, y2: bx.y + bx.h + 8 };
+  });
 
   // Returns true if [x1,y1]→[x2,y2] horizontal/vertical segment crosses any block other than fromId/toId
   const segmentHitsBlock = (sx, sy, ex, ey, fromId, toId) => {
@@ -3934,26 +4036,22 @@ function buildCanvasEdges(blocks, opts = {}) {
     if (!from || !to) return;
     const fh = approxH(from);
 
-    // ─── If branch carries imported Draw.io waypoints, reproduce that exact routing ──
-    if (branch && branch.waypoints && branch.waypoints.length) {
-      const sBox = boxOf(from);
-      const tBox = boxOf(to);
-      const pts = branch.waypoints;
-      // Start: explicit Draw.io exit fraction, else face the first waypoint
-      const start = (branch.exitX !== undefined && branch.exitY !== undefined)
-        ? boxPoint(sBox, branch.exitX, branch.exitY)
-        : anchorToward(sBox, pts[0]);
-      // End: explicit Draw.io entry fraction, else face the last waypoint
-      const end = (branch.entryX !== undefined && branch.entryY !== undefined)
-        ? boxPoint(tBox, branch.entryX, branch.entryY)
-        : anchorToward(tBox, pts[pts.length - 1]);
-      let dpath = `M${start.x},${start.y}`;
-      pts.forEach(p => { dpath += ` L${p.x},${p.y}`; });
-      dpath += ` L${end.x},${end.y}`;
+    // ── Selected edge OR edge with manual waypoints -> editable polyline ──
+    const isSelEdge = canvasState.selEdge && canvasState.selEdge.from === from.id && canvasState.selEdge.to === to.id;
+    const hasWps = branch && branch.waypoints && branch.waypoints.length;
+    if (isSelEdge || hasWps) {
+      const geom = csEdgeGeom(from, to, branch);
+      const dpath = csOrthoD(geom.poly);
       const markerId2 = colorToMarkerId[color] || colorToMarkerId[BRANCH_COLOR_DEFAULT];
-      svg += `<path d="${dpath}" data-from="${from.id}" data-to="${to.id}" stroke="${color}" stroke-width="1.8" fill="none" marker-end="url(#${markerId2})" opacity="0.85"/>`;
-      if (label) {
-        const mid = pts[Math.floor(pts.length / 2)] || { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+      svg += `<path d="${dpath}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit" data-ef="${from.id}" data-et="${to.id}" style="pointer-events:stroke;cursor:pointer;"/>`;
+      svg += `<path d="${dpath}" data-from="${from.id}" data-to="${to.id}" data-ef="${from.id}" data-et="${to.id}" stroke="${isSelEdge ? '#2563eb' : color}" stroke-width="${isSelEdge ? 2.6 : 1.8}" fill="none" marker-end="url(#${markerId2})" opacity="${isSelEdge ? 1 : 0.85}"/>`;
+      if (isSelEdge) {
+        ((branch && branch.waypoints) || []).forEach((pt, i) => {
+          svg += `<circle cx="${pt.x}" cy="${pt.y}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" class="edge-wp" data-ef="${from.id}" data-et="${to.id}" data-idx="${i}" style="pointer-events:all;cursor:move;"/>`;
+        });
+      } else if (label) {
+        const pts = (branch && branch.waypoints) || [];
+        const mid = pts[Math.floor(pts.length / 2)] || { x: (geom.start.x + geom.end.x) / 2, y: (geom.start.y + geom.end.y) / 2 };
         const cleanLabel = label.replace(/\n+/g, ' ').trim().slice(0, 40);
         const lblW = Math.max(36, cleanLabel.length * 7 + 14);
         svg += `<rect x="${mid.x - lblW/2}" y="${mid.y - 11}" width="${lblW}" height="22" rx="9" fill="white" stroke="${color}" stroke-width="1.5"/>`;
@@ -3964,25 +4062,58 @@ function buildCanvasEdges(blocks, opts = {}) {
 
     // ─── C: exit point on source's bottom edge ──
     // Multiple OUTGOING arrows spread slightly (they go to different targets)
-    const fxCenter = (from.x || 0) + NW / 2;
-    const fyExit = (from.y || 0) + fh;
+    const sBoxF = boxOf(from);
+    const tBoxF = boxOf(to);
+    const fxCenter = sBoxF.cx;
+    const fyExit = sBoxF.y + sBoxF.h;
     let fx = fxCenter;
     if (sourceTotal > 1) {
-      const usableW = NW * 0.5;
+      const usableW = sBoxF.w * 0.5;
       const step = usableW / (sourceTotal + 1);
-      fx = (from.x || 0) + (NW - usableW) / 2 + step * (sourceIdx + 1);
+      fx = sBoxF.x + (sBoxF.w - usableW) / 2 + step * (sourceIdx + 1);
     }
 
     // Entry point on target's top edge — all INCOMING arrows CONVERGE to the
-    // same center point (like Draw.io), so they merge into one clean line
-    // instead of fanning out across the block width.
-    const txCenter = (to.x || 0) + NW / 2;
-    const tyEntry = (to.y || 0);
+    // same center point (like Draw.io), so they merge into one clean line.
+    const txCenter = tBoxF.cx;
+    const tyEntry = tBoxF.y;
     let tx = txCenter; // always center — no fan-out on entry
 
     let path = null;
-    // ─── D: only run obstacle-aware routing when not dragging ──
-    if (obstacleAware && tyEntry > fyExit + 30) {
+    // Downward edge: route through a grid-snapped SHARED vertical channel, so parallel
+    // arrows in the same corridor collapse into ONE trunk. Blocks are NOT moved.
+    if (obstacleAware && tyEntry > fyExit + 16) {
+      const STEP = 16;
+      const yTopC = fyExit + 8, yBotC = tyEntry - 8;
+      if (yBotC - yTopC >= 2) {
+        // preferred channel = grid-snapped midpoint of the two centres (siblings merge)
+        let chX = Math.round(((fxCenter + txCenter) / 2) / STEP) * STEP;
+        if (segmentHitsBlock(chX, yTopC, chX, yBotC, from.id, to.id)) {
+          // blocked (long / skip edge) -> scan for a clear grid-aligned corridor.
+          // Scan RIGHT fully first, then LEFT, so parallel edges converge to the SAME
+          // corridor (deterministic side) instead of splitting left/right.
+          let found = null;
+          for (let i = 1; i <= 60 && found === null; i++) {
+            const r = chX + i * STEP;
+            if (!segmentHitsBlock(r, yTopC, r, yBotC, from.id, to.id)) found = r;
+          }
+          for (let i = 1; i <= 60 && found === null; i++) {
+            const l = chX - i * STEP;
+            if (!segmentHitsBlock(l, yTopC, l, yBotC, from.id, to.id)) found = l;
+          }
+          chX = found;
+        }
+        if (chX !== null) {
+          if (Math.abs(fxCenter - chX) < 2 && Math.abs(txCenter - chX) < 2) {
+            path = `M${chX},${fyExit} L${chX},${tyEntry}`;
+          } else {
+            path = `M${fxCenter},${fyExit} L${fxCenter},${fyExit + 8} L${chX},${fyExit + 8} L${chX},${tyEntry - 8} L${txCenter},${tyEntry - 8} L${txCenter},${tyEntry}`;
+          }
+        }
+      }
+    }
+    // Fallback: obstacle-aware Z-routing when the channel could not be placed
+    if (!path && obstacleAware && tyEntry > fyExit + 30) {
       path = routeAvoiding(fx, fyExit, tx, tyEntry, from.id, to.id);
     }
 
@@ -4002,6 +4133,7 @@ function buildCanvasEdges(blocks, opts = {}) {
     }
 
     const markerId = colorToMarkerId[color] || colorToMarkerId[BRANCH_COLOR_DEFAULT];
+    svg += `<path d="${path}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit" data-ef="${from.id}" data-et="${to.id}" style="pointer-events:stroke;cursor:pointer;"/>`;
     svg += `<path d="${path}" data-from="${from.id}" data-to="${to.id}" stroke="${color}" stroke-width="1.8" fill="none" marker-end="url(#${markerId})" opacity="0.85"/>`;
 
     if (label) {
@@ -4166,6 +4298,23 @@ function initCanvasHandlers() {
     if (e.target.closest('.cv-node')) return;
     if (simState.active) return;
 
+    // ── Manual edge editing (Draw.io-style): drag a bend, or grab the line
+    //    anywhere to create a bend; a plain click just selects the edge. ──
+    const _wp = e.target.closest('.edge-wp');
+    const _hit = e.target.closest('.edge-hit');
+    if (_wp) {
+      e.preventDefault(); e.stopPropagation();
+      const br = csGetBranch(_wp.dataset.ef, _wp.dataset.et);
+      if (br && br.waypoints) { snapshot('Изгиб стрелки'); canvasState.wpDrag = { ef: _wp.dataset.ef, et: _wp.dataset.et, idx: +_wp.dataset.idx }; }
+      return;
+    }
+    if (_hit) {
+      e.preventDefault(); e.stopPropagation();
+      canvasState.edgeGrab = { ef: _hit.dataset.ef, et: _hit.dataset.et, startX: e.clientX, startY: e.clientY };
+      return;
+    }
+    if (canvasState.selEdge) { canvasState.selEdge = null; canvasRender(); renderCanvasSidebar(null); }
+
     // Pan the canvas: middle mouse button, or Space held + left drag
     if (e.button === 1 || (e.button === 0 && canvasState.spaceHeld)) {
       e.preventDefault();
@@ -4203,6 +4352,35 @@ function initCanvasHandlers() {
   });
 
   document.addEventListener('mousemove', (e) => {
+    if (canvasState.edgeGrab) {
+      const g = canvasState.edgeGrab;
+      if (Math.abs(e.clientX - g.startX) < 4 && Math.abs(e.clientY - g.startY) < 4) return;
+      const br = csGetBranch(g.ef, g.et);
+      const from = csFindBlock(g.ef), to = csFindBlock(g.et);
+      if (br && from && to) {
+        snapshot('Изгиб стрелки');
+        if (!br.waypoints) br.waypoints = [];
+        const pt = csStagePoint(e);
+        const seg = csNearestSeg(csEdgeGeom(from, to, br).poly, pt);
+        br.waypoints.splice(seg, 0, pt);
+        canvasState.selEdge = { from: g.ef, to: g.et };
+        canvasState.selectedId = null; canvasState.selectedIds.clear();
+        canvasState.wpDrag = { ef: g.ef, et: g.et, idx: seg };
+        canvasState.edgeGrab = null;
+        const edgesEl = document.querySelector('.canvas-edges');
+        if (edgesEl) edgesEl.outerHTML = buildCanvasEdges(data().blocks, { obstacleAware: true });
+      } else { canvasState.edgeGrab = null; }
+      return;
+    }
+    if (canvasState.wpDrag) {
+      const { ef, et, idx } = canvasState.wpDrag;
+      const br = csGetBranch(ef, et);
+      if (br && br.waypoints && br.waypoints[idx]) {
+        br.waypoints[idx] = csStagePoint(e);
+        csUpdateEdgeLive(ef, et);
+      }
+      return;
+    }
     if (canvasState.dragging) {
       const { id, offsetX, offsetY, group } = canvasState.dragging;
       // Require a small real movement before starting to drag (prevents jump on plain click)
@@ -4278,6 +4456,21 @@ function initCanvasHandlers() {
   });
 
   document.addEventListener('mouseup', (e) => {
+    if (canvasState.edgeGrab) {
+      const g = canvasState.edgeGrab;
+      canvasState.edgeGrab = null;
+      canvasState.selEdge = { from: g.ef, to: g.et };
+      canvasState.selectedId = null; canvasState.selectedIds.clear();
+      canvasRender();
+      renderCanvasSidebar(null);
+      return;
+    }
+    if (canvasState.wpDrag) {
+      canvasState.wpDrag = null;
+      canvasRender();
+      saveToStorage();
+      return;
+    }
     if (canvasState.dragging) {
       if (canvasState.dragging.moved) {
         const { group } = canvasState.dragging;
@@ -4306,9 +4499,19 @@ function initCanvasHandlers() {
       const nodeEl = document.querySelector(`.cv-node.dragging`);
       if (nodeEl) nodeEl.classList.remove('dragging');
       const wasMoved = canvasState.dragging.moved;
+      const movedIds = new Set((canvasState.dragging.group || []).map(g => g.id));
       canvasState.dragging = null;
       // After release: re-render edges with FULL obstacle-aware routing
       if (wasMoved) {
+        // Imported Draw.io waypoints were baked for the OLD positions; once an endpoint
+        // moves they no longer line up (diagonal "floating" arrows). Drop waypoints ONLY
+        // on edges touching a moved block so they re-route cleanly; untouched edges keep theirs.
+        if (movedIds.size) {
+          data().blocks.forEach(bl => (bl.branches || []).forEach(br => {
+            if (br.waypoints && (movedIds.has(bl.id) || movedIds.has(br.next))) br.waypoints = undefined;
+          }));
+          saveToStorage();
+        }
         const edgesEl = document.querySelector('.canvas-edges');
         if (edgesEl) edgesEl.outerHTML = buildCanvasEdges(data().blocks, { obstacleAware: true });
       }
@@ -4336,6 +4539,19 @@ function initCanvasHandlers() {
   });
 
   // Wheel zoom (Ctrl+wheel only)
+  viewport.addEventListener('dblclick', (e) => {
+    const wp = e.target.closest('.edge-wp');
+    if (!wp) return;
+    e.preventDefault(); e.stopPropagation();
+    const br = csGetBranch(wp.dataset.ef, wp.dataset.et);
+    if (br && br.waypoints) {
+      snapshot('Удаление изгиба');
+      br.waypoints.splice(+wp.dataset.idx, 1);
+      if (!br.waypoints.length) br.waypoints = undefined;
+      canvasRender(); saveToStorage();
+    }
+  });
+
   viewport.addEventListener('wheel', (e) => {
     // No Ctrl/Cmd -> pan (trackpad two-finger swipe / mouse wheel). With Ctrl/Cmd -> zoom.
     if (!e.ctrlKey && !e.metaKey) {
@@ -4387,6 +4603,16 @@ function canvasResetZoom() {
   canvasState.panY = 0;
   applyCanvasTransform();
   updateZoomIndicator();
+}
+
+function resetAllRouting() {
+  const d = data();
+  snapshot('Перерисовка связей');
+  let n = 0;
+  (d.blocks || []).forEach(b => (b.branches || []).forEach(br => { if (br.waypoints) { br.waypoints = undefined; n++; } }));
+  canvasRender(); // canvasRender now uses obstacle-aware channel routing
+  saveToStorage();
+  toast(n ? `Связи перестроены (сброшено изгибов: ${n})` : 'Связи перестроены');
 }
 
 function canvasFitToView() {
@@ -4675,6 +4901,26 @@ function simSetLang(lang) {
 function renderCanvasSidebar(id) {
   const sidebar = document.getElementById('canvas-sidebar');
   if (!sidebar) return;
+  if (id) canvasState.selEdge = null;
+  if (canvasState.selEdge) {
+    const fromB = csFindBlock(canvasState.selEdge.from), toB = csFindBlock(canvasState.selEdge.to);
+    const br = csGetBranch(canvasState.selEdge.from, canvasState.selEdge.to);
+    const nWp = (br && br.waypoints) ? br.waypoints.length : 0;
+    sidebar.innerHTML = `
+      <div class="canvas-sidebar-empty" style="text-align:left;">
+        <div style="font-weight:700;font-size:15px;margin-bottom:10px;color:var(--tx-primary);">Стрелка выбрана</div>
+        <div style="font-size:13px;color:var(--tx-secondary);line-height:1.7;">
+          ${esc((fromB && (fromB.title || (fromB.ru || fromB.uz || '').replace(/\n/g, ' ').slice(0, 22))) || '?')} → ${esc((toB && (toB.title || (toB.ru || toB.uz || '').replace(/\n/g, ' ').slice(0, 22))) || '?')}<br><br>
+          Точек изгиба: <b>${nWp}</b><br><br>
+          • Тяни <b style="color:#2563eb;">синие</b> точки — гнёшь стрелку.<br>
+          • Тяни белую точку на линии — добавляешь изгиб.<br>
+          • Двойной клик по синей точке — удалить.<br>
+          • Esc — снять выделение.
+        </div>
+        <button class="btn btn-sm btn-ghost" style="margin-top:14px;" onclick="csStraightenEdge()">Выпрямить (убрать изгибы)</button>
+      </div>`;
+    return;
+  }
 
   // Multi-select panel — when 2+ blocks selected
   if (canvasState.selectedIds.size > 1) {
@@ -4731,7 +4977,7 @@ function renderCanvasSidebar(id) {
       <div class="canvas-sidebar-empty">
         <div style="display:flex;justify-content:center;margin-bottom:12px;color:var(--tx-tertiary);"><svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V6a3 3 0 0 1 6 0v5"/><path d="M21 11a4 4 0 0 0-4-4h-2v8H9"/><path d="M9 15v3a3 3 0 0 0 6 0v-3"/><circle cx="12" cy="22" r="0.5" fill="currentColor"/></svg></div>
         <div style="font-weight: 600; color: #374151; margin-bottom: 6px;">Выберите блок</div>
-        <div style="font-size: 13px; color: #6b7280; line-height: 1.5;">Кликните по любому блоку. Зажмите и тяните по пустому месту, чтобы выделить рамкой несколько блоков. Shift+клик — добавить к выделению.<br><br>Двигать холст: два пальца по тачпаду / колёсико мыши, либо <b>пробел</b> + перетаскивание (или средняя кнопка мыши). Ctrl/⌘ + колёсико — зум.</div>
+        <div style="font-size: 13px; color: #6b7280; line-height: 1.5;">Кликните по любому блоку. Зажмите и тяните по пустому месту, чтобы выделить рамкой несколько блоков. Shift+клик — добавить к выделению.<br><br>Двигать холст: два пальца по тачпаду / колёсико мыши, либо <b>пробел</b> + перетаскивание (или средняя кнопка мыши). Ctrl/⌘ + колёсико — зум.<br><br>Кликни по <b>стрелке</b> — появятся точки, которыми её можно гнуть вручную (как в Draw.io).</div>
       </div>`;
     return;
   }
@@ -5109,6 +5355,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (e.key === 'Escape') {
+    if (canvasState.selEdge) { canvasState.selEdge = null; canvasRender(); renderCanvasSidebar(null); e.preventDefault(); return; }
     if (canvasState.selectedIds.size > 0) {
       selectClear();
       e.preventDefault();
@@ -5241,6 +5488,95 @@ const autosave = {
   dirty: false
 };
 
+// ═══════════════════════════════════════════════════════════════
+// LOCAL VERSION HISTORY — rolling backups that SURVIVE page refresh
+// (the in-memory undo stack does not; this does)
+// ═══════════════════════════════════════════════════════════════
+const HISTORY_STORE_KEY = 'cybernet_sb_history_v1';
+const HISTORY_KEEP = 8;
+const HISTORY_MIN_GAP_MS = 45000;
+let _lastHistoryPush = 0;
+
+function pushVersionBackup(reason) {
+  try {
+    const now = Date.now();
+    if (now - _lastHistoryPush < HISTORY_MIN_GAP_MS) return;
+    if (!Object.keys(profiles).length) return;
+    const cleaned = {};
+    Object.entries(profiles).forEach(([name, p]) => { const { _migrated, ...rest } = p; cleaned[name] = rest; });
+    let arr = [];
+    try { arr = JSON.parse(localStorage.getItem(HISTORY_STORE_KEY) || '[]'); } catch { arr = []; }
+    // skip if identical to the newest backup (no real change)
+    const last = arr[arr.length - 1];
+    const sig = JSON.stringify(cleaned);
+    if (last && JSON.stringify(last.profiles) === sig) { _lastHistoryPush = now; return; }
+    arr.push({ ts: now, reason: reason || '', activeProfile, profiles: cleaned });
+    while (arr.length > HISTORY_KEEP) arr.shift();
+    let saved = false;
+    while (!saved && arr.length) {
+      try { localStorage.setItem(HISTORY_STORE_KEY, JSON.stringify(arr)); saved = true; }
+      catch (e) { arr.shift(); } // quota -> drop oldest, retry
+    }
+    _lastHistoryPush = now;
+  } catch (e) { /* backups are best-effort */ }
+}
+
+function getVersionBackups() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_STORE_KEY) || '[]'); } catch { return []; }
+}
+
+function restoreVersionBackup(ts) {
+  const snap = getVersionBackups().find(s => s.ts === ts);
+  if (!snap) { toast('Версия не найдена', 'error'); return; }
+  if (!confirm('Восстановить эту версию? Текущее состояние будет заменено (его можно вернуть через Ctrl+Z).')) return;
+  snapshot('Восстановление версии');
+  Object.keys(profiles).forEach(k => delete profiles[k]);
+  Object.entries(snap.profiles).forEach(([k, v]) => { profiles[k] = v; });
+  activeProfile = profiles[snap.activeProfile] ? snap.activeProfile : Object.keys(profiles)[0];
+  if (typeof renderProfiles === 'function') renderProfiles();
+  if (typeof renderBlocks === 'function') renderBlocks();
+  if (typeof renderVars === 'function') renderVars();
+  if (typeof renderStats === 'function') renderStats();
+  if (typeof canvasRender === 'function') canvasRender();
+  saveToStorage();
+  closeVersionHistory();
+  toast('✓ Версия восстановлена');
+}
+
+function closeVersionHistory() {
+  const m = document.getElementById('version-history-modal');
+  if (m) m.remove();
+}
+
+function openVersionHistory() {
+  closeVersionHistory();
+  const arr = getVersionBackups().slice().reverse();
+  const fmt = (ts) => {
+    const d = new Date(ts);
+    const mins = Math.round((Date.now() - ts) / 60000);
+    const ago = mins < 1 ? 'только что' : mins < 60 ? mins + ' мин назад' : Math.round(mins / 60) + ' ч назад';
+    return d.toLocaleString('ru-RU') + ' · ' + ago;
+  };
+  const rows = arr.length ? arr.map(s => {
+    const nBlocks = ((s.profiles[s.activeProfile] || {}).blocks || []).length;
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--bd-default);border-radius:8px;margin-bottom:8px;">'
+      + '<div><div style="font-weight:600;font-size:13px;">' + fmt(s.ts) + '</div>'
+      + '<div style="font-size:12px;color:var(--tx-tertiary);">Профиль: ' + esc(s.activeProfile || '—') + ' · блоков: ' + nBlocks + (s.reason ? ' · ' + esc(s.reason) : '') + '</div></div>'
+      + '<button class="btn btn-sm btn-primary" onclick="restoreVersionBackup(' + s.ts + ')">Восстановить</button>'
+      + '</div>';
+  }).join('') : '<div style="color:var(--tx-tertiary);padding:20px;text-align:center;">Пока нет сохранённых версий. Они копятся автоматически по мере работы.</div>';
+  const modal = document.createElement('div');
+  modal.id = 'version-history-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000;';
+  modal.innerHTML = '<div style="background:var(--bg-surface);color:var(--tx-primary);border-radius:12px;max-width:560px;width:92%;max-height:80vh;overflow:auto;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,0.4);">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;"><div style="font-weight:700;font-size:16px;">История версий</div>'
+    + '<button class="btn btn-sm btn-ghost" onclick="closeVersionHistory()">✕</button></div>'
+    + '<div style="font-size:12px;color:var(--tx-tertiary);margin-bottom:14px;">Автоматические резервные копии в этом браузере, переживают обновление страницы. Выбери версию и нажми «Восстановить» (текущее можно вернуть через Ctrl+Z). Для надёжного бэкапа используй «Скачать → JSON».</div>'
+    + rows + '</div>';
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeVersionHistory(); });
+  document.body.appendChild(modal);
+}
+
 function saveToStorage() {
   if (!autosave.enabled) return;
   try {
@@ -5260,6 +5596,7 @@ function saveToStorage() {
     autosave.lastSaveAt = Date.now();
     autosave.dirty = false;
     updateAutosaveIndicator('saved');
+    pushVersionBackup('автосохранение');
     // Also sync to cloud (debounced, only if logged in)
     scheduleCloudSync();
   } catch (err) {
@@ -5515,11 +5852,14 @@ const DEFAULT_PROMPTS = {
 
 🔴 КРИТИЧЕСКИ ВАЖНО про УЗБЕКСКИЙ ЯЗЫК (uz):
 - Узбекский текст должен быть ЕСТЕСТВЕННЫМ, грамотным, на латинице (o', g', sh, ch).
+- ТОЛЬКО ЛАТИНИЦА. Кириллица для узбекского ЗАПРЕЩЕНА полностью — ни одного кириллического символа в поле uz, даже если он "случайно проскочил" при генерации. Если сомневаешься — перепроверь каждое слово на скрипт перед тем как вернуть JSON.
 - НЕ переводи дословно с русского — пиши так, как реально говорит узбекоязычный оператор.
 - Используй правильную банковскую терминологию: "limit", "kredit", "ilova" (приложение), "to'lov" (платёж), "muddat" (срок), "foiz" (процент), "qarz" (долг), "shartnoma" (договор).
 - Узбекский текст по смыслу = русскому, но звучит натурально для носителя.
 - Если дан ЭТАЛОН с узбекскими текстами — изучи их стиль, терминологию и манеру, и пиши в ТОЧНО ТАКОМ ЖЕ стиле. Эталонные uz-тексты — это образец качества, на который надо равняться.
 - Каждый блок ОБЯЗАТЕЛЬНО имеет непустой uz текст. Пустой uz недопустим.
+
+🔴 ДЛИНА РЕПЛИК: это устная речь по телефону, а не текст для чтения. Каждая реплика (и ru, и uz) — максимум 25-30 слов. Если мысль не влезает — раздели на два блока, а не пиши одну длинную стену текста.
 
 Возвращай строго валидный JSON формата:
 {
@@ -5529,7 +5869,9 @@ const DEFAULT_PROMPTS = {
   "blocks": [
     { "id": "start", "sec": "s1", "title": "Старт", "intent": "start", "type": "start", "ru": "...", "uz": "...", "branches": [{ "label": "", "next": "greeting" }] }
   ]
-}`,
+}
+
+Отвечай ТОЛЬКО самим JSON-объектом — без markdown-обёртки из тройных обратных кавычек, без пояснений до или после.`,
   generate_user: `Создай скрипт для колл-центра.
 
 НИША/СФЕРА: {niche}
@@ -5552,7 +5894,12 @@ const DEFAULT_PROMPTS = {
 Тексты должны быть естественными, человечными, соответствовать тону "{tone}". Сразу оба языка.
 
 ОТВЕТЬ ТОЛЬКО JSON, без пояснений.`,
-  improve_system: `Ты помогаешь создавать скрипты для колл-центра банка в Узбекистане. Работаешь с двумя языками: русским и узбекским (латиница). Всегда возвращай JSON строго в формате: {"ru": "...", "uz": "..."}. Не добавляй пояснений, только JSON.`,
+  improve_system: `Ты помогаешь создавать скрипты для колл-центра банка в Узбекистане. Работаешь с двумя языками: русским и узбекским.
+
+🔴 Узбекский (uz) — ТОЛЬКО ЛАТИНИЦА (o', g', sh, ch). Кириллица запрещена полностью, перепроверь каждое слово перед ответом. Пиши натурально, как говорит носитель, не переводи дословно с русского.
+🔴 Это устная речь по телефону: каждая реплика (ru и uz) — максимум 25-30 слов.
+
+Всегда возвращай JSON строго в формате: {"ru": "...", "uz": "..."}. Только сам JSON-объект — без markdown-обёртки из тройных обратных кавычек, без пояснений до или после.`,
   improve_user: `Блок скрипта: "{title}" (тип: {type}, intent: {intent}).
 Текущий текст на русском: "{currentRu}"
 Текущий текст на узбекском: "{currentUz}"
@@ -5560,7 +5907,7 @@ const DEFAULT_PROMPTS = {
 Задача: {task}.
 
 Перепиши ОБА текста (ru и uz) с учётом этой задачи. Сохрани переменные в фигурных скобках как есть (например {BANK_NAME}, {AMOUNT}). Верни JSON: {"ru": "новый русский", "uz": "новый узбекский"}.`,
-  review_system: `Ты эксперт по скриптам колл-центра в банках Узбекистана. Анализируешь готовый скрипт и находишь проблемы. Возвращаешь JSON: {"issues": [{"severity": "high"|"medium"|"low", "blockId": "...", "type": "...", "message": "...", "suggestion": "..."}]}. severity: high — критично, medium — важно, low — мелочи.`,
+  review_system: `Ты эксперт по скриптам колл-центра в банках Узбекистана. Анализируешь готовый скрипт и находишь проблемы. Возвращаешь JSON: {"issues": [{"severity": "high"|"medium"|"low", "blockId": "...", "type": "...", "message": "...", "suggestion": "..."}]}. severity: high — критично, medium — важно, low — мелочи. Только сам JSON-объект, без markdown-обёртки из тройных обратных кавычек.`,
   review_user: `Проанализируй скрипт и найди до 10 самых важных проблем.
 
 Что искать:
@@ -5574,6 +5921,7 @@ const DEFAULT_PROMPTS = {
 - Слишком длинные тексты (более 30 слов на блок — плохо для звонка)
 - Неиспользуемые переменные в vars
 - Отсутствие type: end (разговор не завершается)
+- Кириллица в узбекском тексте (uz должен быть ТОЛЬКО на латинице — o', g', sh, ch; любая кириллица в uz это высокая критичность)
 
 Скрипт в JSON формате (имя: "{name}", блоков: {blockCount}):
 {scriptJson}
@@ -5609,31 +5957,52 @@ function fillTemplate(tpl, vars) {
 }
 
 const llmSettings = {
-  apiKey: '',
-  model: 'gemini-2.5-flash',  // newest, fast and capable
+  provider: 'gemini',        // 'gemini' | 'openai'
+  apiKey: '',                // mirror of the ACTIVE provider's key (kept in sync — everything else in the app reads this)
+  model: 'gemini-3.5-flash', // mirror of the ACTIVE provider's model
+  geminiApiKey: '',
+  geminiModel: 'gemini-3.5-flash',
+  openaiApiKey: '',
+  openaiModel: 'gpt-4o-mini',
   loaded: false
 };
+function csSyncActiveLLM() {
+  if (llmSettings.provider === 'openai') { llmSettings.apiKey = llmSettings.openaiApiKey; llmSettings.model = llmSettings.openaiModel; }
+  else { llmSettings.apiKey = llmSettings.geminiApiKey; llmSettings.model = llmSettings.geminiModel; }
+}
 
 function loadLLMSettings() {
   try {
     const raw = localStorage.getItem(LLM_SETTINGS_KEY);
     if (raw) {
       const s = JSON.parse(raw);
-      llmSettings.apiKey = s.apiKey || '';
-      llmSettings.model = s.model || 'gemini-2.5-flash';
-      // Migrate stale/deprecated model names that no longer work
+      // Migrate stale/deprecated Gemini model names that no longer work
       const migrations = {
-        'gemini-1.5-flash': 'gemini-2.5-flash',
-        'gemini-1.5-pro': 'gemini-2.5-pro',
-        'gemini-2.0-flash-exp': 'gemini-2.0-flash',
-        'gemini-pro': 'gemini-2.5-flash'
+        'gemini-1.5-flash': 'gemini-3.5-flash',
+        'gemini-1.5-pro': 'gemini-3.1-pro-preview',
+        'gemini-1.5-flash-latest': 'gemini-3.5-flash',
+        'gemini-1.5-pro-latest': 'gemini-3.1-pro-preview',
+        'gemini-1.5-flash-8b-latest': 'gemini-2.5-flash-lite',
+        'gemini-2.0-flash-exp': 'gemini-3.5-flash',
+        'gemini-2.0-flash': 'gemini-2.5-flash',      // shut down by Google
+        'gemini-2.0-flash-lite': 'gemini-2.5-flash-lite', // shut down by Google
+        'gemini-pro': 'gemini-3.5-flash'
       };
-      if (migrations[llmSettings.model]) {
-        console.log(`Migrated model ${llmSettings.model} → ${migrations[llmSettings.model]}`);
-        llmSettings.model = migrations[llmSettings.model];
-        // Persist the migration
-        try { localStorage.setItem(LLM_SETTINGS_KEY, JSON.stringify({ apiKey: llmSettings.apiKey, model: llmSettings.model })); } catch {}
+      if (s.provider) {
+        // Current (multi-provider) shape
+        llmSettings.provider = s.provider === 'openai' ? 'openai' : 'gemini';
+        llmSettings.geminiApiKey = s.geminiApiKey || '';
+        llmSettings.geminiModel = migrations[s.geminiModel] || s.geminiModel || 'gemini-3.5-flash';
+        llmSettings.openaiApiKey = s.openaiApiKey || '';
+        llmSettings.openaiModel = s.openaiModel || 'gpt-4o-mini';
+      } else {
+        // Legacy single-provider (Gemini-only) shape — migrate in place
+        llmSettings.provider = 'gemini';
+        llmSettings.geminiApiKey = s.apiKey || '';
+        llmSettings.geminiModel = migrations[s.model] || s.model || 'gemini-3.5-flash';
       }
+      csSyncActiveLLM();
+      saveLLMSettings(); // persist migration/new shape
     }
   } catch (err) { console.error('LLM settings load failed:', err); }
   llmSettings.loaded = true;
@@ -5642,8 +6011,11 @@ function loadLLMSettings() {
 function saveLLMSettings() {
   try {
     localStorage.setItem(LLM_SETTINGS_KEY, JSON.stringify({
-      apiKey: llmSettings.apiKey,
-      model: llmSettings.model
+      provider: llmSettings.provider,
+      geminiApiKey: llmSettings.geminiApiKey,
+      geminiModel: llmSettings.geminiModel,
+      openaiApiKey: llmSettings.openaiApiKey,
+      openaiModel: llmSettings.openaiModel
     }));
   } catch (err) { console.error('LLM settings save failed:', err); }
 }
@@ -5651,11 +6023,12 @@ function saveLLMSettings() {
 // ─── Call Gemini REST API ───────────────────────────────────
 // Returns plain text response.
 async function geminiGenerate(systemPrompt, userPrompt, opts = {}) {
-  if (!llmSettings.apiKey) {
-    throw new Error('API ключ не настроен. Нажмите "⚙️ Настройки AI" чтобы его добавить.');
+  const apiKey = opts.apiKey || llmSettings.geminiApiKey;
+  if (!apiKey) {
+    throw new Error('API ключ Gemini не настроен. Нажмите "⚙️ Настройки AI" чтобы его добавить.');
   }
-  const model = opts.model || llmSettings.model || 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(llmSettings.apiKey)}`;
+  const model = opts.model || llmSettings.geminiModel || 'gemini-3.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   const body = {
     contents: [
@@ -5674,7 +6047,7 @@ async function geminiGenerate(systemPrompt, userPrompt, opts = {}) {
 
   const resp = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify(body)
   });
   if (!resp.ok) {
@@ -5695,13 +6068,87 @@ async function geminiGenerate(systemPrompt, userPrompt, opts = {}) {
   return text.trim();
 }
 
+// ─── Call OpenAI Chat Completions API ────────────────────────
+// Returns plain text response. Same signature/shape as geminiGenerate.
+async function openaiGenerate(systemPrompt, userPrompt, opts = {}) {
+  const apiKey = opts.apiKey || llmSettings.openaiApiKey;
+  if (!apiKey) {
+    throw new Error('API ключ OpenAI не настроен. Нажмите "⚙️ Настройки AI" чтобы его добавить.');
+  }
+  const model = opts.model || llmSettings.openaiModel || 'gpt-4o-mini';
+  let sys = systemPrompt || '';
+  // OpenAI's json_object mode requires the word "json" to appear in the prompt, or it 400s
+  if (opts.json && !/json/i.test(sys) && !/json/i.test(userPrompt || '')) {
+    sys += (sys ? '\n\n' : '') + 'Отвечай строго в формате JSON.';
+  }
+  const messages = [];
+  if (sys) messages.push({ role: 'system', content: sys });
+  messages.push({ role: 'user', content: userPrompt });
+  const body = {
+    model,
+    messages,
+    temperature: opts.temperature ?? 0.7,
+    max_tokens: opts.maxTokens ?? 4096
+  };
+  if (opts.json) body.response_format = { type: 'json_object' };
+
+  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+    body: JSON.stringify(body)
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    let msg = `OpenAI API ${resp.status}`;
+    try {
+      const errJson = JSON.parse(errText);
+      msg = errJson?.error?.message || msg;
+    } catch {}
+    throw new Error(msg);
+  }
+  const data = await resp.json();
+  const text = data?.choices?.[0]?.message?.content || '';
+  if (!text) {
+    const reason = data?.choices?.[0]?.finish_reason;
+    throw new Error(reason === 'content_filter' ? 'Модель заблокировала ответ по content-фильтрам. Переформулируйте запрос.' : 'Пустой ответ от OpenAI');
+  }
+  return text.trim();
+}
+
+// ─── Provider router — every AI feature in the app calls THIS, never the two above directly ───
+async function aiGenerate(systemPrompt, userPrompt, opts = {}) {
+  const provider = opts.provider || llmSettings.provider || 'gemini';
+  return provider === 'openai'
+    ? openaiGenerate(systemPrompt, userPrompt, opts)
+    : geminiGenerate(systemPrompt, userPrompt, opts);
+}
+
+
+// ─── Provider tabs inside the AI settings modal ──────────────
+function activeModalProvider() {
+  return document.getElementById('llm-tab-openai')?.classList.contains('btn-primary') ? 'openai' : 'gemini';
+}
+function setLLMProviderTab(provider) {
+  const isOpenai = provider === 'openai';
+  document.getElementById('llm-tab-gemini')?.classList.toggle('btn-primary', !isOpenai);
+  document.getElementById('llm-tab-openai')?.classList.toggle('btn-primary', isOpenai);
+  const gf = document.getElementById('llm-gemini-fields'), of = document.getElementById('llm-openai-fields');
+  if (gf) gf.style.display = isOpenai ? 'none' : '';
+  if (of) of.style.display = isOpenai ? '' : 'none';
+  const gi = document.getElementById('llm-gemini-info'), oi = document.getElementById('llm-openai-info');
+  if (gi) gi.style.display = isOpenai ? 'none' : '';
+  if (oi) oi.style.display = isOpenai ? '' : 'none';
+}
 
 function openLLMSettings() {
   const modal = document.getElementById('llm-settings-modal');
-  document.getElementById('llm-key-input').value = llmSettings.apiKey;
-  document.getElementById('llm-model-select').value = llmSettings.model;
+  document.getElementById('llm-key-input').value = llmSettings.geminiApiKey;
+  document.getElementById('llm-model-select').value = llmSettings.geminiModel;
+  document.getElementById('llm-openai-key-input').value = llmSettings.openaiApiKey;
+  document.getElementById('llm-openai-model-select').value = llmSettings.openaiModel;
+  setLLMProviderTab(llmSettings.provider);
   modal.style.display = 'flex';
-  setTimeout(() => document.getElementById('llm-key-input').focus(), 50);
+  setTimeout(() => document.getElementById(llmSettings.provider === 'openai' ? 'llm-openai-key-input' : 'llm-key-input').focus(), 50);
 }
 
 function closeLLMSettings() {
@@ -5709,71 +6156,91 @@ function closeLLMSettings() {
 }
 
 function saveLLMSettingsFromModal() {
-  const key = document.getElementById('llm-key-input').value.trim();
-  const model = document.getElementById('llm-model-select').value;
-  llmSettings.apiKey = key;
-  llmSettings.model = model;
+  // Save BOTH providers' fields (whichever tab isn't active keeps its value, just hidden)
+  llmSettings.geminiApiKey = document.getElementById('llm-key-input').value.trim();
+  llmSettings.geminiModel = document.getElementById('llm-model-select').value;
+  llmSettings.openaiApiKey = document.getElementById('llm-openai-key-input').value.trim();
+  llmSettings.openaiModel = document.getElementById('llm-openai-model-select').value;
+  llmSettings.provider = activeModalProvider();
+  csSyncActiveLLM();
   saveLLMSettings();
   updateAIStatusBadge();
   closeLLMSettings();
-  toast(key ? '✓ API ключ сохранён' : 'API ключ удалён');
+  toast(llmSettings.apiKey ? `✓ Настройки сохранены (${llmSettings.provider === 'openai' ? 'OpenAI' : 'Gemini'})` : 'API ключ удалён');
 }
 
 async function testLLMKey() {
-  const key = document.getElementById('llm-key-input').value.trim();
+  const provider = activeModalProvider();
+  const isOpenai = provider === 'openai';
+  const keyInput = document.getElementById(isOpenai ? 'llm-openai-key-input' : 'llm-key-input');
+  const modelSelect = document.getElementById(isOpenai ? 'llm-openai-model-select' : 'llm-model-select');
+  const key = keyInput.value.trim();
   if (!key) { toast('Сначала введите ключ', 'error'); return; }
-  const selectedModel = document.getElementById('llm-model-select')?.value || 'gemini-2.5-flash';
+  const selectedModel = modelSelect?.value || (isOpenai ? 'gpt-4o-mini' : 'gemini-3.5-flash');
   const btn = document.getElementById('llm-test-btn');
   const origText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Проверяю…';
-  const savedKey = llmSettings.apiKey;
-  const savedModel = llmSettings.model;
-  llmSettings.apiKey = key;
-  llmSettings.model = selectedModel;
   try {
-    const result = await geminiGenerate(null, 'Ответь одним словом "OK"', { maxTokens: 20, model: selectedModel });
+    const result = isOpenai
+      ? await openaiGenerate(null, 'Ответь одним словом "OK"', { maxTokens: 20, model: selectedModel, apiKey: key })
+      : await geminiGenerate(null, 'Ответь одним словом "OK"', { maxTokens: 20, model: selectedModel, apiKey: key });
     toast(`✓ Ключ работает с моделью ${selectedModel}! Ответ: ${result.slice(0, 40)}`);
+    // Persist on success so a subsequent AI action works even without hitting "Сохранить"
+    if (isOpenai) { llmSettings.openaiApiKey = key; llmSettings.openaiModel = selectedModel; }
+    else { llmSettings.geminiApiKey = key; llmSettings.geminiModel = selectedModel; }
   } catch (err) {
     toast('Ошибка: ' + err.message, 'error');
-    llmSettings.apiKey = savedKey; // rollback on failure
-    llmSettings.model = savedModel;
   } finally {
     btn.disabled = false;
     btn.textContent = origText;
   }
 }
 
-// ─── List available models for the API key ──────────────────
+// ─── List available models for the API key (per active provider tab) ─────
 async function listAvailableModels() {
-  const key = document.getElementById('llm-key-input').value.trim();
+  const provider = activeModalProvider();
+  const isOpenai = provider === 'openai';
+  const keyInput = document.getElementById(isOpenai ? 'llm-openai-key-input' : 'llm-key-input');
+  const key = keyInput.value.trim();
   if (!key) { toast('Сначала введите ключ', 'error'); return; }
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`;
-    const resp = await fetch(url);
-    if (!resp.ok) {
-      const err = await resp.text();
-      let msg = `Ошибка ${resp.status}`;
-      try { msg = JSON.parse(err)?.error?.message || msg; } catch {}
-      throw new Error(msg);
+    let models = [];
+    if (isOpenai) {
+      const resp = await fetch('https://api.openai.com/v1/models', { headers: { 'Authorization': 'Bearer ' + key } });
+      if (!resp.ok) {
+        const err = await resp.text();
+        let msg = `Ошибка ${resp.status}`;
+        try { msg = JSON.parse(err)?.error?.message || msg; } catch {}
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      const EXCLUDE = /embedding|whisper|tts|dall-e|davinci|babbage|ada|curie|moderation|realtime|audio|image|transcribe/i;
+      models = (data.data || []).map(m => m.id).filter(id => !EXCLUDE.test(id)).sort();
+    } else {
+      const resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models', { headers: { 'x-goog-api-key': key } });
+      if (!resp.ok) {
+        const err = await resp.text();
+        let msg = `Ошибка ${resp.status}`;
+        try { msg = JSON.parse(err)?.error?.message || msg; } catch {}
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      models = (data.models || [])
+        .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+        .map(m => m.name.replace('models/', ''));
     }
-    const data = await resp.json();
-    const models = (data.models || [])
-      .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
-      .map(m => m.name.replace('models/', ''));
 
     if (!models.length) {
       toast('Нет доступных моделей. Возможно нужно подключить billing.', 'error');
       return;
     }
 
-    // Show in a quick alert with copyable list
     const text = `Доступные модели для вашего ключа (${models.length}):\n\n${models.join('\n')}\n\n💡 Если в выпадающем списке выше нет нужной модели — скопируйте её точное имя и сообщите разработчику.`;
     alert(text);
 
-    // Also update the dropdown to highlight which models are available
-    const sel = document.getElementById('llm-model-select');
+    const sel = document.getElementById(isOpenai ? 'llm-openai-model-select' : 'llm-model-select');
     if (sel) {
       Array.from(sel.querySelectorAll('option')).forEach(opt => {
         if (models.includes(opt.value)) {
@@ -6003,7 +6470,7 @@ async function _doImproveBlock(b, mode, currentRu, currentUz, uiMode) {
   });
 
   try {
-    const raw = await geminiGenerate(systemPrompt, userPrompt, { json: true, temperature: 0.6 });
+    const raw = await aiGenerate(systemPrompt, userPrompt, { json: true, temperature: 0.6 });
     let parsed;
     try { parsed = JSON.parse(raw); } catch {
       const m = raw.match(/\{[\s\S]*\}/);
@@ -6291,7 +6758,7 @@ async function generateScript() {
 ЭТАЛОННЫЕ ТЕКСТЫ (${textMap.length} блоков):
 ${JSON.stringify(textMap, null, 1)}`;
 
-      const raw = await geminiGenerate(structPrompt, 'Перепиши все тексты под новую сферу и верни JSON-массив.', {
+      const raw = await aiGenerate(structPrompt, 'Перепиши все тексты под новую сферу и верни JSON-массив.', {
         json: true, temperature: 0.7, maxTokens: 16000
       });
       let rewritten;
@@ -6353,7 +6820,7 @@ ${JSON.stringify(textMap, null, 1)}`;
       return;
     }
 
-    const raw = await geminiGenerate(systemPrompt, userPrompt, {
+    const raw = await aiGenerate(systemPrompt, userPrompt, {
       json: true,
       temperature: 0.8,
       maxTokens: 16000
@@ -6465,7 +6932,7 @@ async function generateObjectionResponses(blockId) {
 Каждый вариант на обоих языках (ru и uz). Используй переменные: {BANK_NAME}, {AMOUNT}, {PHONE}. Возвращай JSON.`;
 
   try {
-    const raw = await geminiGenerate(systemPrompt, userPrompt, { json: true, temperature: 0.8, maxTokens: 3000 });
+    const raw = await aiGenerate(systemPrompt, userPrompt, { json: true, temperature: 0.8, maxTokens: 3000 });
     let parsed;
     try { parsed = JSON.parse(raw); } catch {
       const m = raw.match(/\{[\s\S]*\}/);
@@ -6833,7 +7300,7 @@ async function runAIReview() {
   });
 
   try {
-    const raw = await geminiGenerate(aiPrompts.review_system, userPrompt, {
+    const raw = await aiGenerate(aiPrompts.review_system, userPrompt, {
       json: true,
       temperature: 0.3,
       maxTokens: 8000
@@ -6991,6 +7458,7 @@ function resetSinglePrompt(key) {
 async function bootApp() {
   // 1. Сначала локальный кеш (быстро)
   let restored = loadFromStorage();
+  pushVersionBackup('старт сессии');
 
   // 2. Пробуем подтянуть из облака (источник истины для команды)
   let fromCloud = false;
@@ -7025,7 +7493,7 @@ async function bootApp() {
       const s = await cloudLoadSettings();
       if (s) {
         if (s.llm_settings && s.llm_settings.apiKey) {
-          llmSettings = { ...llmSettings, ...s.llm_settings };
+          Object.assign(llmSettings, s.llm_settings);
           try { localStorage.setItem(LLM_SETTINGS_KEY, JSON.stringify(llmSettings)); } catch (e) {}
         }
         if (s.prompts) {
