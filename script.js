@@ -6565,6 +6565,7 @@ function applyAISuggestion(blockId, newRu, newUz) {
 // AI FEATURE 2: Generate full script
 // ═══════════════════════════════════════════════════════════════
 function openGenScriptModal() {
+  clearBrief();
   if (!llmSettings.apiKey) { openLLMSettings(); toast('Сначала настройте API ключ', 'error'); return; }
   document.getElementById('gen-script-modal').style.display = 'flex';
   renderGsRefsPicker();
@@ -6648,6 +6649,110 @@ function getRefProfile(r) {
   return r.profile || r.profileData || r.data || null;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// CLIENT BRIEF (XLSX опросник) → structured Q&A for AI generation
+// ═══════════════════════════════════════════════════════════════
+let genBrief = null; // { fileName, items: [{section, q, a, hint}] }
+
+function parseBriefWorkbook(wb) {
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+  const norm = (v) => String(v == null ? '' : v).trim();
+  const lower = (v) => norm(v).toLowerCase();
+
+  // Detect header row: contains both "вопрос" and "ответ" → gives us q/a columns.
+  let qcol = null, acol = null, hintcol = null, headerRowIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 6); i++) {
+    const low = (rows[i] || []).map(lower);
+    const qi = low.findIndex(v => v.includes('вопрос'));
+    const ai = low.findIndex(v => v.includes('ответ'));
+    if (qi !== -1 && ai !== -1 && qi !== ai) {
+      qcol = qi; acol = ai; headerRowIdx = i;
+      const hi = low.findIndex(v => v.includes('комментар') || v.includes('подсказ'));
+      if (hi !== -1) hintcol = hi;
+      break;
+    }
+  }
+  // Fallback (collection-style: question in col 0, answer in col 1)
+  if (qcol === null) { qcol = 0; acol = 1; }
+
+  const items = [];
+  let section = '';
+  for (let i = 0; i < rows.length; i++) {
+    if (i === headerRowIdx) continue;
+    const r = rows[i] || [];
+    const q = norm(r[qcol]);
+    const a = norm(r[acol]);
+    const hint = hintcol !== null ? norm(r[hintcol]) : '';
+    // Section text living in col 0 (telemarketing layout: col A = section, col B = question)
+    if (qcol > 0 && norm(r[0])) section = norm(r[0]);
+    if (!q) continue;
+    const lowQ = q.toLowerCase();
+    // Header-ish rows: "информация для ...", "анализ звонков", "ответы" as answer, etc.
+    const isHeaderRow = (!a && !/^\d+[\.\)]/.test(q)) || lowQ === 'ответы' || a.toLowerCase() === 'ответы';
+    if (isHeaderRow) { if (!/^\d+[\.\)]/.test(q)) { section = q; } continue; }
+    items.push({ section, q, a, hint });
+  }
+  return items;
+}
+
+function handleBriefUpload(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  if (typeof XLSX === 'undefined') { toast('Библиотека XLSX не загрузилась — обновите страницу', 'error'); return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+      const items = parseBriefWorkbook(wb);
+      if (!items.length) { toast('Не удалось распознать вопросы в файле. Проверьте формат брифа.', 'error'); return; }
+      genBrief = { fileName: file.name, items };
+      const answered = items.filter(it => it.a).length;
+      const st = document.getElementById('gs-brief-status');
+      if (st) st.textContent = `${file.name} · вопросов: ${items.length}, с ответами: ${answered}`;
+      const clr = document.getElementById('gs-brief-clear');
+      if (clr) clr.style.display = '';
+      const pv = document.getElementById('gs-brief-preview');
+      if (pv) {
+        pv.style.display = '';
+        pv.innerHTML = items.filter(it => it.a).slice(0, 8).map(it =>
+          `<div style="margin-bottom:5px;"><b>${esc(it.q.slice(0, 70))}</b> — ${esc(it.a.slice(0, 90))}</div>`
+        ).join('') || '<i>В брифе нет заполненных ответов — AI получит только список вопросов.</i>';
+      }
+      if (!answered) toast('⚠️ В брифе не заполнен ни один ответ — это пустой шаблон?', 'error');
+      else toast(`✓ Бриф загружен: ${answered} ответов`);
+    } catch (err) {
+      console.error('Brief parse failed:', err);
+      toast('Ошибка чтения файла: ' + err.message, 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+  ev.target.value = ''; // allow re-uploading the same file
+}
+
+function clearBrief() {
+  genBrief = null;
+  const st = document.getElementById('gs-brief-status');
+  if (st) st.textContent = 'не загружен';
+  const clr = document.getElementById('gs-brief-clear');
+  if (clr) clr.style.display = 'none';
+  const pv = document.getElementById('gs-brief-preview');
+  if (pv) { pv.style.display = 'none'; pv.innerHTML = ''; }
+}
+
+function buildBriefSection() {
+  if (!genBrief || !genBrief.items.length) return '';
+  const answered = genBrief.items.filter(it => it.a);
+  const listed = (answered.length ? answered : genBrief.items).map(it => {
+    let line = '';
+    if (it.section) line += `[${it.section}] `;
+    line += `${it.q}\n→ ${it.a || '(клиент не ответил)'}`;
+    if (!it.a && it.hint) line += `\n(подсказка по вопросу: ${it.hint})`;
+    return line;
+  }).join('\n\n');
+  return `\n\n═══ БРИФ КЛИЕНТА (заполненный опросник) ═══\n\nНиже — ответы клиента на опросник. Это ПЕРВОИСТОЧНИК фактов о продукте, условиях, аудитории и требованиях. При генерации скрипта:\n- Используй КОНКРЕТИКУ из брифа (название компании/продукта, условия, суммы, способы оплаты, контакты) вместо выдуманных значений.\n- Требования из брифа (стиль общения, перевод на оператора, обязательные фразы, SMS) — ОБЯЗАТЕЛЬНЫ к исполнению.\n- Если бриф противоречит полям формы (ниша/тон) — приоритет у брифа.\n- Не выдумывай факты, которых нет ни в брифе, ни в форме: для неизвестного используй переменные в фигурных скобках.\n\n${listed}\n\n═══ КОНЕЦ БРИФА ═══`;
+}
+
 async function generateScript() {
   const niche = document.getElementById('gs-niche').value.trim();
   const goal = document.getElementById('gs-goal').value;
@@ -6716,7 +6821,8 @@ async function generateScript() {
     referencesSection = `\n\n${modeInstruction}\n\n═══ ЭТАЛОННЫЕ СКРИПТЫ ═══\n\n${refsJson}\n\n═══ КОНЕЦ ЭТАЛОНОВ ═══`;
   }
 
-  const systemPrompt = aiPrompts.generate_system + referencesSection;
+  const briefSection = buildBriefSection();
+  const systemPrompt = aiPrompts.generate_system + referencesSection + briefSection;
   const userPrompt = fillTemplate(aiPrompts.generate_user, {
     niche, goal, channel, tone, blockCount,
     extras: extras || '(нет)'
@@ -6748,8 +6854,10 @@ async function generateScript() {
 ТОН: ${tone}
 ДОП. ТРЕБОВАНИЯ: ${extras || '(нет)'}
 
-ПРАВИЛА:
+${briefSection ? briefSection + '\n\n' : ''}ПРАВИЛА:
 - Для каждого блока перепиши title (краткое название), ru (русский текст реплики), uz (узбекский перевод) под новую сферу
+- Узбекский (uz) — ТОЛЬКО ЛАТИНИЦА (o', g', sh, ch), кириллица запрещена
+- Если есть БРИФ КЛИЕНТА выше — конкретика (названия, условия, суммы, контакты) берётся строго из него
 - Служебные блоки («Ответ клиента», «Завершение звонка», «Молчание», «Автоответчик» и т.п.) — сохрани их роль, текст можешь оставить похожим
 - Блоки-решения и вопросы — адаптируй под новую сферу
 - Сохрани тот же тон и манеру
