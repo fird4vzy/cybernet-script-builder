@@ -288,6 +288,47 @@ function downloadBlob(content, filename, type) {
 
 // ─── Toast notification ───────────────────────────────────────
 let toastTimer = null;
+// ═══════════════════════════════════════════════════════════════
+// ICON SYSTEM — sharp industrial-minimal inline SVGs (opium-adapted):
+// 1.5px hairline strokes, square caps, miter joins, currentColor.
+// ═══════════════════════════════════════════════════════════════
+const CS_ICONS = {
+  spark: '<path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/>',
+  pen: '<path d="M4 20l4-1L20 7l-3-3L5 16l-1 4z"/><path d="M14 6l3 3"/>',
+  save: '<path d="M12 3v10M8 9l4 4 4-4"/><path d="M4 17v4h16v-4"/>',
+  trash: '<path d="M4 6h16M8 6V3h8v3M6 6l1 15h10l1-15"/><path d="M10 10v7M14 10v7"/>',
+  chat: '<path d="M3 4h18v12H8l-5 5z"/>',
+  robot: '<path d="M5 8h14v11H5zM12 8V4M8 4h8"/><path d="M9 12v2M15 12v2M9 17h6"/>',
+  gear: '<path d="M12 2l3 3h4v4l3 3-3 3v4h-4l-3 3-3-3H5v-4l-3-3 3-3V5h4z"/><path d="M9.5 9.5h5v5h-5z"/>',
+  folder: '<path d="M3 5h6l2 2h10v13H3z"/>',
+  tag: '<path d="M3 3h8l10 10-8 8L3 11z"/><path d="M8 8h2v2H8z"/>',
+  film: '<path d="M3 5h18v14H3zM3 9h18M7 5v14M17 5v14"/>',
+  scroll: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/>',
+  flag: '<path d="M5 3v18M5 4h13l-3 4 3 4H5"/>',
+  warn: '<path d="M12 3L22 20H2z"/><path d="M12 9v5M12 16.5v1.5"/>',
+  checkDiamond: '<path d="M12 2l10 10-10 10L2 12z"/><path d="M8 12l2.5 2.5L16 9"/>',
+  pin: '<path d="M12 3v5M12 16v5M3 12h5M16 12h5"/><path d="M10.5 10.5h3v3h-3z"/>',
+  bookmark: '<path d="M7 3h10v18l-5-4-5 4z"/>',
+  clipboard: '<path d="M9 2h6v4H9z"/><path d="M6 4v18h12V4"/><path d="M9 10h6M9 14h6"/>',
+  building: '<path d="M4 21V5h9v16M13 9h7v12M2 21h20"/><path d="M7 8h3M7 12h3M7 16h3"/>',
+  target: '<path d="M12 4l8 8-8 8-8-8z"/><path d="M12 9l3 3-3 3-3-3z"/>',
+  swatch: '<path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/>',
+  doc: '<path d="M6 2h9l4 4v16H6z"/><path d="M15 2v4h4M9 12h7M9 16h7"/>',
+  key: '<circle cx="8" cy="8" r="4"/><path d="M11 11l9 9M17 17l3-3"/>',
+  search: '<circle cx="10" cy="10" r="6"/><path d="M15 15l6 6"/>',
+  shuffle: '<path d="M3 6h4l10 12h4M17 4l4 4-4 4M3 18h4M17 20l4-4-4-4"/>',
+  refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 3v5h-5"/>',
+  flask: '<path d="M10 2v7L4 20h16L14 9V2M8 2h8"/>'
+};
+function csIcon(name, size = 14, style = '') {
+  const body = CS_ICONS[name];
+  if (!body) return '';
+  return '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;flex-shrink:0;' + style + '">' + body + '</svg>';
+}
+function csSevDiamond(color) {
+  return '<svg viewBox="0 0 24 24" width="12" height="12" style="vertical-align:-1px;"><path d="M12 3l9 9-9 9-9-9z" fill="' + color + '" stroke="none"/></svg>';
+}
+
 function toast(message, type = 'success') {
   const el = document.getElementById('toast');
   if (!el) return;
@@ -631,7 +672,7 @@ function renderBlocks() {
         <span class="section-title">${esc(sec.label)}</span>
         <span class="section-count">${blocks.length}</span>
         <button class="icon-btn" onclick="addBlock('${sec.id}')" title="+ блок">+</button>
-        <button class="icon-btn" onclick="renameSection('${sec.id}')" title="Переименовать">✎</button>
+        <button class="icon-btn" onclick="renameSection('${sec.id}')" title="Переименовать">${csIcon('pen',12)}</button>
         <button class="icon-btn" onclick="deleteSection('${sec.id}')" title="Удалить">×</button>
       </div>`;
 
@@ -676,7 +717,7 @@ function renderBlocks() {
             <div class="field">
               <label class="field-label">Колонка в схеме</label>
               <select class="input" id="flane-${b.id}">
-                <option value="auto" ${(!b.lane || b.lane==='auto')?'selected':''}>⚙ Авто</option>
+                <option value="auto" ${(!b.lane || b.lane==='auto')?'selected':''}>Авто</option>
                 <option value="left" ${b.lane==='left'?'selected':''}>← Левая (отказы)</option>
                 <option value="center" ${b.lane==='center'?'selected':''}>↕ Центр (основной путь)</option>
                 <option value="right" ${b.lane==='right'?'selected':''}>→ Правая (вопросы)</option>
@@ -707,19 +748,19 @@ function renderBlocks() {
           </div>
           <div class="field-grid-2" style="margin-bottom: 0;">
             ${showRU ? `<div class="field">
-              <label class="field-label">🇷🇺 Русский</label>
+              <label class="field-label">Русский</label>
               <textarea class="textarea" id="fr-${b.id}">${esc(b.ru)}</textarea>
             </div>` : ''}
             ${showUZ ? `<div class="field">
-              <label class="field-label">🇺🇿 O'zbek</label>
+              <label class="field-label">O'zbek</label>
               <textarea class="textarea" id="fu-${b.id}">${esc(b.uz)}</textarea>
             </div>` : ''}
           </div>
           <div class="vars-hint">Переменные: ${Object.keys(d.vars).map(v => `<span class="var-chip">{${v}}</span>`).join('')}</div>
           <div class="ai-block-group" style="margin: 12px 0;">
             <div class="ai-block-title">
-              <span>🤖 AI-помощник</span>
-              <span class="ai-status-badge" onclick="openLLMSettings()" title="Настроить API ключ">⚙</span>
+              <span>${csIcon('robot',13)} AI-помощник</span>
+              <span class="ai-status-badge" onclick="openLLMSettings()" title="Настроить API ключ">${csIcon('gear',12)}</span>
             </div>
             <div class="ai-buttons-grid">
               ${renderStyleButtons(b.id, 'improveBlockTextInList')}
@@ -871,7 +912,7 @@ function renderVars() {
       <div class="var-card ${isDirty ? 'dirty' : ''}" data-key="${esc(k)}">
         <label>{${esc(k)}}</label>
         <input class="input" value="${esc(v)}" oninput="markVarDirty('${esc(k)}')" data-var="${esc(k)}">
-        <button class="var-save" onclick="saveVar('${esc(k)}')">💾 Сохранить</button>
+        <button class="var-save" onclick="saveVar('${esc(k)}')">${csIcon('save',12)} Сохранить</button>
         <button class="var-del" onclick="deleteVar('${esc(k)}')">удалить</button>
       </div>
     `;
@@ -1812,12 +1853,12 @@ function renderPreview() {
         <div class="lp-title-block">
           <div class="lp-title">${esc(b.title)}</div>
           <div class="lp-meta">
-            ${sec ? `<span>📁 ${esc(sec.label)}</span>` : ''}
-            ${b.intent ? `<span>🏷 ${esc(b.intent)}</span>` : ''}
+            ${sec ? `<span>${csIcon('folder',11)} ${esc(sec.label)}</span>` : ''}
+            ${b.intent ? `<span>${csIcon('tag',11)} ${esc(b.intent)}</span>` : ''}
             <span class="lp-id">${esc(b.id)}</span>
           </div>
         </div>
-        <div class="lp-lang-label">${lang === 'ru' ? '🇷🇺 RU' : '🇺🇿 UZ'}</div>
+        <div class="lp-lang-label">${lang === 'ru' ? 'RU' : 'UZ'}</div>
       </div>
       <div class="lp-text">${esc(text)}</div>
     </div>
@@ -2122,8 +2163,8 @@ function exportHTML() {
       if (b.next_no) metaParts.push(`нет → ${esc(b.next_no)}`);
       if (metaParts.length) html += `<div class="meta">${metaParts.join(' · ')}</div>`;
       html += `<div class="lang-grid">
-        <div class="lang-col"><div class="lang-label">🇷🇺 Русский</div>${esc(interpolate(b.ru, d.vars))}</div>
-        <div class="lang-col"><div class="lang-label">🇺🇿 O'zbek</div>${esc(interpolate(b.uz, d.vars))}</div>
+        <div class="lang-col"><div class="lang-label">Русский</div>${esc(interpolate(b.ru, d.vars))}</div>
+        <div class="lang-col"><div class="lang-label">O'zbek</div>${esc(interpolate(b.uz, d.vars))}</div>
       </div></div>`;
     });
   });
@@ -2310,7 +2351,7 @@ function renderLayoutIndicator() {
   if (useManual) {
     el.className = 'layout-indicator manual';
     el.innerHTML = `
-      <div class="layout-indicator-icon">🎨</div>
+      <div class="layout-indicator-icon">${csIcon('swatch',14)}</div>
       <div>
         <strong>Будет использована ваша раскладка с Canvas</strong><br>
         <span style="opacity:0.85;">${withCoords} из ${total} блоков имеют ручные координаты. Экспорт PDF / SVG / PNG / Draw.io сохранит вашу раскладку.</span>
@@ -2320,7 +2361,7 @@ function renderLayoutIndicator() {
   } else {
     el.className = 'layout-indicator auto';
     el.innerHTML = `
-      <div class="layout-indicator-icon">⚙</div>
+      <div class="layout-indicator-icon">${csIcon('gear',14)}</div>
       <div>
         <strong>Будет использована автоматическая раскладка</strong><br>
         <span style="opacity:0.85;">Вы ещё не редактировали блоки на Canvas. Экспорт использует авто-раскладку swim-lane (центр = happy path, слева = отказы, справа = вопросы).</span>
@@ -2491,8 +2532,8 @@ function importCSV(event) {
       if (!sections.length) sections.push({ id: 's1', label: 'Основной раздел' });
 
       // Build report and ask user to confirm
-      let report = `✅ Распознано блоков: ${importedBlocks.length}\n`;
-      report += `✅ Разделов: ${sections.length}\n`;
+      let report = `Распознано блоков: ${importedBlocks.length}\n`;
+      report += `Разделов: ${sections.length}\n`;
       if (errors.length) report += `\n⚠ Предупреждений: ${errors.length}\n  ${errors.slice(0, 5).join('\n  ')}${errors.length > 5 ? '\n  …и ещё ' + (errors.length - 5) : ''}\n`;
       if (refErrors.length) report += `\n⚠ Битых ссылок: ${refErrors.length}\n  ${refErrors.slice(0, 5).join('\n  ')}${refErrors.length > 5 ? '\n  …и ещё ' + (refErrors.length - 5) : ''}\n`;
       report += `\nИмпортировать как новый профиль?`;
@@ -3243,7 +3284,7 @@ function renderIntents() {
         <div class="intent-usage ${usageClass}">${count === 0 ? 'Не используется' : 'В ' + count + ' ' + (count === 1 ? 'блоке' : 'блоках')}</div>
         <div class="intent-actions">
           ${count > 0 ? `<button class="intent-btn" onclick="toggleIntentExpand('${esc(intent)}')" title="Показать блоки">${isExpanded ? '▲' : '▼'}</button>` : ''}
-          <button class="intent-btn" onclick="renameIntent('${esc(intent)}')" title="Переименовать">✎</button>
+          <button class="intent-btn" onclick="renameIntent('${esc(intent)}')" title="Переименовать">${csIcon('pen',12)}</button>
           <button class="intent-btn danger" onclick="deleteIntent('${esc(intent)}')" title="Удалить">×</button>
         </div>
         ${isExpanded && count > 0 ? `
@@ -4699,7 +4740,7 @@ function simStop() {
   const hint = document.getElementById('canvas-hint');
   if (hint) hint.style.display = '';
   const btn = document.getElementById('btn-sim-toggle');
-  if (btn) { btn.classList.remove('active'); btn.textContent = '🎬 Симулятор'; }
+  if (btn) { btn.classList.remove('active'); btn.textContent = '▶ Симулятор'; }
 
   // Clear all simulator classes
   document.querySelectorAll('.cv-node').forEach(n => {
@@ -4844,7 +4885,7 @@ function renderSimSidebar() {
   let historyHtml = '';
   if (simState.history.length) {
     historyHtml = `<div class="sim-history">
-      <div class="sim-history-title">📜 История разговора</div>
+      <div class="sim-history-title">${csIcon('scroll',13)} История разговора</div>
       <div class="sim-history-list">
         ${simState.history.map((step) => {
           const hb = d.blocks.find(x => x.id === step.id);
@@ -4860,7 +4901,7 @@ function renderSimSidebar() {
   let choicesHtml = '';
   if (isEnd) {
     choicesHtml = `<div class="sim-end-card">
-      <div class="sim-end-card-icon">${type === 'end' ? '🏁' : '⚠️'}</div>
+      <div class="sim-end-card-icon">${type === 'end' ? csIcon('flag',36) : csIcon('warn',36)}</div>
       <div class="sim-end-card-title">${type === 'end' ? 'Разговор завершён' : 'Тупик!'}</div>
       <div class="sim-end-card-sub">${type === 'end' ? 'Клиент получил ответ и разговор закончился.' : 'У этого блока нет исходящих веток. Добавьте ветку в редакторе, либо поставьте тип «Конец».'}</div>
     </div>`;
@@ -4877,13 +4918,13 @@ function renderSimSidebar() {
   sidebar.innerHTML = `
     <div class="sim-card">
       <div class="sim-card-header">
-        <div class="sim-card-badge">🎬 СИМУЛЯТОР</div>
+        <div class="sim-card-badge">${csIcon('film',12)} СИМУЛЯТОР</div>
         <div class="sim-card-title">${esc(b.title || b.id)}</div>
         <div class="sim-card-id">${esc(b.id)}</div>
       </div>
       <div class="sim-lang-tabs">
-        <button class="sim-lang-tab ${lang === 'ru' ? 'active' : ''}" onclick="simSetLang('ru')">🇷🇺 RU</button>
-        <button class="sim-lang-tab ${lang === 'uz' ? 'active' : ''}" onclick="simSetLang('uz')">🇺🇿 UZ</button>
+        <button class="sim-lang-tab ${lang === 'ru' ? 'active' : ''}" onclick="simSetLang('ru')">RU</button>
+        <button class="sim-lang-tab ${lang === 'uz' ? 'active' : ''}" onclick="simSetLang('uz')">UZ</button>
       </div>
       <div class="sim-card-text">${esc(text)}</div>
       ${choicesHtml}
@@ -4956,13 +4997,13 @@ function renderCanvasSidebar(id) {
 
         <div class="cs-multi-section">
           <button class="btn btn-danger" style="width: 100%;" onclick="deleteSelectedBlocks()">
-            🗑 Удалить ${count} ${count === 1 ? 'блок' : 'блоков'}
+            ${csIcon('trash',13)} Удалить ${count} ${count === 1 ? 'блок' : 'блоков'}
             <span style="opacity: 0.7; margin-left: 6px; font-size: 11px;">(Delete)</span>
           </button>
         </div>
 
         <div class="cs-multi-tip">
-          💡 Перетащите любой выделенный блок — все переместятся вместе.<br>
+          ${csIcon('spark',11)} Перетащите любой выделенный блок — все переместятся вместе.<br>
           Shift+клик — снять/добавить в выделение.<br>
           Ctrl+A — выделить все.<br>
           Esc — снять выделение.
@@ -5061,23 +5102,23 @@ function renderCanvasSidebar(id) {
     </div>
 
     <div class="cs-field">
-      <label class="field-label">🇷🇺 Русский</label>
+      <label class="field-label">Русский</label>
       <textarea class="textarea" id="cs-ru">${esc(b.ru || '')}</textarea>
     </div>
 
     <div class="cs-field">
-      <label class="field-label">🇺🇿 O'zbek</label>
+      <label class="field-label">O'zbek</label>
       <textarea class="textarea" id="cs-uz">${esc(b.uz || '')}</textarea>
     </div>
 
     <div class="ai-block-group">
       <div class="ai-block-title">
-        <span>🤖 AI-помощник</span>
-        <span class="ai-status-badge" onclick="openLLMSettings()" title="Настроить API ключ">⚙</span>
+        <span>${csIcon('robot',13)} AI-помощник</span>
+        <span class="ai-status-badge" onclick="openLLMSettings()" title="Настроить API ключ">${csIcon('gear',12)}</span>
       </div>
       <div class="ai-buttons-grid">
         ${renderStyleButtons(b.id, 'improveBlockText')}
-        <button class="ai-btn ai-btn-special" onclick="generateObjectionResponses('${esc(b.id)}')" style="grid-column: 1 / -1;">💬 Ответы на возражение</button>
+        <button class="ai-btn ai-btn-special" onclick="generateObjectionResponses('${esc(b.id)}')" style="grid-column: 1 / -1;">${csIcon('chat',12)} Ответы на возражение</button>
       </div>
     </div>
 
@@ -5087,9 +5128,9 @@ function renderCanvasSidebar(id) {
     </div>
 
     <div class="cs-actions">
-      <button class="btn btn-sm btn-danger" onclick="canvasDeleteBlock('${esc(b.id)}')">🗑 Удалить</button>
+      <button class="btn btn-sm btn-danger" onclick="canvasDeleteBlock('${esc(b.id)}')">${csIcon('trash',12)} Удалить</button>
       <button class="btn btn-sm" onclick="canvasAddNextBlock('${esc(b.id)}')">+ Следующий</button>
-      <button class="btn btn-sm btn-primary" onclick="canvasSaveBlock('${esc(b.id)}')">💾 Сохранить</button>
+      <button class="btn btn-sm btn-primary" onclick="canvasSaveBlock('${esc(b.id)}')">${csIcon('save',12)} Сохранить</button>
     </div>
   `;
 }
@@ -6033,7 +6074,7 @@ function saveLLMSettings() {
 async function geminiGenerate(systemPrompt, userPrompt, opts = {}) {
   const apiKey = opts.apiKey || llmSettings.geminiApiKey;
   if (!apiKey) {
-    throw new Error('API ключ Gemini не настроен. Нажмите "⚙️ Настройки AI" чтобы его добавить.');
+    throw new Error('API ключ Gemini не настроен. Нажмите "Настройки AI" чтобы его добавить.');
   }
   const model = opts.model || llmSettings.geminiModel || 'gemini-3.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
@@ -6081,7 +6122,7 @@ async function geminiGenerate(systemPrompt, userPrompt, opts = {}) {
 async function openaiGenerate(systemPrompt, userPrompt, opts = {}) {
   const apiKey = opts.apiKey || llmSettings.openaiApiKey;
   if (!apiKey) {
-    throw new Error('API ключ OpenAI не настроен. Нажмите "⚙️ Настройки AI" чтобы его добавить.');
+    throw new Error('API ключ OpenAI не настроен. Нажмите "Настройки AI" чтобы его добавить.');
   }
   const model = opts.model || llmSettings.openaiModel || 'gpt-4o-mini';
   let sys = systemPrompt || '';
@@ -6245,7 +6286,7 @@ async function listAvailableModels() {
       return;
     }
 
-    const text = `Доступные модели для вашего ключа (${models.length}):\n\n${models.join('\n')}\n\n💡 Если в выпадающем списке выше нет нужной модели — скопируйте её точное имя и сообщите разработчику.`;
+    const text = `Доступные модели для вашего ключа (${models.length}):\n\n${models.join('\n')}\n\nЕсли в выпадающем списке выше нет нужной модели — скопируйте её точное имя и сообщите разработчику.`;
     alert(text);
 
     const sel = document.getElementById(isOpenai ? 'llm-openai-model-select' : 'llm-model-select');
@@ -6282,11 +6323,11 @@ function updateAIStatusBadge() {
 // AI FEATURE 1: Improve block text
 // ═══════════════════════════════════════════════════════════════
 const IMPROVE_PROMPTS = {
-  sell:     { label: '🎯 Продающий',  desc: 'Сделать более убедительным, добавить выгоду' },
-  short:    { label: '✂️ Короче',     desc: 'Сократить до сути, убрать лишнее' },
-  pressure: { label: '⚡ Давление',    desc: 'Добавить срочность и последствия' },
-  soft:     { label: '🤗 Мягче',      desc: 'Смягчить тон, убрать давление' },
-  fix:      { label: '✍️ Исправить',   desc: 'Улучшить грамматику и стиль' }
+  sell:     { label: 'Продающий',  desc: 'Сделать более убедительным, добавить выгоду' },
+  short:    { label: 'Короче',     desc: 'Сократить до сути, убрать лишнее' },
+  pressure: { label: 'Давление',    desc: 'Добавить срочность и последствия' },
+  soft:     { label: 'Мягче',      desc: 'Смягчить тон, убрать давление' },
+  fix:      { label: 'Исправить',   desc: 'Улучшить грамматику и стиль' }
 };
 
 // User-defined custom styles (saved to storage + cloud)
@@ -6301,8 +6342,8 @@ function loadCustomStyles() {
   // Seed a couple of useful Uzbek-focused defaults on first run
   if (!Object.keys(customStyles).length && !localStorage.getItem(CUSTOM_STYLES_KEY + '_seeded')) {
     customStyles = {
-      uz_spoken: { label: '🗣 Разговорный UZ', desc: 'Перепиши узбекский (uz) текст более живым, разговорным, естественным — как реально говорит человек, а не книжный/официальный язык. Русский (ru) оставь близким по смыслу. Сохрани суть.' },
-      formal:    { label: '👔 Официальный',     desc: 'Сделать тон более официальным, деловым и уважительным на обоих языках.' }
+      uz_spoken: { label: 'Разговорный UZ', desc: 'Перепиши узбекский (uz) текст более живым, разговорным, естественным — как реально говорит человек, а не книжный/официальный язык. Русский (ru) оставь близким по смыслу. Сохрани суть.' },
+      formal:    { label: 'Официальный',     desc: 'Сделать тон более официальным, деловым и уважительным на обоих языках.' }
     };
     try {
       localStorage.setItem(CUSTOM_STYLES_KEY, JSON.stringify(customStyles));
@@ -6336,7 +6377,7 @@ function renderStyleButtons(blockId, handlerName) {
     html += `<button class="ai-btn ai-btn-custom" onclick="${handlerName}('${esc(blockId)}', '${k}')">${esc(v.label)}</button>`;
   });
   // Fix style (full width) + Add style button
-  html += `<button class="ai-btn" onclick="${handlerName}('${esc(blockId)}', 'fix')" style="grid-column: 1 / -1;">✍️ Исправить стиль</button>`;
+  html += `<button class="ai-btn" onclick="${handlerName}('${esc(blockId)}', 'fix')" style="grid-column: 1 / -1;">Исправить стиль</button>`;
   html += `<button class="ai-btn ai-btn-add" onclick="openStyleManager()" style="grid-column: 1 / -1;">+ Добавить свой стиль</button>`;
   return html;
 }
@@ -6352,7 +6393,7 @@ function openStyleManager() {
   modal.innerHTML = `
     <div class="modal" style="max-width: 540px;">
       <div class="modal-head">
-        <div class="modal-title">✨ Мои стили AI</div>
+        <div class="modal-title">${csIcon('spark',14)} Мои стили AI</div>
         <button class="modal-x" onclick="document.getElementById('style-manager-modal').remove()">×</button>
       </div>
       <div class="modal-body">
@@ -6363,7 +6404,7 @@ function openStyleManager() {
         <div style="border-top:1px solid var(--bd-subtle); margin-top:16px; padding-top:16px;">
           <div class="cs-field" style="margin-bottom:10px;">
             <label class="field-label">Название стиля (с эмодзи)</label>
-            <input class="input" id="new-style-label" placeholder="🗣 Разговорный UZ">
+            <input class="input" id="new-style-label" placeholder="Разговорный UZ">
           </div>
           <div class="cs-field" style="margin-bottom:10px;">
             <label class="field-label">Что должен сделать AI (описание задачи)</label>
@@ -6461,7 +6502,7 @@ async function improveBlockTextInList(blockId, mode) {
   const currentRu = document.getElementById('fr-' + blockId)?.value ?? b.ru ?? '';
   const currentUz = document.getElementById('fu-' + blockId)?.value ?? b.uz ?? '';
 
-  toast('🤖 Gemini думает...', 'info');
+  toast('AI думает…', 'info');
   await _doImproveBlock(b, mode, currentRu, currentUz, 'list');
 }
 
@@ -6523,7 +6564,7 @@ function showAISuggestion(blockId, newRu, newUz, label) {
   panel.className = 'ai-suggestion';
   panel.innerHTML = `
     <div class="ai-sugg-header">
-      <span>✨ ${esc(label)} — вариант AI</span>
+      <span>${csIcon('spark',12)} ${esc(label)} — вариант AI</span>
       <button class="ai-sugg-close" onclick="document.getElementById('ai-suggestion').remove()">×</button>
     </div>
     <div class="ai-sugg-text">
@@ -6585,7 +6626,7 @@ function renderGsRefsPicker() {
   const counter = document.getElementById('gs-refs-count');
   if (!picker) return;
   if (!aiReferences.length) {
-    picker.innerHTML = `<div class="gs-refs-empty">📭 Эталонов пока нет. Создайте их на вкладке «📚 Эталоны». Можно генерировать и без эталонов, но качество будет ниже.</div>`;
+    picker.innerHTML = `<div class="gs-refs-empty">${csIcon('bookmark',13)} Эталонов пока нет. Создайте их на вкладке «Эталоны». Можно генерировать и без эталонов, но качество будет ниже.</div>`;
     if (counter) counter.textContent = '';
     return;
   }
@@ -6599,9 +6640,9 @@ function renderGsRefsPicker() {
         <div class="gs-ref-content">
           <div class="gs-ref-name">${esc(r.name)}</div>
           <div class="gs-ref-meta">
-            ${typeLabel ? `<span style="color:#7c3aed;font-weight:600;">📋 ${esc(typeLabel)}</span>` : ''}
-            ${r.niche ? `<span>🏢 ${esc(r.niche)}</span>` : ''}
-            ${r.goal ? `<span>🎯 ${esc(r.goal)}</span>` : ''}
+            ${typeLabel ? `<span style="color:#7c3aed;font-weight:600;">${csIcon('clipboard',10)} ${esc(typeLabel)}</span>` : ''}
+            ${r.niche ? `<span>${csIcon('building',10)} ${esc(r.niche)}</span>` : ''}
+            ${r.goal ? `<span>${csIcon('target',10)} ${esc(r.goal)}</span>` : ''}
             ${tags.map(t => `<span style="color:#9ca3af;">#${esc(t)}</span>`).join('')}
             <span style="color:#9ca3af;">${blockCount} бл.</span>
           </div>
@@ -6618,7 +6659,7 @@ function updateGsRefsCount() {
   if (!counter) return;
   const active = aiReferences.filter(r => r.active).length;
   if (active === 0) {
-    counter.innerHTML = `<span style="color:#dc2626;">⚠️ ни один не выбран</span>`;
+    counter.innerHTML = `<span style="color:#dc2626;">${csIcon('warn',11)} ни один не выбран</span>`;
   } else {
     counter.textContent = `выбрано: ${active}`;
   }
@@ -6727,7 +6768,7 @@ function handleBriefUpload(ev) {
           `<div style="margin-bottom:5px;"><b>${esc(it.q.slice(0, 70))}</b> — ${esc(it.a.slice(0, 90))}</div>`
         ).join('') || '<i>В брифе нет заполненных ответов — AI получит только список вопросов.</i>';
       }
-      if (!answered) toast('⚠️ В брифе не заполнен ни один ответ — это пустой шаблон?', 'error');
+      if (!answered) toast('В брифе не заполнен ни один ответ — это пустой шаблон?', 'error');
       else toast(`✓ Бриф загружен: ${answered} ответов`);
     } catch (err) {
       console.error('Brief parse failed:', err);
@@ -6774,7 +6815,7 @@ async function generateScript() {
   const btn = document.getElementById('gs-generate-btn');
   const origText = btn.textContent;
   btn.disabled = true;
-  btn.textContent = '⏳ Генерирую скрипт... (30-60 сек)';
+  btn.textContent = 'Генерирую скрипт... (30-60 сек)';
 
   const sizeMap = { small: '10-15', medium: '25-35', large: '50-70' };
   const blockCount = sizeMap[size] || '25-35';
@@ -7022,7 +7063,7 @@ async function generateObjectionResponses(blockId) {
   panel.className = 'ai-suggestion';
   panel.innerHTML = `
     <div class="ai-sugg-header">
-      <span>💬 Варианты ответа на: "${esc(objection)}"</span>
+      <span>${csIcon('chat',13)} Варианты ответа на: "${esc(objection)}"</span>
       <button class="ai-sugg-close" onclick="document.getElementById('ai-objection').remove()">×</button>
     </div>
     <div class="ai-loading"><div class="ai-spinner"></div><span>Gemini придумывает ответы...</span></div>
@@ -7077,7 +7118,7 @@ async function generateObjectionResponses(blockId) {
 
     panel.innerHTML = `
       <div class="ai-sugg-header">
-        <span>💬 "${esc(objection)}"</span>
+        <span>${csIcon('chat',12)} "${esc(objection)}"</span>
         <button class="ai-sugg-close" onclick="document.getElementById('ai-objection').remove()">×</button>
       </div>
       <div class="ai-variants">${variantsHtml}</div>
@@ -7085,7 +7126,7 @@ async function generateObjectionResponses(blockId) {
   } catch (err) {
     panel.innerHTML = `
       <div class="ai-sugg-header">
-        <span style="color:#dc2626;">⚠️ Ошибка</span>
+        <span style="color:#dc2626;">${csIcon('warn',12)} Ошибка</span>
         <button class="ai-sugg-close" onclick="document.getElementById('ai-objection').remove()">×</button>
       </div>
       <div style="padding:12px; font-size:13px; color:#dc2626;">${esc(err.message)}</div>
@@ -7129,10 +7170,10 @@ function renderReferences() {
   if (!aiReferences.length) {
     list.innerHTML = `
       <div class="refs-empty">
-        <div style="font-size: 42px; margin-bottom: 12px;">📚</div>
+        <div style="font-size: 42px; margin-bottom: 12px;">${csIcon('bookmark',40)}</div>
         <h3>Нет эталонных скриптов</h3>
         <p>Загрузите JSON ваших качественных скриптов — Gemini будет использовать их как образец стиля при генерации новых.</p>
-        <p style="font-size: 12px; color:#9ca3af; margin-top:10px;">💡 Совет: используйте уже готовые AVO или Collection как первый эталон. Откройте профиль → Экспорт → 💾 JSON, потом загрузите этот файл сюда.</p>
+        <p style="font-size: 12px; color:#9ca3af; margin-top:10px;">${csIcon('spark',11)} Совет: используйте уже готовые AVO или Collection как первый эталон. Откройте профиль → Экспорт → JSON, потом загрузите этот файл сюда.</p>
       </div>
     `;
     return;
@@ -7151,18 +7192,18 @@ function renderReferences() {
         <div class="ref-card-body">
           <div class="ref-card-name">${esc(r.name || '(без названия)')}</div>
           <div class="ref-card-meta">
-            ${typeLabel ? `<span class="ref-tag ref-tag-type">📋 ${esc(typeLabel)}</span>` : ''}
-            ${r.niche ? `<span class="ref-tag">🏢 ${esc(r.niche)}</span>` : ''}
-            ${r.goal ? `<span class="ref-tag">🎯 ${esc(r.goal)}</span>` : ''}
-            ${r.tone ? `<span class="ref-tag">🎨 ${esc(r.tone)}</span>` : ''}
+            ${typeLabel ? `<span class="ref-tag ref-tag-type">${csIcon('clipboard',10)} ${esc(typeLabel)}</span>` : ''}
+            ${r.niche ? `<span class="ref-tag">${csIcon('building',10)} ${esc(r.niche)}</span>` : ''}
+            ${r.goal ? `<span class="ref-tag">${csIcon('target',10)} ${esc(r.goal)}</span>` : ''}
+            ${r.tone ? `<span class="ref-tag">${csIcon('swatch',10)} ${esc(r.tone)}</span>` : ''}
             ${tags.map(t => `<span class="ref-tag ref-tag-free">#${esc(t)}</span>`).join('')}
             <span class="ref-tag-mut">${blockCount} блоков · ${sizeKb} KB</span>
           </div>
           ${r.notes ? `<div class="ref-card-notes">${esc(r.notes)}</div>` : ''}
         </div>
         <div class="ref-card-actions">
-          <button class="icon-btn" onclick="editReference(${idx})" title="Описание / стиль">✎</button>
-          <button class="icon-btn" onclick="useReferenceAsProfile(${idx})" title="Загрузить как профиль">📂</button>
+          <button class="icon-btn" onclick="editReference(${idx})" title="Описание / стиль">${csIcon('pen',12)}</button>
+          <button class="icon-btn" onclick="useReferenceAsProfile(${idx})" title="Загрузить как профиль">${csIcon('folder',12)}</button>
           <button class="icon-btn" onclick="deleteReference(${idx})" title="Удалить">×</button>
         </div>
       </div>
@@ -7261,7 +7302,7 @@ function openRefEditModal(idx) {
   const html = `
     <div class="modal" style="max-width: 540px;">
       <div class="modal-head">
-        <div class="modal-title">✎ Описание эталона</div>
+        <div class="modal-title">${csIcon('pen',14)} Описание эталона</div>
         <button class="icon-btn" onclick="closeRefEditModal()">×</button>
       </div>
       <div class="modal-body">
@@ -7270,7 +7311,7 @@ function openRefEditModal(idx) {
           <input type="text" id="ref-edit-name" class="input" value="${esc(r.name || '')}" style="width:100%;">
         </div>
         <div class="field" style="margin-top: 12px;">
-          <label class="field-label">📋 Тип скрипта</label>
+          <label class="field-label">${csIcon('clipboard',12)} Тип скрипта</label>
           <select id="ref-edit-type" class="input" style="width:100%;">
             <option value="">— не указан —</option>
             ${typeOptions}
@@ -7278,16 +7319,16 @@ function openRefEditModal(idx) {
         </div>
         <div style="display: flex; gap: 10px; margin-top: 12px;">
           <div class="field" style="flex:1;">
-            <label class="field-label">🏢 Сфера / ниша</label>
+            <label class="field-label">${csIcon('building',12)} Сфера / ниша</label>
             <input type="text" id="ref-edit-niche" class="input" value="${esc(r.niche || '')}" placeholder="микрозайм, кредит, депозит..." style="width:100%;">
           </div>
           <div class="field" style="flex:1;">
-            <label class="field-label">🎯 Цель</label>
+            <label class="field-label">${csIcon('target',12)} Цель</label>
             <input type="text" id="ref-edit-goal" class="input" value="${esc(r.goal || '')}" placeholder="взыскание, продажа..." style="width:100%;">
           </div>
         </div>
         <div class="field" style="margin-top: 12px;">
-          <label class="field-label">🎨 Тон общения</label>
+          <label class="field-label">${csIcon('swatch',12)} Тон общения</label>
           <input type="text" id="ref-edit-tone" class="input" value="${esc(r.tone || '')}" placeholder="формальный / дружелюбный / настойчивый" style="width:100%;">
         </div>
         <div class="field" style="margin-top: 12px;">
@@ -7295,13 +7336,13 @@ function openRefEditModal(idx) {
           <input type="text" id="ref-edit-tags" class="input" value="${esc(tags)}" placeholder="avo, физлица, B2C, 2024" style="width:100%;">
         </div>
         <div class="field" style="margin-top: 12px;">
-          <label class="field-label">📝 Заметки про стиль (важно для AI!)</label>
+          <label class="field-label">${csIcon('pen',12)} Заметки про стиль (важно для AI!)</label>
           <textarea id="ref-edit-notes" class="textarea" style="min-height: 90px; width:100%;" placeholder="Что особенного в этом скрипте: счётчики повторов intent_2/intent_3, на 3-й попытке жёсткие формулировки с упоминанием суда, UZ всегда латиницей, использует {APP_NAME}...">${esc(r.notes || '')}</textarea>
         </div>
       </div>
       <div class="modal-actions">
         <button class="btn" onclick="closeRefEditModal()">Отмена</button>
-        <button class="btn btn-primary" onclick="saveRefEdit(${idx})">💾 Сохранить</button>
+        <button class="btn btn-primary" onclick="saveRefEdit(${idx})">${csIcon('save',12)} Сохранить</button>
       </div>
     </div>
   `;
@@ -7436,7 +7477,7 @@ async function runAIReview() {
   } catch (err) {
     document.getElementById('review-content').innerHTML = `
       <div style="padding: 30px; text-align:center; color:#dc2626;">
-        <div style="font-size:42px;">⚠️</div>
+        <div style="font-size:42px;">${csIcon('warn',40)}</div>
         <h3>Ошибка проверки</h3>
         <p>${esc(err.message)}</p>
       </div>
@@ -7451,7 +7492,7 @@ function renderReviewResults(result) {
   const res = Array.isArray(result) ? { issues: result } : (result || {});
   const issues = res.issues || [];
   const sevLabels = { high: 'Критично', medium: 'Важно', low: 'Мелочь' };
-  const sevIcons = { high: '🔴', medium: '🟡', low: '⚪' };
+  const sevIcons = { high: csSevDiamond('#dc2626'), medium: csSevDiamond('#f59e0b'), low: csSevDiamond('#9ca3af') };
 
   // Sort by severity FIRST, then remember: fix buttons reference indices in this array
   issues.sort((a, b) => {
@@ -7480,7 +7521,7 @@ function renderReviewResults(result) {
   if (!issues.length) {
     html = head + `
       <div style="padding: 30px 20px; text-align: center;">
-        <div style="font-size: 56px; margin-bottom: 12px;">🎉</div>
+        <div style="font-size: 56px; margin-bottom: 12px;">${csIcon('checkDiamond',48,'color:#16a34a;')}</div>
         <h3>Скрипт выглядит отлично!</h3>
         <p style="color:#6b7280;">AI не нашёл серьёзных проблем.</p>
       </div>
@@ -7499,14 +7540,14 @@ function renderReviewResults(result) {
         ${issues.map((iss, i) => `
           <div class="review-issue sev-${iss.severity || 'low'}">
             <div class="review-issue-head">
-              <span class="review-issue-icon">${sevIcons[iss.severity] || '⚪'}</span>
+              <span class="review-issue-icon">${sevIcons[iss.severity] || csSevDiamond('#9ca3af')}</span>
               <span class="review-issue-sev">${sevLabels[iss.severity] || 'Замечание'}</span>
-              ${iss.blockId ? `<span class="review-issue-block" onclick="jumpToBlockFromReview('${esc(iss.blockId)}')">📍 ${esc(iss.blockId)}</span>` : ''}
+              ${iss.blockId ? `<span class="review-issue-block" onclick="jumpToBlockFromReview('${esc(iss.blockId)}')">${csIcon('pin',10)} ${esc(iss.blockId)}</span>` : ''}
               ${iss.type ? `<span class="review-issue-type">${esc(iss.type)}</span>` : ''}
             </div>
             <div class="review-issue-msg">${esc(iss.message || '')}</div>
-            ${iss.suggestion ? `<div class="review-issue-sugg">💡 ${esc(iss.suggestion)}</div>` : ''}
-            ${iss.blockId ? `<div style="margin-top:8px;"><button id="fix-issue-btn-${i}" class="btn btn-sm" onclick="fixIssueFromReview(${i})" title="AI перепишет тексты этого блока (ru и uz) с учётом проблемы. Откат — Ctrl+Z">✨ Исправить</button></div>` : ''}
+            ${iss.suggestion ? `<div class="review-issue-sugg">${csIcon('spark',11)} ${esc(iss.suggestion)}</div>` : ''}
+            ${iss.blockId ? `<div style="margin-top:8px;"><button id="fix-issue-btn-${i}" class="btn btn-sm" onclick="fixIssueFromReview(${i})" title="AI перепишет тексты этого блока (ru и uz) с учётом проблемы. Откат — Ctrl+Z">${csIcon('spark',11)} Исправить</button></div>` : ''}
           </div>
         `).join('')}
       </div>
@@ -7524,7 +7565,7 @@ async function fixIssueFromReview(idx) {
   const b = d.blocks.find(x => x.id === iss.blockId);
   if (!b) { toast('Блок не найден: ' + iss.blockId, 'error'); return; }
   const btn = document.getElementById('fix-issue-btn-' + idx);
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Исправляю…'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = 'Исправляю…'; }
   try {
     const task = (iss.message || 'Улучшить блок') + (iss.suggestion ? ('. Как исправить: ' + iss.suggestion) : '');
     const userPrompt = fillTemplate(aiPrompts.improve_user, {
@@ -7554,7 +7595,7 @@ async function fixIssueFromReview(idx) {
     toast(`✓ Блок «${b.title || b.id}» переписан (Ctrl+Z — откатить)`);
   } catch (err) {
     toast('Ошибка исправления: ' + err.message, 'error');
-    if (btn) { btn.disabled = false; btn.textContent = '✨ Исправить'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = csIcon('spark',11) + ' Исправить'; }
   }
 }
 
@@ -7656,7 +7697,7 @@ async function bootApp() {
     saveToStorage(); // обновить локальный кеш облачными данными
     setTimeout(() => {
       const count = Object.keys(profiles).length;
-      toast(`☁ Загружено из облака: ${count} ${count === 1 ? 'профиль' : 'профилей'}`, 'success');
+      toast(`Загружено из облака: ${count} ${count === 1 ? 'профиль' : 'профилей'}`, 'success');
     }, 300);
   } else if (restored) {
     setTimeout(() => {
