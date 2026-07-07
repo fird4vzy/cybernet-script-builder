@@ -4187,3 +4187,8 @@ body.canvas-fullscreen-active .side-rail {
   color: var(--tx-tertiary);
 }
 .export-options select { width: 100%; }
+
+
+/* ═══ FULLSCREEN FIX: modals & toasts must sit ABOVE the fullscreen canvas (z-index 9999) ═══ */
+.modal-backdrop { z-index: 10000; }
+.toast { z-index: 10050; }
