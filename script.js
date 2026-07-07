@@ -4720,7 +4720,11 @@ function simStart() {
   document.getElementById('sim-status-bar').style.display = 'flex';
   document.getElementById('canvas-hint').style.display = 'none';
   const btn = document.getElementById('btn-sim-toggle');
-  if (btn) { btn.classList.add('active'); btn.textContent = '⏹ Остановить'; }
+  if (btn) {
+    btn.classList.add('active');
+    if (!btn.dataset.origHtml) btn.dataset.origHtml = btn.innerHTML;
+    btn.innerHTML = '⏹ Остановить';
+  }
 
   canvasRender();
   simApplyVisuals();
@@ -4740,7 +4744,7 @@ function simStop() {
   const hint = document.getElementById('canvas-hint');
   if (hint) hint.style.display = '';
   const btn = document.getElementById('btn-sim-toggle');
-  if (btn) { btn.classList.remove('active'); btn.textContent = '▶ Симулятор'; }
+  if (btn) { btn.classList.remove('active'); btn.innerHTML = btn.dataset.origHtml || '▶ Симулятор'; }
 
   // Clear all simulator classes
   document.querySelectorAll('.cv-node').forEach(n => {
@@ -4942,6 +4946,9 @@ function simSetLang(lang) {
 function renderCanvasSidebar(id) {
   const sidebar = document.getElementById('canvas-sidebar');
   if (!sidebar) return;
+  // While the simulator is running, the sidebar belongs to it: every re-render
+  // path (block click, deselect, cloud sync, Esc) must keep the sim panel.
+  if (simState.active && simState.currentId) { renderSimSidebar(); return; }
   if (id) canvasState.selEdge = null;
   if (canvasState.selEdge) {
     const fromB = csFindBlock(canvasState.selEdge.from), toB = csFindBlock(canvasState.selEdge.to);
@@ -6191,13 +6198,23 @@ function setLLMProviderTab(provider) {
 
 function openLLMSettings() {
   const modal = document.getElementById('llm-settings-modal');
-  document.getElementById('llm-key-input').value = llmSettings.geminiApiKey;
-  document.getElementById('llm-model-select').value = llmSettings.geminiModel;
-  document.getElementById('llm-openai-key-input').value = llmSettings.openaiApiKey;
-  document.getElementById('llm-openai-model-select').value = llmSettings.openaiModel;
-  setLLMProviderTab(llmSettings.provider);
+  if (!modal) { toast('Окно настроек AI не найдено — обновите страницу (Ctrl+Shift+R)', 'error'); return; }
+  // Null-safe: OpenAI fields exist only in the newer index.html. If the page's HTML
+  // is older/cached, still open the modal with the Gemini tab instead of crashing.
+  const gKey = document.getElementById('llm-key-input');
+  const gModel = document.getElementById('llm-model-select');
+  const oKey = document.getElementById('llm-openai-key-input');
+  const oModel = document.getElementById('llm-openai-model-select');
+  if (gKey) gKey.value = llmSettings.geminiApiKey;
+  if (gModel) gModel.value = llmSettings.geminiModel;
+  if (oKey) oKey.value = llmSettings.openaiApiKey;
+  if (oModel) oModel.value = llmSettings.openaiModel;
+  setLLMProviderTab(oKey ? llmSettings.provider : 'gemini');
   modal.style.display = 'flex';
-  setTimeout(() => document.getElementById(llmSettings.provider === 'openai' ? 'llm-openai-key-input' : 'llm-key-input').focus(), 50);
+  setTimeout(() => {
+    const el = document.getElementById(llmSettings.provider === 'openai' && oKey ? 'llm-openai-key-input' : 'llm-key-input');
+    if (el) el.focus();
+  }, 50);
 }
 
 function closeLLMSettings() {
@@ -6206,10 +6223,10 @@ function closeLLMSettings() {
 
 function saveLLMSettingsFromModal() {
   // Save BOTH providers' fields (whichever tab isn't active keeps its value, just hidden)
-  llmSettings.geminiApiKey = document.getElementById('llm-key-input').value.trim();
-  llmSettings.geminiModel = document.getElementById('llm-model-select').value;
-  llmSettings.openaiApiKey = document.getElementById('llm-openai-key-input').value.trim();
-  llmSettings.openaiModel = document.getElementById('llm-openai-model-select').value;
+  llmSettings.geminiApiKey = (document.getElementById('llm-key-input')?.value || '').trim();
+  llmSettings.geminiModel = document.getElementById('llm-model-select')?.value || llmSettings.geminiModel;
+  llmSettings.openaiApiKey = (document.getElementById('llm-openai-key-input')?.value ?? llmSettings.openaiApiKey).trim();
+  llmSettings.openaiModel = document.getElementById('llm-openai-model-select')?.value || llmSettings.openaiModel;
   llmSettings.provider = activeModalProvider();
   csSyncActiveLLM();
   saveLLMSettings();
