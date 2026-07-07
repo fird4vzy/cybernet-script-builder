@@ -5907,7 +5907,7 @@ const DEFAULT_PROMPTS = {
 Задача: {task}.
 
 Перепиши ОБА текста (ru и uz) с учётом этой задачи. Сохрани переменные в фигурных скобках как есть (например {BANK_NAME}, {AMOUNT}). Верни JSON: {"ru": "новый русский", "uz": "новый узбекский"}.`,
-  review_system: `Ты эксперт по скриптам колл-центра в банках Узбекистана. Анализируешь готовый скрипт и находишь проблемы. Возвращаешь JSON: {"issues": [{"severity": "high"|"medium"|"low", "blockId": "...", "type": "...", "message": "...", "suggestion": "..."}]}. severity: high — критично, medium — важно, low — мелочи. Только сам JSON-объект, без markdown-обёртки из тройных обратных кавычек.`,
+  review_system: `Ты эксперт по скриптам колл-центра в банках Узбекистана. Анализируешь готовый скрипт: даёшь общую оценку и находишь проблемы. Возвращаешь JSON: {"score": 7, "summary": "1-2 предложения: общий вывод о скрипте и главный приоритет доработки", "strengths": ["что сделано хорошо 1", "что сделано хорошо 2"], "issues": [{"severity": "high"|"medium"|"low", "blockId": "...", "type": "...", "message": "...", "suggestion": "..."}]}. score — целое 1-10 (10 = готов к продакшену без правок). strengths — 2-3 конкретных пункта. severity: high — критично, medium — важно, low — мелочи. Только сам JSON-объект, без markdown-обёртки из тройных обратных кавычек.`,
   review_user: `Проанализируй скрипт и найди до 10 самых важных проблем.
 
 Что искать:
@@ -5922,6 +5922,14 @@ const DEFAULT_PROMPTS = {
 - Неиспользуемые переменные в vars
 - Отсутствие type: end (разговор не завершается)
 - Кириллица в узбекском тексте (uz должен быть ТОЛЬКО на латинице — o', g', sh, ch; любая кириллица в uz это высокая критичность)
+
+ОБЯЗАТЕЛЬНЫЙ ЧЕК-ЛИСТ ИНТЕНТОВ — проверь, что скрипт обрабатывает КАЖДЫЙ пункт. Отсутствие обработки = отдельная проблема (medium, для мошенничества — high):
+1. Мошенничество / недоверие («вы мошенники», «откуда у вас мой номер»)
+2. Не слышно / плохая связь
+3. Трубку взял другой человек (родственник, коллега)
+4. Просьба перевести на живого оператора
+5. Просьба перезвонить позже / неудобно говорить
+6. Автоответчик / голосовая почта
 
 Скрипт в JSON формате (имя: "{name}", блоков: {blockCount}):
 {scriptJson}
@@ -7373,7 +7381,7 @@ async function runAIReview() {
   document.getElementById('review-content').innerHTML = `
     <div class="ai-loading" style="padding: 40px 20px;">
       <div class="ai-spinner"></div>
-      <span>Gemini проверяет ваш скрипт... (15-30 сек)</span>
+      <span>AI проверяет ваш скрипт... (15-30 сек)</span>
     </div>
   `;
 
@@ -7419,8 +7427,12 @@ async function runAIReview() {
       if (!m) throw new Error('Не могу распарсить JSON');
       parsed = JSON.parse(m[0]);
     }
-    const issues = parsed.issues || [];
-    renderReviewResults(issues);
+    renderReviewResults({
+      issues: parsed.issues || [],
+      summary: parsed.summary || '',
+      score: parsed.score,
+      strengths: Array.isArray(parsed.strengths) ? parsed.strengths : []
+    });
   } catch (err) {
     document.getElementById('review-content').innerHTML = `
       <div style="padding: 30px; text-align:center; color:#dc2626;">
@@ -7432,31 +7444,52 @@ async function runAIReview() {
   }
 }
 
-function renderReviewResults(issues) {
-  const sevColors = { high: '#dc2626', medium: '#f59e0b', low: '#6b7280' };
+let lastReviewIssues = [];
+
+function renderReviewResults(result) {
+  // Back-compat: accept both the old array shape and the new verdict object
+  const res = Array.isArray(result) ? { issues: result } : (result || {});
+  const issues = res.issues || [];
   const sevLabels = { high: 'Критично', medium: 'Важно', low: 'Мелочь' };
   const sevIcons = { high: '🔴', medium: '🟡', low: '⚪' };
 
+  // Sort by severity FIRST, then remember: fix buttons reference indices in this array
+  issues.sort((a, b) => {
+    const order = { high: 0, medium: 1, low: 2 };
+    return (order[a.severity] ?? 3) - (order[b.severity] ?? 3); // ?? not ||: high=0 is falsy!
+  });
+  lastReviewIssues = issues;
+
+  // Verdict header: score + summary + strengths
+  let head = '';
+  const scoreNum = Number(res.score);
+  const sc = Number.isFinite(scoreNum) ? Math.max(1, Math.min(10, Math.round(scoreNum))) : null;
+  if (sc !== null || res.summary || (res.strengths && res.strengths.length)) {
+    const scColor = sc === null ? 'var(--tx-tertiary)' : sc >= 8 ? '#16a34a' : sc >= 5 ? '#f59e0b' : '#dc2626';
+    head = `
+      <div style="display:flex; gap:14px; align-items:flex-start; padding:14px; border:1px solid var(--bd-default); border-radius:10px; margin-bottom:14px;">
+        ${sc !== null ? `<div style="min-width:64px; text-align:center;"><div style="font-size:26px; font-weight:800; color:${scColor};">${sc}/10</div><div style="font-size:10px; color:var(--tx-tertiary); letter-spacing:0.4px;">ОЦЕНКА</div></div>` : ''}
+        <div style="flex:1;">
+          ${res.summary ? `<div style="font-size:13px; line-height:1.55;">${esc(res.summary)}</div>` : ''}
+          ${(res.strengths || []).map(st => `<div style="font-size:12px; color:#16a34a; margin-top:4px;">✓ ${esc(st)}</div>`).join('')}
+        </div>
+      </div>`;
+  }
+
   let html = '';
   if (!issues.length) {
-    html = `
-      <div style="padding: 40px 20px; text-align: center;">
+    html = head + `
+      <div style="padding: 30px 20px; text-align: center;">
         <div style="font-size: 56px; margin-bottom: 12px;">🎉</div>
         <h3>Скрипт выглядит отлично!</h3>
-        <p style="color:#6b7280;">Gemini не нашёл серьёзных проблем.</p>
+        <p style="color:#6b7280;">AI не нашёл серьёзных проблем.</p>
       </div>
     `;
   } else {
-    // Sort by severity
-    issues.sort((a, b) => {
-      const order = { high: 0, medium: 1, low: 2 };
-      return (order[a.severity] || 3) - (order[b.severity] || 3);
-    });
-
     const counts = { high: 0, medium: 0, low: 0 };
     issues.forEach(i => { if (counts[i.severity] !== undefined) counts[i.severity]++; });
 
-    html = `
+    html = head + `
       <div class="review-summary">
         ${counts.high ? `<span class="review-count high">${counts.high} критичных</span>` : ''}
         ${counts.medium ? `<span class="review-count medium">${counts.medium} важных</span>` : ''}
@@ -7473,12 +7506,56 @@ function renderReviewResults(issues) {
             </div>
             <div class="review-issue-msg">${esc(iss.message || '')}</div>
             ${iss.suggestion ? `<div class="review-issue-sugg">💡 ${esc(iss.suggestion)}</div>` : ''}
+            ${iss.blockId ? `<div style="margin-top:8px;"><button id="fix-issue-btn-${i}" class="btn btn-sm" onclick="fixIssueFromReview(${i})" title="AI перепишет тексты этого блока (ru и uz) с учётом проблемы. Откат — Ctrl+Z">✨ Исправить</button></div>` : ''}
           </div>
         `).join('')}
       </div>
     `;
   }
   document.getElementById('review-content').innerHTML = html;
+}
+
+// One-click fix: rewrite the offending block's texts via the improve prompts,
+// using the issue's message+suggestion as the task. Undo-able via Ctrl+Z.
+async function fixIssueFromReview(idx) {
+  const iss = lastReviewIssues[idx];
+  if (!iss || !iss.blockId) return;
+  const d = data();
+  const b = d.blocks.find(x => x.id === iss.blockId);
+  if (!b) { toast('Блок не найден: ' + iss.blockId, 'error'); return; }
+  const btn = document.getElementById('fix-issue-btn-' + idx);
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Исправляю…'; }
+  try {
+    const task = (iss.message || 'Улучшить блок') + (iss.suggestion ? ('. Как исправить: ' + iss.suggestion) : '');
+    const userPrompt = fillTemplate(aiPrompts.improve_user, {
+      title: b.title || '',
+      type: b.type || 'normal',
+      intent: b.intent || '',
+      currentRu: b.ru || '',
+      currentUz: b.uz || '',
+      task
+    });
+    const raw = await aiGenerate(aiPrompts.improve_system, userPrompt, { json: true, temperature: 0.6, maxTokens: 2500 });
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch {
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error('Не могу распарсить ответ AI');
+      parsed = JSON.parse(m[0]);
+    }
+    if (!parsed.ru && !parsed.uz) throw new Error('AI не вернул новые тексты');
+    snapshot('AI-исправление блока');
+    if (parsed.ru) b.ru = parsed.ru;
+    if (parsed.uz) b.uz = parsed.uz;
+    saveToStorage();
+    if (typeof renderBlocks === 'function') renderBlocks();
+    if (typeof canvasRender === 'function') canvasRender();
+    if (typeof renderStats === 'function') renderStats();
+    if (btn) { btn.textContent = '✓ Исправлено'; }
+    toast(`✓ Блок «${b.title || b.id}» переписан (Ctrl+Z — откатить)`);
+  } catch (err) {
+    toast('Ошибка исправления: ' + err.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '✨ Исправить'; }
+  }
 }
 
 function closeAIReview() {
