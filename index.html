@@ -105,7 +105,7 @@
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
         </button>
         <button class="icon-btn" onclick="newProfile()" title="Новый профиль">+</button>
-        <button class="icon-btn" onclick="renameProfile()" title="Переименовать">✎</button>
+        <button class="icon-btn" onclick="renameProfile()" title="Переименовать"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M4 20l4-1L20 7l-3-3L5 16l-1 4z"/><path d="M14 6l3 3"/></svg></button>
         <button class="icon-btn" onclick="deleteProfile()" title="Удалить">×</button>
         <button class="icon-btn" onclick="openVersionHistory()" title="История версий — локальные резервные копии, переживают обновление страницы">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg>
@@ -227,7 +227,7 @@
 
     <div id="tab-intents" style="display: none;">
       <div class="info-box" style="margin-bottom: 14px;">
-        💡 <strong>Интенты</strong> — это намерения клиента, которые определяет ИИ. Например, <code>q_willpay</code> (спрашивает об оплате), <code>howMuch</code> (интересуется суммой). У каждого блока свой intent — он запускается когда клиент говорит что-то подходящее.
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg> <strong>Интенты</strong> — это намерения клиента, которые определяет ИИ. Например, <code>q_willpay</code> (спрашивает об оплате), <code>howMuch</code> (интересуется суммой). У каждого блока свой intent — он запускается когда клиент говорит что-то подходящее.
       </div>
       <div class="intents-toolbar">
         <div class="search" style="flex: 1;">
@@ -336,7 +336,7 @@
 
     <div id="tab-refs" style="display: none;">
       <div class="info-box" style="margin-bottom: 14px;">
-        💡 <strong>Эталоны</strong> — образцы качественных скриптов. AI использует их как пример логики, структуры и тона при создании новых скриптов через ✨ AI-скрипт.<br>
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg> <strong>Эталоны</strong> — образцы качественных скриптов. AI использует их как пример логики, структуры и тона при создании новых скриптов через AI-скрипт.<br>
         <strong style="color:#16a34a;">Как создать эталон:</strong> нарисуйте схему в Visio/Draw.io → импортируйте XML (вкладка Экспорт) → проверьте и заполните интенты/тексты → вернитесь сюда и нажмите «+ Из текущего профиля». Или загрузите готовый JSON.
       </div>
       <div class="refs-toolbar">
@@ -428,7 +428,7 @@
         1. Откройте бесплатный <a href="https://app.diagrams.net" target="_blank">app.diagrams.net</a> → File → Open from → Device → выберите ваш .vsdx файл<br>
         2. После открытия: File → Save As → выберите формат <code>.xml</code> (NOT .drawio compressed)<br>
         3. Загрузите этот .xml выше — все блоки и связи импортируются автоматически<br>
-        4. Тексты ru/uz придётся заполнить вручную или через AI (✨ кнопки)<br><br>
+        4. Тексты ru/uz придётся заполнить вручную или через AI (AI-кнопки)<br><br>
         <strong>Как получить PDF:</strong><br>
         1. Нажмите «Полный PDF» или «PDF только схемы»<br>
         2. В новом окне: <kbd>Ctrl</kbd>+<kbd>P</kbd> (или <kbd>⌘</kbd>+<kbd>P</kbd>) → «Сохранить как PDF»<br>
@@ -481,12 +481,12 @@
         </div>
 
         <div id="llm-gemini-info" class="info-box" style="font-size: 12px; margin-bottom: 16px;">
-          🔑 Для работы AI-функций нужен API ключ Google Gemini.<br>
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><circle cx="8" cy="8" r="4"/><path d="M11 11l9 9M17 17l3-3"/></svg> Для работы AI-функций нужен API ключ Google Gemini.<br>
           <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#2563eb; text-decoration: underline;">aistudio.google.com/apikey</a> — получите бесплатно за 1 минуту.<br>
           Ключ сохраняется только в вашем браузере, никуда не отправляется.
         </div>
         <div id="llm-openai-info" class="info-box" style="font-size: 12px; margin-bottom: 16px; display:none;">
-          🔑 Для работы AI-функций нужен API ключ OpenAI.<br>
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><circle cx="8" cy="8" r="4"/><path d="M11 11l9 9M17 17l3-3"/></svg> Для работы AI-функций нужен API ключ OpenAI.<br>
           <a href="https://platform.openai.com/api-keys" target="_blank" style="color:#2563eb; text-decoration: underline;">platform.openai.com/api-keys</a> — создайте ключ в личном кабинете.<br>
           Ключ сохраняется только в вашем браузере, никуда не отправляется.
         </div>
@@ -539,9 +539,9 @@
         </div>
 
           <div style="display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;">
-            <button id="llm-test-btn" class="btn btn-sm" onclick="testLLMKey()">🧪 Проверить ключ</button>
-            <button class="btn btn-sm" onclick="listAvailableModels()" title="Показать какие модели доступны для этого ключа">📋 Доступные модели</button>
-            <button class="btn btn-sm" onclick="openPromptsEditor()" title="Редактировать системные промпты">📝 Редактор промптов</button>
+            <button id="llm-test-btn" class="btn btn-sm" onclick="testLLMKey()"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M10 2v7L4 20h16L14 9V2M8 2h8"/></svg> Проверить ключ</button>
+            <button class="btn btn-sm" onclick="listAvailableModels()" title="Показать какие модели доступны для этого ключа"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M9 2h6v4H9z"/><path d="M6 4v18h12V4"/><path d="M9 10h6M9 14h6"/></svg> Доступные модели</button>
+            <button class="btn btn-sm" onclick="openPromptsEditor()" title="Редактировать системные промпты"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M4 20l4-1L20 7l-3-3L5 16l-1 4z"/><path d="M14 6l3 3"/></svg> Редактор промптов</button>
           </div>
       </div>
       <div class="modal-actions">
@@ -560,7 +560,7 @@
       </div>
       <div class="modal-body">
         <div class="info-box" style="font-size: 12px; margin-bottom: 16px;">
-          💡 Gemini создаст готовый скрипт с блоками, ветками и текстами на двух языках. Генерация занимает 30-60 секунд.
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg> AI создаст готовый скрипт с блоками, ветками и текстами на двух языках. Генерация занимает 30-60 секунд.
         </div>
         <div class="field" style="margin-bottom: 14px;">
           <label class="field-label">Ниша / Сфера <span style="color:#dc2626;">*</span></label>
@@ -610,7 +610,7 @@
           </div>
         </div>
         <div class="field" style="margin-bottom: 14px;">
-          <label class="field-label">📄 Бриф клиента (опционально)</label>
+          <label class="field-label"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M6 2h9l4 4v16H6z"/><path d="M15 2v4h4M9 12h7M9 16h7"/></svg> Бриф клиента (опционально)</label>
           <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
             <input type="file" id="gs-brief-file" accept=".xlsx,.xls" style="display:none;" onchange="handleBriefUpload(event)">
             <button type="button" class="btn btn-sm" onclick="document.getElementById('gs-brief-file').click()">Загрузить бриф (.xlsx)</button>
@@ -626,7 +626,7 @@
         </div>
         <div class="field" style="margin-top: 14px;">
           <label class="field-label" style="display: flex; align-items: center; justify-content: space-between;">
-            <span>📚 Использовать эталоны как образец стиля</span>
+            <span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M7 3h10v18l-5-4-5 4z"/></svg> Использовать эталоны как образец стиля</span>
             <span style="font-weight:400; color:#6b7280; font-size: 11px;" id="gs-refs-count"></span>
           </label>
           <div id="gs-refs-picker" class="gs-refs-picker">
@@ -637,14 +637,14 @@
             <label class="gs-mode-option">
               <input type="radio" name="gs-mode" value="exact" checked>
               <div>
-                <div class="gs-mode-title">📋 Точная копия (по первому)</div>
+                <div class="gs-mode-title"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M9 2h6v4H9z"/><path d="M6 4v18h12V4"/><path d="M9 10h6M9 14h6"/></svg> Точная копия (по первому)</div>
                 <div class="gs-mode-desc">Скопировать логику, структуру и тон ближайшего эталона, адаптировав под новую сферу</div>
               </div>
             </label>
             <label class="gs-mode-option">
               <input type="radio" name="gs-mode" value="blend">
               <div>
-                <div class="gs-mode-title">🔀 Смешать лучшее</div>
+                <div class="gs-mode-title"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M3 6h4l10 12h4M17 4l4 4-4 4M3 18h4M17 20l4-4-4-4"/></svg> Смешать лучшее</div>
                 <div class="gs-mode-desc">Объединить сильные стороны всех выбранных эталонов в один скрипт</div>
               </div>
             </label>
@@ -653,7 +653,7 @@
       </div>
       <div class="modal-actions">
         <button class="btn" onclick="closeGenScriptModal()">Отмена</button>
-        <button id="gs-generate-btn" class="btn btn-primary" onclick="generateScript()">✨ Сгенерировать</button>
+        <button id="gs-generate-btn" class="btn btn-primary" onclick="generateScript()"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg> Сгенерировать</button>
       </div>
     </div>
   </div>
@@ -670,7 +670,7 @@
       </div>
       <div class="modal-actions">
         <button class="btn" onclick="closeAIReview()">Закрыть</button>
-        <button class="btn btn-primary" onclick="runAIReview()">🔄 Перепроверить</button>
+        <button class="btn btn-primary" onclick="runAIReview()"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 3v5h-5"/></svg> Перепроверить</button>
       </div>
     </div>
   </div>
@@ -679,12 +679,12 @@
   <div id="prompts-modal" class="modal-backdrop" style="display: none;">
     <div class="modal" style="max-width: 880px; max-height: 90vh;">
       <div class="modal-head">
-        <div class="modal-title">📝 Редактор промптов</div>
+        <div class="modal-title"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M4 20l4-1L20 7l-3-3L5 16l-1 4z"/><path d="M14 6l3 3"/></svg> Редактор промптов</div>
         <button class="icon-btn" onclick="closePromptsEditor()">×</button>
       </div>
       <div class="modal-body" style="overflow-y: auto;">
         <div class="info-box" style="font-size: 12px; margin-bottom: 14px;">
-          💡 Здесь можно править инструкции для Gemini. Используйте плейсхолдеры в фигурных скобках — они подставляются автоматически.<br>
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg> Здесь можно править инструкции для AI. Используйте плейсхолдеры в фигурных скобках — они подставляются автоматически.<br>
           Для генерации: <code>{niche}</code>, <code>{goal}</code>, <code>{channel}</code>, <code>{tone}</code>, <code>{blockCount}</code>, <code>{extras}</code><br>
           Для улучшения: <code>{title}</code>, <code>{type}</code>, <code>{intent}</code>, <code>{currentRu}</code>, <code>{currentUz}</code>, <code>{task}</code><br>
           Для ревью: <code>{name}</code>, <code>{blockCount}</code>, <code>{scriptJson}</code>, <code>{referencesSection}</code>
@@ -692,7 +692,7 @@
 
         <div class="prompt-section">
           <div class="prompt-section-head">
-            <h3>✨ Генерация скрипта (system)</h3>
+            <h3><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg> Генерация скрипта (system)</h3>
             <button class="btn btn-sm btn-ghost" onclick="resetSinglePrompt('generate_system')">↻ По умолчанию</button>
           </div>
           <textarea id="pr-generate-system" class="textarea prompt-textarea"></textarea>
@@ -700,7 +700,7 @@
 
         <div class="prompt-section">
           <div class="prompt-section-head">
-            <h3>✨ Генерация скрипта (user)</h3>
+            <h3><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg> Генерация скрипта (user)</h3>
             <button class="btn btn-sm btn-ghost" onclick="resetSinglePrompt('generate_user')">↻ По умолчанию</button>
           </div>
           <textarea id="pr-generate-user" class="textarea prompt-textarea"></textarea>
@@ -708,7 +708,7 @@
 
         <div class="prompt-section">
           <div class="prompt-section-head">
-            <h3>🎯 Улучшение блока (system)</h3>
+            <h3><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M12 4l8 8-8 8-8-8z"/><path d="M12 9l3 3-3 3-3-3z"/></svg> Улучшение блока (system)</h3>
             <button class="btn btn-sm btn-ghost" onclick="resetSinglePrompt('improve_system')">↻ По умолчанию</button>
           </div>
           <textarea id="pr-improve-system" class="textarea prompt-textarea" style="min-height: 70px;"></textarea>
@@ -716,7 +716,7 @@
 
         <div class="prompt-section">
           <div class="prompt-section-head">
-            <h3>🎯 Улучшение блока (user)</h3>
+            <h3><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M12 4l8 8-8 8-8-8z"/><path d="M12 9l3 3-3 3-3-3z"/></svg> Улучшение блока (user)</h3>
             <button class="btn btn-sm btn-ghost" onclick="resetSinglePrompt('improve_user')">↻ По умолчанию</button>
           </div>
           <textarea id="pr-improve-user" class="textarea prompt-textarea"></textarea>
@@ -724,7 +724,7 @@
 
         <div class="prompt-section">
           <div class="prompt-section-head">
-            <h3>🔍 AI-ревью (system)</h3>
+            <h3><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><circle cx="10" cy="10" r="6"/><path d="M15 15l6 6"/></svg> AI-ревью (system)</h3>
             <button class="btn btn-sm btn-ghost" onclick="resetSinglePrompt('review_system')">↻ По умолчанию</button>
           </div>
           <textarea id="pr-review-system" class="textarea prompt-textarea" style="min-height: 70px;"></textarea>
@@ -732,7 +732,7 @@
 
         <div class="prompt-section">
           <div class="prompt-section-head">
-            <h3>🔍 AI-ревью (user)</h3>
+            <h3><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><circle cx="10" cy="10" r="6"/><path d="M15 15l6 6"/></svg> AI-ревью (user)</h3>
             <button class="btn btn-sm btn-ghost" onclick="resetSinglePrompt('review_user')">↻ По умолчанию</button>
           </div>
           <textarea id="pr-review-user" class="textarea prompt-textarea"></textarea>
@@ -741,7 +741,7 @@
       <div class="modal-actions">
         <button class="btn btn-danger" onclick="resetPromptsToDefault()">↻ Сбросить ВСЁ</button>
         <button class="btn" onclick="closePromptsEditor()">Отмена</button>
-        <button class="btn btn-primary" onclick="savePromptsFromEditor()">💾 Сохранить</button>
+        <button class="btn btn-primary" onclick="savePromptsFromEditor()"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M12 3v10M8 9l4 4 4-4"/><path d="M4 17v4h16v-4"/></svg> Сохранить</button>
       </div>
     </div>
   </div>
