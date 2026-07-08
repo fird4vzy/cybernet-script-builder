@@ -132,6 +132,11 @@
     </div>
 
     <nav class="side-rail" aria-label="Навигация">
+      <button class="rail-btn rail-toggle" onclick="toggleRail()" aria-label="Развернуть меню">
+        <svg class="rail-toggle-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+        <span class="rail-tooltip">Развернуть меню</span>
+      </button>
+      <div class="rail-divider"></div>
       <button class="rail-btn active" data-tab="editor" onclick="switchTab('editor', this)" aria-label="Блоки">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
         <span class="rail-tooltip">Блоки</span>
@@ -165,6 +170,17 @@
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         <span class="rail-tooltip">Экспорт</span>
       </button>
+      <div class="rail-divider"></div>
+      <div class="rail-profile" id="rail-profile">
+        <div class="rail-avatar" id="rail-avatar">?</div>
+        <div class="rail-profile-info">
+          <div class="rail-profile-name" id="rail-profile-name">Гость</div>
+          <div class="rail-profile-email" id="rail-profile-email"></div>
+        </div>
+        <button class="rail-profile-out" id="rail-signout" onclick="signOut()" title="Выйти">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M9 21H5V3h4M16 17l5-5-5-5M21 12H9"/></svg>
+        </button>
+      </div>
     </nav>
 
     <div class="tabs" style="display: none;">
