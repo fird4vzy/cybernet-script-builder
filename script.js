@@ -329,6 +329,41 @@ function csSevDiamond(color) {
   return '<svg viewBox="0 0 24 24" width="12" height="12" style="vertical-align:-1px;"><path d="M12 3l9 9-9 9-9-9z" fill="' + color + '" stroke="none"/></svg>';
 }
 
+// ═══ Expandable side rail + profile block ═══
+function toggleRail() {
+  const rail = document.querySelector('.side-rail');
+  if (!rail) return;
+  const expanded = rail.classList.toggle('expanded');
+  try { localStorage.setItem('cs_rail_expanded', expanded ? '1' : '0'); } catch {}
+  const t = document.querySelector('.rail-toggle .rail-tooltip');
+  if (t) t.textContent = expanded ? 'Свернуть меню' : 'Развернуть меню';
+}
+function updateRailProfile() {
+  const u = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : null;
+  const name = u?.user_metadata?.full_name || u?.user_metadata?.name || (u?.email ? u.email.split('@')[0] : 'Гость');
+  const email = u?.email || '';
+  const av = document.getElementById('rail-avatar');
+  const nm = document.getElementById('rail-profile-name');
+  const em = document.getElementById('rail-profile-email');
+  const out = document.getElementById('rail-signout');
+  if (av) av.textContent = ((name || '?').trim().charAt(0) || '?').toUpperCase();
+  if (nm) nm.textContent = name;
+  if (em) em.textContent = email;
+  if (out) out.style.display = u ? '' : 'none';
+  const prof = document.getElementById('rail-profile');
+  if (prof) prof.title = email ? (name + ' · ' + email) : name;
+}
+(function initRail() {
+  try {
+    if (localStorage.getItem('cs_rail_expanded') === '1') {
+      document.querySelector('.side-rail')?.classList.add('expanded');
+      const t = document.querySelector('.rail-toggle .rail-tooltip');
+      if (t) t.textContent = 'Свернуть меню';
+    }
+  } catch {}
+  updateRailProfile();
+})();
+
 function toast(message, type = 'success') {
   const el = document.getElementById('toast');
   if (!el) return;
@@ -7767,6 +7802,7 @@ async function bootApp() {
   // 1. Сначала локальный кеш (быстро)
   let restored = loadFromStorage();
   pushVersionBackup('старт сессии');
+  updateRailProfile();
 
   // 2. Пробуем подтянуть из облака (источник истины для команды)
   let fromCloud = false;
