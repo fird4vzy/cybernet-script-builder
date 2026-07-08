@@ -641,16 +641,6 @@ function updateShareButton() {
   btn.title = shared ? 'Виден команде — нажмите чтобы сделать личным' : 'Сделать видимым для команды';
 }
 
-function resetProfile() {
-  if (!confirm('Сбросить текущий профиль к исходному шаблону AVO?')) return;
-  snapshot('Сброс профиля');
-  profiles[activeProfile] = JSON.parse(JSON.stringify(TPL_AVO_LIMIT));
-  profiles[activeProfile].name = activeProfile;
-  dirtyVars.clear();
-  renderBlocks(); renderVars(); renderStats();
-  toast('Профиль сброшен');
-}
-
 // ═══════════════════════════════════════════════════════════════
 // BLOCKS
 // ═══════════════════════════════════════════════════════════════
@@ -5723,7 +5713,7 @@ function clearStorage() {
   if (!confirm('Очистить автосохранение? Все ваши профили в браузере будут удалены. Рекомендуем сначала экспортировать JSON.')) return;
   try {
     localStorage.removeItem(STORAGE_KEY);
-    toast('✓ Автосохранение очищено. Перезагрузите страницу для возврата к шаблону AVO.', 'info');
+    toast('✓ Автосохранение очищено. Перезагрузите страницу.', 'info');
   } catch (err) {
     toast('Ошибка очистки: ' + err.message, 'error');
   }
