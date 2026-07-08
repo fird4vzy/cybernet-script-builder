@@ -339,7 +339,7 @@ function toast(message, type = 'success') {
   // trigger reflow to restart animation
   void el.offsetWidth;
   el.classList.add('show');
-  toastTimer = setTimeout(() => { el.classList.remove('show'); }, 2200);
+  toastTimer = setTimeout(() => { el.classList.remove('show'); }, type === 'error' ? 5000 : 2200);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1987,16 +1987,22 @@ function exportPNG() {
 }
 
 // ─── PDF: render SVG → PNG → embed in PDF, download directly ──────
+// jsPDF can miss at page load (slow/blocked CDN). Retry loading it once on demand.
+function ensureJsPDF() {
+  return new Promise((resolve) => {
+    const found = () => window.jspdf?.jsPDF || window.jsPDF || null;
+    if (found()) return resolve(found());
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    sc.onload = () => resolve(found());
+    sc.onerror = () => resolve(null);
+    setTimeout(() => resolve(found()), 7000);
+    document.head.appendChild(sc);
+  });
+}
+
 function exportFlowchartPDF() {
   if (!data().blocks.length) { toast('Нет блоков для экспорта', 'error'); return; }
-
-  // Check jsPDF availability
-  const jsPDFLib = window.jspdf?.jsPDF || window.jsPDF;
-  if (!jsPDFLib) {
-    toast('Библиотека PDF не загрузилась — скачиваю PNG вместо PDF', 'info');
-    exportPNG();
-    return;
-  }
 
   const { lang, theme } = getExportOptions();
   const bgColor = theme === 'dark' ? '#0A0A12' : '#ffffff';
@@ -2018,17 +2024,22 @@ function exportFlowchartPDF() {
     const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(svgBlob);
     img.onload = function() {
-      const scale = 2;
+      // Cap the raster: giant flowcharts at fixed 2x blow past browser canvas limits,
+      // which is what silently kicked this export back to PNG. ~18MP ≈ A3 @ 300dpi.
+      const scale = Math.min(2, Math.sqrt(18e6 / (width * height)), 8000 / Math.max(width, height));
       const canvas = document.createElement('canvas');
-      canvas.width = width * scale;
-      canvas.height = height * scale;
+      canvas.width = Math.round(width * scale);
+      canvas.height = Math.round(height * scale);
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = bgColor;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.scale(scale, scale);
       ctx.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
-      resolve({ imgData: canvas.toDataURL('image/png'), width, height });
+      let dataUrl = '';
+      try { dataUrl = canvas.toDataURL('image/png'); } catch (err) { reject(new Error('схема слишком большая для canvas')); return; }
+      if (!dataUrl || dataUrl.length < 1000) { reject(new Error('схема слишком большая для canvas')); return; }
+      resolve({ imgData: dataUrl, width, height });
     };
     img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('SVG render failed')); };
     img.src = url;
@@ -2036,6 +2047,12 @@ function exportFlowchartPDF() {
 
   (async () => {
     try {
+      const jsPDFLib = await ensureJsPDF();
+      if (!jsPDFLib) {
+        toast('Библиотека PDF не загрузилась (CDN недоступен) — скачиваю PNG', 'error');
+        exportPNG();
+        return;
+      }
       const pages = [];
       for (const oneLang of langPages) {
         pages.push({ lang: oneLang, ...(await renderLangToImage(oneLang)) });
@@ -2079,7 +2096,7 @@ function exportFlowchartPDF() {
       toast(`✓ PDF скачан${langPages.length > 1 ? ' (RU + UZ, 2 страницы)' : ''}`);
     } catch (e) {
       console.error(e);
-      toast('Не удалось создать PDF, скачиваю PNG', 'error');
+      toast('Не удалось создать PDF (' + (e && e.message ? e.message : e) + ') — скачиваю PNG', 'error');
       exportPNG();
     }
   })();
