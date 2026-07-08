@@ -1991,7 +1991,62 @@ function ensureJsPDF() {
   });
 }
 
+// ─── PDF схемы (ВЕКТОРНЫЙ): страница размером в саму схему, печать браузера.
+//     «Сохранить как PDF» даёт истинный вектор — чёткий на любом зуме, текст
+//     выделяется, файл меньше. Раньше здесь была растровая картинка в PDF
+//     («как скан») — тот путь оставлен fallback'ом: exportFlowchartPDFRaster.
 function exportFlowchartPDF() {
+  if (!data().blocks.length) { toast('Нет блоков для экспорта', 'error'); return; }
+  const { lang, theme } = getExportOptions();
+  const langPages = lang === 'both' ? ['ru', 'uz'] : [lang];
+  const bg = theme === 'dark' ? '#0A0A12' : '#ffffff';
+  const labelColor = theme === 'dark' ? '#818CF8' : '#4F46E5';
+
+  const parser = new DOMParser();
+  let maxW = 0, maxH = 0;
+  const pagesSvg = langPages.map((L) => {
+    const svgStr = buildStaticCanvasSVG(L, 1, theme);
+    const el = parser.parseFromString(svgStr, 'image/svg+xml').documentElement;
+    const vb = (el.getAttribute('viewBox') || '0 0 1000 1000').split(/\s+/).map(Number);
+    maxW = Math.max(maxW, vb[2] || 1000);
+    maxH = Math.max(maxH, vb[3] || 1000);
+    return { L, svgStr };
+  });
+
+  // Browsers cap @page around ~200in (14400pt) — scale the page down if needed;
+  // the SVG is vector, so this costs zero quality.
+  const k = Math.min(1, 14000 / Math.max(maxW, maxH));
+  const pageW = Math.ceil(maxW * k) + 48;
+  const pageH = Math.ceil(maxH * k) + 72;
+  const title = activeProfile.replace(/[^\w.-]/g, '_') + '_flowchart';
+
+  let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title><style>
+    @page { size: ${pageW}pt ${pageH}pt; margin: 0; }
+    html, body { margin: 0; padding: 0; background: ${bg}; }
+    .pg { padding: 16pt 24pt 24pt; box-sizing: border-box; page-break-after: always; background: ${bg}; }
+    .pg:last-child { page-break-after: auto; }
+    .pg .lang-label { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; font-size: 11pt; font-weight: 700; letter-spacing: 1px; color: ${labelColor}; margin: 0 0 8pt; }
+    .pg svg { width: 100%; height: auto; display: block; }
+    @media screen { body { background: #52525E; } .pg { max-width: 1400px; margin: 16px auto; box-shadow: 0 6px 28px rgba(0,0,0,0.35); } }
+  </style></head><body>`;
+  pagesSvg.forEach((p) => {
+    const lbl = p.L === 'uz' ? "UZ · O'ZBEK" : 'RU · РУССКИЙ';
+    html += `<div class="pg">${langPages.length > 1 ? `<div class="lang-label">${lbl}</div>` : ''}${p.svgStr}</div>`;
+  });
+  html += `<script>window.onload = () => setTimeout(() => window.print(), 400);<\/script></body></html>`;
+
+  const win = window.open('', '_blank');
+  if (!win) {
+    toast('Всплывающее окно заблокировано — делаю растровый PDF', 'error');
+    exportFlowchartPDFRaster();
+    return;
+  }
+  win.document.write(html);
+  win.document.close();
+  toast('В окне печати: Принтер → «Сохранить как PDF». PDF будет векторным');
+}
+
+function exportFlowchartPDFRaster() {
   if (!data().blocks.length) { toast('Нет блоков для экспорта', 'error'); return; }
 
   const { lang, theme } = getExportOptions();
