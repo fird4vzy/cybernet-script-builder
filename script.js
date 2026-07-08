@@ -4005,6 +4005,9 @@ function csStraightenEdge() {
 }
 
 function buildCanvasEdges(blocks, opts = {}) {
+  // Edge-label visibility toggle + theme-aware pill background
+  const showEdgeLabels = document.getElementById('canvas-show-labels')?.checked !== false;
+  const pillFill = (document.documentElement.getAttribute('data-theme') === 'dark') ? '#181822' : 'white';
   const obstacleAware = opts.obstacleAware !== false;  // default = true; pass false during drag
   const byId = {};
   blocks.forEach(b => byId[b.id] = b);
@@ -4152,12 +4155,12 @@ function buildCanvasEdges(blocks, opts = {}) {
         ((branch && branch.waypoints) || []).forEach((pt, i) => {
           svg += `<circle cx="${pt.x}" cy="${pt.y}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" class="edge-wp" data-ef="${from.id}" data-et="${to.id}" data-idx="${i}" style="pointer-events:all;cursor:move;"/>`;
         });
-      } else if (label) {
+      } else if (label && showEdgeLabels) {
         const pts = (branch && branch.waypoints) || [];
         const mid = pts[Math.floor(pts.length / 2)] || { x: (geom.start.x + geom.end.x) / 2, y: (geom.start.y + geom.end.y) / 2 };
         const cleanLabel = label.replace(/\n+/g, ' ').trim().slice(0, 40);
         const lblW = Math.max(36, cleanLabel.length * 7 + 14);
-        svg += `<rect x="${mid.x - lblW/2}" y="${mid.y - 11}" width="${lblW}" height="22" rx="9" fill="white" stroke="${color}" stroke-width="1.5"/>`;
+        svg += `<rect x="${mid.x - lblW/2}" y="${mid.y - 11}" width="${lblW}" height="22" rx="9" fill="${pillFill}" stroke="${color}" stroke-width="1.5"/>`;
         svg += `<text x="${mid.x}" y="${mid.y + 4}" text-anchor="middle" font-size="11" font-weight="700" fill="${color}">${esc(cleanLabel)}</text>`;
       }
       return;
@@ -4239,7 +4242,7 @@ function buildCanvasEdges(blocks, opts = {}) {
     svg += `<path d="${path}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit" data-ef="${from.id}" data-et="${to.id}" style="pointer-events:stroke;cursor:pointer;"/>`;
     svg += `<path d="${path}" data-from="${from.id}" data-to="${to.id}" stroke="${color}" stroke-width="1.8" fill="none" marker-end="url(#${markerId})" opacity="0.85"/>`;
 
-    if (label) {
+    if (label && showEdgeLabels) {
       // Find midpoint of the path for label placement
       const ly = (fyExit + tyEntry) / 2;
       const lx = (fx + tx) / 2;
@@ -4263,7 +4266,7 @@ function buildCanvasEdges(blocks, opts = {}) {
       const lblW = Math.max(36, longest * 7 + 14);
       const lblH = lines.length * lineH + 8;
       const startY = ly - lblH / 2;
-      svg += `<rect x="${lx - lblW/2}" y="${startY}" width="${lblW}" height="${lblH}" rx="9" fill="white" stroke="${color}" stroke-width="1.5"/>`;
+      svg += `<rect x="${lx - lblW/2}" y="${startY}" width="${lblW}" height="${lblH}" rx="9" fill="${pillFill}" stroke="${color}" stroke-width="1.5"/>`;
       lines.forEach((line, i) => {
         const tY = startY + 4 + (i + 1) * lineH - lineH/3;
         svg += `<text x="${lx}" y="${tY}" text-anchor="middle" font-size="11" font-weight="700" fill="${color}">${esc(line)}</text>`;
