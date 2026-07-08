@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   DESIGN SYSTEM v3 — Cybernet Vault tokens
+   DESIGN SYSTEM v3 — Cybernet Script Constructor
    Navy + indigo accent, Unbounded/Sora/JetBrains Mono
    ═══════════════════════════════════════════════════════════════ */
 :root {
@@ -4192,3 +4192,25 @@ body.canvas-fullscreen-active .side-rail {
 /* ═══ FULLSCREEN FIX: modals & toasts must sit ABOVE the fullscreen canvas (z-index 9999) ═══ */
 .modal-backdrop { z-index: 10000; }
 .toast { z-index: 10050; }
+
+
+/* ═══ EXPANDABLE SIDE RAIL + PROFILE ═══ */
+.side-rail { transition: width 0.18s ease; }
+.rail-toggle-icon { transition: transform 0.18s ease; }
+.side-rail.expanded .rail-toggle-icon { transform: rotate(180deg); }
+.rail-divider { height: 1px; background: var(--bd-default); margin: 4px 2px; flex-shrink: 0; }
+.side-rail.expanded { width: 210px; align-items: stretch; }
+.side-rail.expanded .rail-btn { width: 100%; justify-content: flex-start; gap: 10px; padding: 0 12px; }
+.side-rail.expanded .rail-tooltip { position: static; transform: none; opacity: 1; background: transparent; color: inherit; padding: 0; box-shadow: none; font-size: 13px; font-weight: 600; }
+.side-rail.expanded .rail-tooltip::before { display: none; }
+.side-rail.expanded .rail-btn:hover .rail-tooltip { transform: none; }
+.rail-profile { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 4px; border-radius: 10px; }
+.side-rail.expanded .rail-profile { justify-content: flex-start; padding: 6px 8px; }
+.rail-avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+.rail-profile-info { display: none; min-width: 0; flex: 1; }
+.side-rail.expanded .rail-profile-info { display: block; }
+.rail-profile-name { font-size: 12.5px; font-weight: 600; color: var(--tx-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rail-profile-email { font-size: 11px; color: var(--tx-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rail-profile-out { display: none; background: transparent; border: none; color: var(--tx-tertiary); cursor: pointer; padding: 5px; border-radius: 6px; flex-shrink: 0; }
+.rail-profile-out:hover { color: #dc2626; background: var(--bg-surface-2); }
+.side-rail.expanded .rail-profile-out { display: flex; }
