@@ -29,146 +29,8 @@ function toggleTheme() {
 // TEMPLATES
 // ═══════════════════════════════════════════════════════════════
 
-// ─── Template 1: AVO Credit Limit (incoming line) ─────────────
-const TPL_AVO_LIMIT = {
-  name: 'AVO — Кредитный лимит',
-  vars: { BANK_NAME: 'AVO bank', PHONE: '+998 (78) 888-78-87', AGENT_NAME: 'Жавохир', APP_NAME: 'AVO' },
-  sections: [
-    { id: 's1', label: 'Приветствие' },
-    { id: 's2', label: 'Кредитный лимит' },
-    { id: 's3', label: 'Получение лимита' },
-    { id: 's4', label: 'Условия' },
-    { id: 's5', label: 'Погашение' },
-    { id: 's10', label: 'Тех. вопросы' },
-    { id: 's11', label: 'Завершение' }
-  ],
-  blocks: [
-    { id: 'start', sec: 's1', title: 'Старт', intent: 'start', type: 'start', ru: 'Входящий звонок', uz: 'Kiruvchi qo\'ng\'iroq', next_default: 'greeting' },
-    { id: 'greeting', sec: 's1', title: 'Приветствие', intent: 'greeting', type: 'normal', ru: 'Алло, здравствуйте! Это {BANK_NAME}, меня зовут {AGENT_NAME}. Чем могу помочь?', uz: 'Allo! Bu {BANK_NAME}, ismim {AGENT_NAME}.', next_default: 'client_question' },
-    { id: 'client_question', sec: 's1', title: 'Вопрос клиента?', intent: 'router', type: 'decision', ru: 'Какой вопрос задал клиент?', uz: 'Qanday savol?', next_yes: 'what_is_limit', next_no: 'app_not_working', next_default: 'end_call' },
-    { id: 'robot1', sec: 's1', title: 'Вы робот? (1-2)', intent: 'robot', type: 'question', ru: 'Интересно, почему вы так подумали — я живой консультант.', uz: 'Qiziq, nega shunday o\'ylagansiz.', next_default: 'client_question' },
-    { id: 'transfer1', sec: 's1', title: 'Перевод на оператора', intent: 'transfer', type: 'end', ru: '→ Перевод на старшего оператора.', uz: '→ Bosh operatorga.', next_default: '' },
-    { id: 'what_is_limit', sec: 's2', title: 'Что такое кредитный лимит?', intent: 'what_is_limit', type: 'question', ru: 'Кредитный лимит — сумма кредитных средств на карте {BANK_NAME} platinum.', uz: 'Kredit limit.', next_default: 'more_questions' },
-    { id: 'how_to_get', sec: 's3', title: 'Как получить лимит?', intent: 'get_limit', type: 'question', ru: 'Скачайте {APP_NAME}, регистрация, идентификация.', uz: '{APP_NAME} yuklab oling.', next_default: 'more_questions' },
-    { id: 'max_limit', sec: 's4', title: 'Максимальный лимит', intent: 'max_amount', type: 'question', ru: 'До 100 млн сумов. Определяется по скорингу.', uz: '100 million so\'mgacha.', next_default: 'more_questions' },
-    { id: 'grace', sec: 's4', title: 'Льготный период', intent: 'grace_period', type: 'question', ru: 'До 45 дней без процентов.', uz: '45 kungacha.', next_default: 'more_questions' },
-    { id: 'how_to_pay', sec: 's5', title: 'Как погасить долг?', intent: 'pay_debt', type: 'question', ru: 'В {APP_NAME}, банкомате, с Humo/UZCARD.', uz: '{APP_NAME}, bankomat.', next_default: 'more_questions' },
-    { id: 'app_not_working', sec: 's10', title: 'Приложение не работает', intent: 'app_broken', type: 'question', ru: 'Обновите {APP_NAME} или переустановите.', uz: '{APP_NAME}ni yangilang.', next_yes: 'more_questions', next_no: 'transfer_operator' },
-    { id: 'transfer_operator', sec: 's10', title: 'Перевод на специалиста', intent: 'transfer', type: 'end', ru: 'Оставайтесь на линии.', uz: 'Liniyada qoling.', next_default: '' },
-    { id: 'more_questions', sec: 's11', title: 'Ещё вопросы?', intent: 'more', type: 'decision', ru: 'Есть ли ещё вопросы?', uz: 'Yana savol bormi?', next_yes: 'client_question', next_no: 'end_call' },
-    { id: 'end_call', sec: 's11', title: 'Завершение', intent: 'goodbye', type: 'end', ru: 'Спасибо за обращение! До свидания!', uz: 'Rahmat! Xayr!', next_default: '' }
-  ]
-};
-
-// ─── Template 2: Pre-script Collection (outgoing reminder) ────
-// Based on Cybernet pre_script_collection with all intents and counters 1/2/3 times
-const TPL_COLLECTION = {
-  name: 'Pre-script Collection',
-  vars: {
-    BANK_NAME: 'AVO bank',
-    PHONE: '+998 (78) 888-78-87',
-    AGENT_NAME: 'Жавохир',
-    AMOUNT: 'СУММА',
-    DAY: 'День',
-    MONTH: 'Месяц'
-  },
-  sections: [
-    { id: 'c1', label: 'Начало / Верификация' },
-    { id: 'c2', label: 'Основной вопрос (q_willpay)' },
-    { id: 'c3', label: 'Робот / Кто это' },
-    { id: 'c4', label: 'Какой кредит' },
-    { id: 'c5', label: 'Сколько / Как оплатить' },
-    { id: 'c6', label: 'Оператор' },
-    { id: 'c7', label: 'Другие вопросы' },
-    { id: 'c8', label: 'Отказы и особые случаи' },
-    { id: 'c9', label: 'Завершение' }
-  ],
-  blocks: [
-    // ───── c1: Начало / Верификация ─────
-    { id: 'start', sec: 'c1', title: 'Старт', intent: 'start', type: 'start', ru: 'Исходящий звонок', uz: 'Chiqish qo\'ng\'irog\'i', next_default: 'langDetect' },
-    { id: 'langDetect', sec: 'c1', title: 'Проверка языка', intent: 'langDetect', type: 'decision', ru: 'На каком языке отвечает клиент?', uz: 'Mijoz qaysi tilda javob beradi?', next_yes: 'greeting_ru', next_no: 'greeting_uz', next_default: 'greeting_ru' },
-    { id: 'greeting_ru', sec: 'c1', title: 'Приветствие RU', intent: 'greeting', type: 'normal', ru: 'Меня зовут {AGENT_NAME}, звоню из {BANK_NAME}. _____ (Имя клиента), это вы?', uz: '—', next_default: 'q_willpay_1' },
-    { id: 'greeting_uz', sec: 'c1', title: 'Приветствие UZ', intent: 'greeting', type: 'normal', ru: '—', uz: 'Mening ismim {AGENT_NAME}, {BANK_NAME}dan qo\'ng\'iroq qilyapman. _____ (mijoz ismi), bu sizmisiz?', next_default: 'q_willpay_1' },
-    { id: 'q_soundlessly', sec: 'c1', title: 'Вас не слышно', intent: 'q_soundlessly', type: 'question', ru: 'Ммм секундочку… сейчас лучше?/ Так а сейчас меня слышно?', uz: 'Mmm bir daqiqa… Hozir yaxshimi?/ Hozir meni eshityapsizmi?', next_default: 'q_willpay_1' },
-    { id: 'q_recall', sec: 'c1', title: 'Алло, вас не слышно', intent: 'q_recall', type: 'end', ru: 'Алло, вас что-то не слышно, вы могли бы повторить? Хм, к сожалению вас не слышно, перезвоните пожалуйста. До свидания!', uz: 'Afsuski, sizni eshita olmayapman. Iltimos, qaytadan qo\'ng\'iroq qiling.', next_default: '' },
-    { id: 'know_person', sec: 'c1', title: 'Кем приходится клиент?', intent: 'know_person', type: 'decision', ru: 'Скажите, пожалуйста, _____ (Имя клиента), кем вам приходится?', uz: 'Iltimos, ayting-chi, _____ sizga kim bo\'ladi?', next_yes: 'relativeloan', next_no: 'dont_know1', next_default: 'dont_know2' },
-    { id: 'dont_know1', sec: 'c1', title: 'Не знаю его (незнакомец)', intent: 'dont_know1', type: 'end', ru: 'Извините за беспокойство, но Ваш номер указан как контактный. В случае, если Вы не оформляли кредит, просим связаться по номеру {PHONE} для уточнения. До свидания.', uz: 'Bezovta qilganim uchun uzr, lekin raqamingiz aloqa raqami sifatida ko\'rsatilgan. Agar kreditingiz yo\'q bo\'lsa, {PHONE}ga qo\'ng\'iroq qiling.', next_default: '' },
-    { id: 'dont_know2', sec: 'c1', title: 'Передайте информацию', intent: 'dont_know2', type: 'end', ru: 'Пожалуйста передайте этому человеку, что звонили из {BANK_NAME}, и попросите его перезвонить на номер {PHONE}. Спасибо. До свидания!', uz: 'Iltimos, bu odamga {BANK_NAME}dan qo\'ng\'iroq qilganini yetkazing va {PHONE}ga qo\'ng\'iroq qilishini so\'rang. Rahmat!', next_default: '' },
-    { id: 'relativeloan', sec: 'c1', title: 'Родственник / знакомый', intent: 'relativeloan', type: 'end', ru: 'Передайте, пожалуйста, что у этого клиента наступает платеж по кредиту, чтобы он не забыл оплатить. Оплатить необходимо до наступления даты платежа. Всего доброго и до свидания!', uz: 'Iltimos, ushbu mijoz to\'lovni unutmasligi uchun kredit bo\'yicha to\'lovi yaqinlashayotganini yetkazib qo\'ying. Xayr!', next_default: '' },
-    { id: 'havenotloan', sec: 'c1', title: 'У меня нет кредита', intent: 'havenotloan', type: 'end', ru: 'Поняла вас, но ваш номер указан как контактный. В случае если Все же Вы оформляли кредит, просим Произвести платеж. До свидания.', uz: 'Tushundim, lekin sizning raqamingiz aloqa raqami sifatida keltirilgan. Agar haqiqatan ham kreditni rasmiylashtirgan bo\'lsangiz, to\'lovni amalga oshiring.', next_default: '' },
-    { id: 'wrongNumber', sec: 'c1', title: 'Не туда попали', intent: 'wrongNumber', type: 'end', ru: 'Извините за беспокойство. До свидания.', uz: 'Bezovta qilganimiz uchun uzr so\'raymiz! Xayr!', next_default: '' },
-
-    // ───── c2: q_willpay with counters 1/2/3 ─────
-    { id: 'q_willpay_1', sec: 'c2', title: 'Успеете оплатить? (1 раз)', intent: 'q_willpay', type: 'question', ru: 'Напоминаю Вам о предстоящем платеже по кредиту в размере {AMOUNT} сум до 8 часов вечера {DAY} {MONTH}. Вы успеете оплатить в срок?', uz: 'Sizga kredit bo\'yicha to\'lov qilishingiz kerakligini eslatib o\'taman. {AMOUNT} so\'m miqdorida, {DAY} {MONTH} kuni, soat 20:00 gacha. To\'lovni belgilangan vaqtda qilishga ulgurasizmi?', next_yes: 'paid', next_no: 'deny', next_default: 'q_willpay_2' },
-    { id: 'q_willpay_2', sec: 'c2', title: 'Успеете оплатить? (2 раз)', intent: 'q_willpay', type: 'question', ru: 'Вы успеваете оплатить в срок? По договору, Вам необходимо вносить платежи в срок, чтобы не выйти на просрочку и не испортить кредитную историю.', uz: 'O\'z vaqtida to\'lovni amalga oshirasizmi? Shartnomaga ko\'ra, to\'lovlarni o\'z vaqtida amalga oshirishingiz kerak.', next_yes: 'paid', next_no: 'deny_at_q2', next_default: 'q_willpay_3' },
-    { id: 'q_willpay_3', sec: 'c2', title: 'Успеете оплатить? (3 раз)', intent: 'q_willpay', type: 'question', ru: 'Вы внесете оплату во время? Пожалуйста, обратите внимание, несвоевременная оплата может повлиять на вашу кредитную историю и возможность получения кредита в будущем.', uz: 'To\'lovni belgilangan muddatda amalga oshirasizmi? Iltimos, to\'lov kechikkan taqdirda, sizning kredit tarixingiz yomonlashishi mumkinligini e\'tiborga oling.', next_yes: 'paid', next_no: 'final_recall', next_default: 'final_recall' },
-    { id: 'paid', sec: 'c2', title: 'Обещал оплатить', intent: 'paid', type: 'end', ru: 'Приняли Ваш ответ, ждем оплату в срок. Нужно ли вам напомнить о ней в день платежа?', uz: 'Javobingizni qabul qildik, to\'lovni o\'z vaqtida amalga oshirishingizni kutmoqdamiz. Sizga eslatib o\'tishimiz kerakmi?', next_default: 'end_call' },
-    { id: 'deny', sec: 'c2', title: 'Нет, не успею (1 отказ)', intent: 'deny', type: 'question', ru: 'Понимаю, но по кредиту важно платить в срок, чтобы избежать просрочки и сохранить кредитную историю.', uz: 'Tushunaman, ammo to\'lovlarni kechiktirmaslik va kredit tarixingiz yomonlashmasligi uchun kreditni o\'z vaqtida to\'lash zarur.', next_default: 'deny_at_q2' },
-    { id: 'deny_at_q2', sec: 'c2', title: 'Отказ на 2-й вопрос', intent: 'deny_at_q2', type: 'question', ru: 'Я поняла вас, но чтобы избежать просрочки и пени, а также сохранить положительную кредитную историю, рекомендуем погашать кредит вовремя.', uz: 'Men sizni tushunaman, ammo kechikishni oldini olish uchun o\'z vaqtida to\'lashni tavsiya qilamiz.', next_default: 'final_recall' },
-    { id: 'final_recall', sec: 'c2', title: 'Финальное напоминание', intent: 'final_recall', type: 'end', ru: 'Рекомендуем вам оплатить ежемесячный платеж. Выход на просрочку окажет негативное влияние на вашу кредитную историю. До свидания!', uz: 'Sizga har oygi to\'lovni amalga oshirishingizni tavsiya qilamiz. To\'lovni kechiktirish kredit tarixingizga salbiy ta\'sir qiladi. Xayr!', next_default: '' },
-
-    // ───── c3: Робот / Кто это ─────
-    { id: 'whoIsIt', sec: 'c3', title: 'Кто вы? / Откуда вы?', intent: 'whoIsIt', type: 'question', ru: 'Это звонок из {BANK_NAME}, меня зовут {AGENT_NAME}. Звоню Вам, чтобы напомнить о предстоящем платеже по кредиту.', uz: 'Bu {BANK_NAME}dan qo\'ng\'iroq, mening ismim {AGENT_NAME}. Sizga kredit bo\'yicha to\'lovni eslatish uchun qo\'ng\'iroq qilyapman.', next_default: 'whoIsIt_2' },
-    { id: 'whoIsIt_2', sec: 'c3', title: 'Кто вы? (2 раз)', intent: 'whoIsIt', type: 'question', ru: 'Как я уже представлялась ранее, меня зовут {AGENT_NAME}. Чтобы не испортить свою кредитную историю, рекомендуем Вам внести оплату по кредиту до наступления даты платежа.', uz: 'Avval aytib o\'tkanimdek, mening ismim {AGENT_NAME}. Kredit tarixingizni yomonlashmasligi uchun to\'lovni o\'z vaqtida amalga oshirishingizni tavsiya qilamiz.', next_default: 'whoIsIt_3' },
-    { id: 'whoIsIt_3', sec: 'c3', title: 'Кто вы? (3 раз)', intent: 'whoIsIt', type: 'question', ru: 'Давайте еще раз расскажу, я {AGENT_NAME} из {BANK_NAME} касательно предстоящего платежа по кредиту.', uz: 'Yana bir bor aytay, men {AGENT_NAME} {BANK_NAME}dan, kredit bo\'yicha to\'lov haqida eslatib o\'tkani qo\'ng\'iroq qilyapman.', next_default: 'q_willpay_1' },
-    { id: 'robot', sec: 'c3', title: 'Вы робот? (1 раз)', intent: 'robot', type: 'question', ru: 'Хаха какой интересный вопрос, неожиданно даже. Но я звоню вам чтобы напомнить об оплате, давайте вернемся к этому вопросу.', uz: 'Haha, juda qiziq savol bo\'ldi, kutilmagan edim. Lekin men sizga to\'lov haqida eslatish uchun qo\'ng\'iroq qilyapman, qaytaylik shu masalaga.', next_default: 'robot_2' },
-    { id: 'robot_2', sec: 'c3', title: 'Вы робот? (2 раз)', intent: 'robot', type: 'question', ru: 'Мне часто это говорят, интересно даже почему (с усмешкой). Давайте вернемся к основному вопросу.', uz: 'To\'g\'risi bu savolni menga ko\'p berishadi, nega ekan hayronman. Lekin hozir asosiy masalaga qaytaylik.', next_default: 'robot_3' },
-    { id: 'robot_3', sec: 'c3', title: 'Вы робот? (3 раз)', intent: 'robot', type: 'question', ru: 'Мне важно сейчас зафиксировать ваш ответ об оплате, давайте мы будем говорить именно про это.', uz: 'Menga hozir sizning to\'lov bo\'yicha javobingizni qayd etish muhim, shu haqida gaplashaylik.', next_default: 'q_willpay_1' },
-    { id: 'robot_4', sec: 'c3', title: 'Робот 4й раз', intent: 'robot_final', type: 'end', ru: 'Ну что же вы очень внимательный, тем не менее, Банк ждет в обязательном порядке оплату по кредиту до наступления даты платежа по нему, до свидания!', uz: 'Siz juda diqqatlisiz, lekin Bank kredit bo\'yicha to\'lovni majburiy ravishda kutmoqda. Xayr!', next_default: '' },
-
-    // ───── c4: Какой кредит ─────
-    { id: 'whatLoan', sec: 'c4', title: 'Какой кредит? (1 раз)', intent: 'whatLoan', type: 'question', ru: 'Вы оформили кредит в {BANK_NAME}, и наступает дата платежа по нему.', uz: 'Siz {BANK_NAME}da kredit rasmiylashtirgansiz va to\'lov sanasi yaqinlashmoqda.', next_default: 'whatLoan_2' },
-    { id: 'whatLoan_2', sec: 'c4', title: 'Какой кредит? (2 раз)', intent: 'whatLoan', type: 'question', ru: 'Как уже ранее озвучивала, в {BANK_NAME} на текущий момент у вас есть оформленный кредит. Рекомендуем внести платеж до наступления срока.', uz: 'Avval aytib o\'tganimdek, hozirgi kunda {BANK_NAME}da sizda rasmiylashtirilgan kredit mavjud. To\'lovni muddatidan oldin amalga oshiring.', next_default: 'whatLoan_3' },
-    { id: 'whatLoan_3', sec: 'c4', title: 'Какой кредит? (3 раз)', intent: 'whatLoan', type: 'question', ru: 'Как вы знаете, у вас есть кредит в {BANK_NAME}, и если Вы не внесете оплату до наступления даты платежа, то образуется задолженность и будет начисляться пеня.', uz: 'Yana qaytaraman, {BANK_NAME}dan siz kredit rasmiylashtirgansiz. Agar to\'lovni o\'z vaqtida amalga oshirmasangiz jarimalar ham to\'lashga to\'g\'ri keladi.', next_default: 'q_willpay_1' },
-
-    // ───── c5: Сколько / Как оплатить ─────
-    { id: 'howMuch', sec: 'c5', title: 'Сколько? (1 раз)', intent: 'howMuch', type: 'question', ru: 'Сумма оплаты по кредиту составляет "{AMOUNT}". Оплатить можно через приложение, Payme, Click или в кассах филиалов и экспресс-центров нашего банка.', uz: 'Kredit bo\'yicha to\'lov summasi "{AMOUNT}" ni tashkil etadi. To\'lovni Bank ilovasi, Payme, Click orqali yoki bankimizning filiallari va ekspress-markazlaridagi kassalarda amalga oshirishingiz mumkin.', next_default: 'howMuch_2' },
-    { id: 'howMuch_2', sec: 'c5', title: 'Сколько? (2 раз)', intent: 'howMuch', type: 'question', ru: 'Как я и озвучивала, сумма платежа по кредиту составляет "{AMOUNT}". Для оплаты есть несколько вариантов: В мобильном приложении, Payme, Click или в кассах наших филиалов.', uz: 'Avval aytganimdek, kredit bo\'yicha to\'lov summasi "{AMOUNT}" ni tashkil etadi. Bir nechta variant mavjud: mobil ilova, Payme, Click yoki bank kassalari.', next_default: 'howMuch_3' },
-    { id: 'howMuch_3', sec: 'c5', title: 'Сколько? (3 раз)', intent: 'howMuch', type: 'question', ru: 'Как вы уже знаете, текущая сумма по вашему кредиту составляет "{AMOUNT}". Вы можете оплатить в приложении, Payme, Click, либо в кассах филиалов и экспресс-центров нашего банка.', uz: 'Siz bilganingizdek, hozirgi kredit summasi "{AMOUNT}" ni tashkil etadi. To\'lovni ilova, Payme, Click yoki filial kassalari orqali amalga oshiring.', next_default: 'q_willpay_1' },
-    { id: 'how_to_pay', sec: 'c5', title: 'Как оплатить? (1 раз)', intent: 'how_to_pay', type: 'question', ru: 'Вы можете оплатить через мобильные приложения {BANK_NAME}, Payme, Paynet и Click либо в банкоматах и филиалах нашего банка.', uz: 'Siz to\'lovni {BANK_NAME}, Payme, Paynet va Click mobil ilovalari orqali, yoki bankimiz bankomatlari va filiallarida amalga oshirishingiz mumkin.', next_default: 'how_to_pay_2' },
-    { id: 'how_to_pay_2', sec: 'c5', title: 'Как оплатить? (2 раз)', intent: 'how_to_pay', type: 'question', ru: 'Давайте повторюсь, вы можете сделать оплату с помощью расчетного счета в приложении {BANK_NAME}, либо через банкоматы и филиалы нашего банка.', uz: 'Aytib o\'tganimdek, {BANK_NAME} ilovasidagi hisobraqam yoki bankomatlar orqali to\'lashingiz mumkin.', next_default: 'how_to_pay_3' },
-    { id: 'how_to_pay_3', sec: 'c5', title: 'Как оплатить? (3 раз)', intent: 'how_to_pay', type: 'question', ru: 'Давайте объясню подробней, вы можете сделать оплату в приложениях {BANK_NAME}, Payme, Paynet и Click в разделе оплат, Погашение кредита. Либо через банкоматы и филиалы нашего банка.', uz: 'To\'liqroq aytib o\'taman: to\'lovni {BANK_NAME}, Payme, Paynet va Click ilovalarining "To\'lovlar" bo\'limida "Kreditni yopish" xizmatidan foydalanib to\'lashingiz mumkin.', next_default: 'q_willpay_1' },
-    { id: 'paymentDay', sec: 'c5', title: 'Когда надо оплатить? (1 раз)', intent: 'paymentDay', type: 'question', ru: 'Вам необходимо внести платеж по кредиту до 8 часов вечера {DAY} {MONTH}.', uz: 'Siz kredit bo\'yicha to\'lovni {DAY} {MONTH} kuni soat 20:00 gacha amalga oshirishingiz kerak.', next_default: 'paymentDay_2' },
-    { id: 'paymentDay_2', sec: 'c5', title: 'Когда надо оплатить? (2 раз)', intent: 'paymentDay', type: 'question', ru: 'Вносить оплату уже можно сейчас. А Согласно договору, срок платежа по кредиту до 8 часов вечера {DAY} {MONTH}.', uz: 'To\'lovni hozirda amalga oshirish mumkin. Shartnomaga ko\'ra, kredit to\'lovining muddati {DAY} {MONTH} kuni soat 20:00 gacha.', next_default: 'paymentDay_3' },
-    { id: 'paymentDay_3', sec: 'c5', title: 'Когда надо оплатить? (3 раз)', intent: 'paymentDay', type: 'question', ru: 'Вы уже можете оплатить кредит. Напоминаем, что срок платежа до 20:00 {DAY} {MONTH}.', uz: 'Siz allaqachon kreditni to\'lashingiz mumkin. Eslatib o\'tamiz, to\'lov muddati {DAY} {MONTH} kuni soat 20:00 gacha.', next_default: 'q_willpay_1' },
-
-    // ───── c6: Оператор ─────
-    { id: 'operator', sec: 'c6', title: 'На оператора (1 раз)', intent: 'operator', type: 'question', ru: 'Ага я вас услышала, чтобы вы смогли связаться с оператором, перезвоните на номер с которого я звоню, мои коллеги вам помогут.', uz: 'Aha, sizni eshitdim. Operator bilan bog\'lanishingiz uchun, men qo\'ng\'iroq qilgan raqamga qayta qo\'ng\'iroq qiling, hamkasblarim sizga yordam beradi.', next_default: 'operator_2' },
-    { id: 'operator_2', sec: 'c6', title: 'На оператора (2 раз)', intent: 'operator', type: 'question', ru: 'Как я уже говорила ранее, Мне сейчас важно зафиксировать ваш ответ.', uz: 'Avval aytganimdek, hozir men sizning javobingizni yozib olishim kerak.', next_default: 'operator_3' },
-    { id: 'operator_3', sec: 'c6', title: 'На оператора (3 раз)', intent: 'operator', type: 'end', ru: 'К сожалению, у меня нет технической возможности переключить звонок. Прошу Вас перезвонить по номеру с которого я звоню, мои коллеги вам помогут. Для этого вы можете обратиться по номеру {PHONE}. До свидания!', uz: 'Afsuski, qo\'ng\'iroqni almashtirish uchun texnik imkoniyatim yo\'q. Iltimos, {PHONE} raqamiga qayta qo\'ng\'iroq qiling. Xayr!', next_default: '' },
-
-    // ───── c7: Другие вопросы ─────
-    { id: 'have_question', sec: 'c7', title: 'У меня есть вопрос', intent: 'have_question', type: 'question', ru: 'Да, я вас слышу / Слушаю вас, вы хотели что-то спросить?', uz: 'Ha, men sizni eshitaman, nimadir so\'ramoqchimidiz?', next_default: 'q_willpay_1' },
-    { id: 'anotherLoan', sec: 'c7', title: 'Другие кредиты (1 раз)', intent: 'anotherLoan', type: 'question', ru: 'Наличие кредитов в других организациях не влияет на дату платежа в {BANK_NAME}. Рекомендуем Вам предпринять меры по погашению вашего ежемесячного платежа во избежание просрочки.', uz: 'Boshqa banklardan kreditlaringiz borligi {BANK_NAME}dagi to\'lovlaringizga ta\'sir ko\'rsatmaydi. Kechikishning oldini olish uchun oylik to\'lovni to\'lash choralarini ko\'ring.', next_default: 'anotherLoan_2' },
-    { id: 'anotherLoan_2', sec: 'c7', title: 'Другие кредиты (2 раз)', intent: 'anotherLoan', type: 'question', ru: 'Как я было озвучено ранее, Факт наличия кредитов в других организациях не влияет на дату платежа. Вам рекомендуется предпринять шаги по внесению ежемесячного платежа.', uz: 'Avval aytib o\'tganimdek, boshqa tashkilotlardagi kreditlar mavjudligi to\'lov sanasiga ta\'sir qilmaydi.', next_default: 'anotherLoan_3' },
-    { id: 'anotherLoan_3', sec: 'c7', title: 'Другие кредиты (3 раз)', intent: 'anotherLoan', type: 'question', ru: 'Наличие кредитов в других местах не влияет на срок платежа. Рекомендуем вам внести платеж в указанные сроки.', uz: 'Boshqa joylardagi kreditlar mavjudligi to\'lov muddatiga ta\'sir qilmaydi. Belgilangan muddatda to\'lovni amalga oshiring.', next_default: 'q_willpay_1' },
-    { id: 'different_payment_date', sec: 'c7', title: 'В договоре другая дата (1)', intent: 'different_payment_date', type: 'question', ru: 'Мхм, да-да, увидел. Тогда необходимо внести оплату до даты, которая указана в договоре или можете уже сегодня оплатить. Я просто напоминаю, чтобы вы не забыли.', uz: 'Mhm, ha-ha, ko\'rdim. Unda shartnomada ko\'rsatilgan sanagacha to\'lovni amalga oshirishingiz kerak yoki bugunoq to\'lashingiz mumkin.', next_default: 'different_payment_date_2' },
-    { id: 'different_payment_date_2', sec: 'c7', title: 'В договоре другая дата (2)', intent: 'different_payment_date', type: 'question', ru: 'Как уже говорил, нужно внести платеж в срок, то есть до той даты, которая у вас в договоре или можете уже сегодня оплатить.', uz: 'Avval aytganimdek, to\'lovni o\'z vaqtida amalga oshirishingiz kerak.', next_default: 'different_payment_date_3' },
-    { id: 'different_payment_date_3', sec: 'c7', title: 'В договоре другая дата (3)', intent: 'different_payment_date', type: 'question', ru: 'Понял вас, увидел информацию. В таком случае, вам нужно внести оплату до даты, которая указана в договоре или можете уже сегодня оплатить. Я звоню вам напомнить, чтобы не забыли.', uz: 'Tushundim sizni, ma\'lumotni ko\'rdim. Shartnomada ko\'rsatilgan sanagacha to\'lovni amalga oshiring.', next_default: 'q_willpay_1' },
-    { id: 'change_payment_schedule', sec: 'c7', title: 'Поменять график (1 раз)', intent: 'change_payment_schedule', type: 'question', ru: 'Если вы хотите поменять дату платежа, вам необходимо оплатить текущий платеж по кредиту. Затем обратиться в отделение банка и написать заявление на изменение графика, которое будет рассматриваться в течение 15 календарных дней.', uz: 'Agar siz to\'lov sanasini o\'zgartirmoqchi bo\'lsangiz, joriy to\'lovni to\'lashingiz kerak. Keyin bank filialiga murojaat qilib ariza yozishingiz kerak.', next_default: 'change_payment_schedule_2' },
-    { id: 'change_payment_schedule_2', sec: 'c7', title: 'Поменять график (2 раз)', intent: 'change_payment_schedule', type: 'question', ru: 'Как вы уже знаете, чтобы изменить дату платежа, внесите платеж по кредиту в срок и подайте заявление на изменение графика. Заявление будет рассмотрено в течение 15 календарных дней.', uz: 'To\'lov sanasini o\'zgartirish uchun o\'z vaqtida to\'lang va ariza bering.', next_default: 'change_payment_schedule_3' },
-    { id: 'change_payment_schedule_3', sec: 'c7', title: 'Поменять график (3 раз)', intent: 'change_payment_schedule', type: 'question', ru: 'Как я уже упоминала, чтобы поменять дату платежа, вам нужно оплатить по кредиту вовремя и подать заявление на изменение графика.', uz: 'Avval aytganimdek, to\'lov sanasini o\'zgartirish uchun kreditni o\'z vaqtida to\'lang va ariza bering.', next_default: 'q_willpay_1' },
-    { id: 'madeRecalculation', sec: 'c7', title: 'Сделали перерасчет', intent: 'madeRecalculation', type: 'end', ru: 'Поняла вас, мы сделаем дополнительную проверку. Всего доброго и до свидания!', uz: 'Tushundim, biz qo\'shimcha tekshiruv o\'tkazamiz. Yaxshi kun tilaymiz, xayr!', next_default: '' },
-
-    // ───── c8: Отказы и особые случаи ─────
-    { id: 'arrest', sec: 'c8', title: 'Арест счёта (1 раз)', intent: 'arrest', type: 'question', ru: 'Понимаю вас, это неприятная ситуация. При наличии арестов на счетах, рекомендуем Вам внести платеж на счет для погашения кредита, реквизиты Вы можете узнать в мобильном приложении {BANK_NAME}.', uz: 'Sizni tushundim, bu juda yomon holat. Agar siz hisob raqamingiz bloklangan bo\'lsa, kreditni yopish uchun {BANK_NAME} hisob raqamingizni to\'ldirrishingizni tavsiya qilamiz.', next_default: 'arrest_2' },
-    { id: 'arrest_2', sec: 'c8', title: 'Арест счёта (2 раз)', intent: 'arrest', type: 'question', ru: 'Да я вас услышала, но чтобы избежать негативных последствий для вашей кредитной истории, рекомендуем вам внести платеж на счет погашения кредита, реквизиты можете узнать в мобильном приложении.', uz: 'Ha, tushundim, lekin kredit tarixingizga salbiy ta\'sir ko\'rsatmaslik uchun kredit to\'lovlarini amalga oshirishingizni maslahat beramiz.', next_default: 'arrest_3' },
-    { id: 'arrest_3', sec: 'c8', title: 'Арест счёта (3 раз)', intent: 'arrest', type: 'question', ru: 'Тем не менее, оплатить возможность есть, через счет погашения кредита, реквизиты можете взять в приложении. Лучше все же успеть погасить во время.', uz: 'Aaaa, to\'lovni yana kredit xisob raqamingizni to\'ldirib amalga oshirishingiz imkoni mavjud. O\'z vaqtida amalga oshiring.', next_default: 'q_willpay_1' },
-    { id: 'outOfTown', sec: 'c8', title: 'Я не в городе / терминал', intent: 'outOfTown', type: 'question', ru: 'К сожалению, вас плохо слышно. Напоминаем, что вам необходимо оплатить по кредиту до наступления даты платежа. Сообщаем, что звонки к вам будут поступать до момента полного погашения задолженности. До свидания!', uz: 'Afsuski, sizni eshita olmayapman. Eslatib o\'tamiz, kredit bo\'yicha to\'lovni to\'lov sanasidan oldin amalga oshirishingiz kerak. Xayr!', next_default: 'end_call' },
-    { id: 'stopCallingMe', sec: 'c8', title: 'Хватит напоминать', intent: 'stopCallingMe', type: 'end', ru: 'Понял вас, спасибо. Тогда будем ждать платеж в срок, всего доброго. До свидания!', uz: 'Tushundim, rahmat. Unda to\'lovni o\'z vaqtida kutamiz. Xayr!', next_default: '' },
-    { id: 'fraud', sec: 'c8', title: 'Мошенничество (1 раз)', intent: 'fraud', type: 'question', ru: 'Хочу вас успокоить - мы не запрашиваем у вас никаких кодов, паролей или персональных данных. Я звоню вам по вопросу предстоящего платежа по кредиту. Если хотите, вы можете самостоятельно проверить информацию - позвоните на официальный номер {BANK_NAME} {PHONE}.', uz: 'Sizni ishontirib aytmoqchimanki, biz sizdan hech qanday kod, parol yoki shaxsiy ma\'lumotlarni so\'ramaymiz. Kredit bo\'yicha to\'lov haqida qo\'ng\'iroq qilyapman.', next_default: 'fraud_2' },
-    { id: 'fraud_2', sec: 'c8', title: 'Мошенничество (2 раз)', intent: 'fraud', type: 'question', ru: 'Понимаю вас, сейчас действительно важно быть осторожным. Мы не запрашиваем никаких кодов или данных. Я звоню вам, чтобы проинформировать о предстоящем платеже по кредиту.', uz: 'Sizni tushunaman, hozir haqiqatan ham ehtiyot bo\'lish kerak. Men sizdan hech qanday kod yoki ma\'lumot so\'ramayman.', next_default: 'fraud_3' },
-    { id: 'fraud_3', sec: 'c8', title: 'Мошенничество (3 раз)', intent: 'fraud', type: 'question', ru: 'Еще раз повторяю, данный звонок носит информационный характер - по предстоящему платежу по кредиту. Если вам будет спокойнее, вы можете позвонить в {BANK_NAME} по номеру {PHONE} и всё уточнить.', uz: 'Yana bir bor eslatib o\'taman, ushbu qo\'ng\'iroq axborot tariqasida. Xavotirlanyotgan bo\'lsangiz, {BANK_NAME}ning {PHONE} raqamiga qo\'ng\'iroq qiling.', next_default: 'q_willpay_1' },
-    { id: 'anotherAnswer', sec: 'c8', title: 'Другой ответ / не по теме', intent: 'anotherAnswer', type: 'question', ru: 'По данному вопросу вы можете обратиться в колл-центр по номеру {PHONE}. А сейчас ответьте пожалуйста на мой вопрос.', uz: 'Ushbu masala bo\'yicha {PHONE} raqamiga qo\'ng\'iroq qiling. Endi savolimga javob bering.', next_default: 'q_willpay_1' },
-    { id: 'otherPaymentDate', sec: 'c8', title: 'Оплачу позже (неделя/ЗП)', intent: 'otherPaymentDate', type: 'question', ru: 'При выходе на просрочку вы испортите свою кредитную историю и Не сможете получить кредит ни в {BANK_NAME}, ни в других. А так же, это совсем не выгодно для вас, переплачивать штрафы. Для фиксации в системе: Вы внесете оплату до наступления даты платежа?', uz: 'Agar to\'lovni kechiktirsangiz, bu kredit tarixingizga salbiy ta\'sir qiladi va boshqa banklardan kredit olish imkoniyatini cheklaydi. Siz kelajakdagi to\'lovni amalga oshirishni rejalashtiryapsizmi?', next_yes: 'paid', next_no: 'final_recall', next_default: 'q_willpay_3' },
-    { id: 'error_state', sec: 'c8', title: 'Непонятная речь / ошибка', intent: 'error_state', type: 'end', ru: 'Извините, видимо что-то со связью. {BANK_NAME} Напоминает о необходимости внести плановый платеж по кредиту До наступления даты платежа. До свидания.', uz: 'Uzr, ehtimol, aloqa bilan bog\'liq muammo bo\'ldi. {BANK_NAME} kredit bo\'yicha to\'lovni sana kelguniga qadar amalga oshirishingizni eslatadi. Xayr!', next_default: '' },
-
-    // ───── c9: Завершение ─────
-    { id: 'end_call', sec: 'c9', title: 'Завершение звонка', intent: 'goodbye', type: 'end', ru: 'Мы произведем дополнительную проверку погашения. Спасибо, до свидания!', uz: 'Biz to\'lovni tekshirib chiqamiz. Rahmat, xayr!', next_default: '' }
-  ]
-};
-
-// ─── Template 3: Blank ────────────────────────────────────────
+// Templates: only a blank starter remains in code. Real starters come from
+// the user's own References (see «Новый профиль»).
 const TPL_BLANK = {
   name: 'Новый профиль',
   vars: { BANK_NAME: '', PHONE: '', AGENT_NAME: '' },
@@ -179,16 +41,14 @@ const TPL_BLANK = {
 };
 
 const TEMPLATES = {
-  avo_limit: TPL_AVO_LIMIT,
-  collection: TPL_COLLECTION,
   blank: TPL_BLANK
 };
 
 // ═══════════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════════
-let profiles = { 'AVO — Кредитный лимит': JSON.parse(JSON.stringify(TPL_AVO_LIMIT)) };
-let activeProfile = 'AVO — Кредитный лимит';
+let profiles = { 'Новый профиль': JSON.parse(JSON.stringify(TPL_BLANK)) };
+let activeProfile = 'Новый профиль';
 let openBlocks = new Set();
 let dirtyVars = new Set(); // unsaved variable keys
 
@@ -602,11 +462,24 @@ function switchProfile(name) {
 }
 
 function newProfile() {
-  // open the template-selection modal
   const modal = document.getElementById('template-modal');
   const input = document.getElementById('modal-profile-name');
   input.value = 'Новый банк';
-  // reset radio buttons
+  // Rebuild reference-based options from the user's own References
+  const grid = document.getElementById('template-grid');
+  if (grid) {
+    grid.querySelectorAll('.tpl-ref').forEach(el => el.remove());
+    const refs = (aiReferences || []).filter(r => { const pp = getRefProfile(r); return pp && Array.isArray(pp.blocks) && pp.blocks.length; });
+    refs.forEach(r => {
+      const pp = getRefProfile(r);
+      const label = document.createElement('label');
+      label.className = 'template-card tpl-ref';
+      label.innerHTML = `<input type="radio" name="tpl" value="ref:${esc(String(r.id))}"><div class="tpl-check">✓</div>`
+        + `<div class="tpl-title">${csIcon('bookmark',15)} ${esc(r.name || 'Эталон')}</div>`
+        + `<div class="tpl-desc">Копия структуры эталона (${pp.blocks.length} блоков). Затем перепишите тексты под свой банк.</div>`;
+      grid.appendChild(label);
+    });
+  }
   document.querySelectorAll('input[name="tpl"]').forEach((r, i) => { r.checked = (i === 0); });
   modal.style.display = 'flex';
   setTimeout(() => input.focus(), 50);
@@ -621,8 +494,17 @@ function confirmNewProfile() {
   if (!name) { toast('Введите название профиля', 'error'); return; }
   if (profiles[name]) { toast('Профиль с таким названием уже существует', 'error'); return; }
   snapshot('Новый профиль');
-  const tpl = document.querySelector('input[name="tpl"]:checked')?.value || 'avo_limit';
-  profiles[name] = JSON.parse(JSON.stringify(TEMPLATES[tpl]));
+  const tpl = document.querySelector('input[name="tpl"]:checked')?.value || 'blank';
+  let src;
+  if (tpl.startsWith('ref:')) {
+    const ref = (aiReferences || []).find(r => String(r.id) === tpl.slice(4));
+    const rp = ref && getRefProfile(ref);
+    if (!rp) { toast('Не удалось прочитать эталон', 'error'); return; }
+    src = { name, vars: rp.vars || {}, sections: rp.sections || [{ id: 's1', label: 'Основной раздел' }], blocks: rp.blocks || [] };
+  } else {
+    src = TEMPLATES.blank;
+  }
+  profiles[name] = JSON.parse(JSON.stringify(src));
   profiles[name].name = name;
   activeProfile = name;
   closeTemplateModal();
