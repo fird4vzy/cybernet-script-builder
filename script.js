@@ -7640,7 +7640,7 @@ let lastReviewIssues = [];
 function renderReviewResults(result) {
   // Back-compat: accept both the old array shape and the new verdict object
   const res = Array.isArray(result) ? { issues: result } : (result || {});
-  const issues = res.issues || [];
+  let issues = res.issues || [];
   const sevLabels = { high: 'Критично', medium: 'Важно', low: 'Мелочь' };
   const sevIcons = { high: csSevDiamond('#dc2626'), medium: csSevDiamond('#f59e0b'), low: csSevDiamond('#9ca3af') };
 
