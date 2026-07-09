@@ -3830,7 +3830,7 @@ function canvasRender() {
       <div class="cv-node-head" title="${esc(b.id)}">
         <div class="cv-node-title">${esc(b.title || '')}</div>
       </div>
-      ${showText ? `<div class="cv-node-body">${esc(text || '— пусто —')}</div>` : ''}
+      ${showText && text ? `<div class="cv-node-body">${esc(text)}</div>` : ''}
     `;
     stage.appendChild(node);
     attachNodeHandlers(node, b.id);
