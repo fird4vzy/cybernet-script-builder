@@ -2759,145 +2759,153 @@ function detectBlockType(text, styleStr, incomingCount, outgoingCount) {
 
 // Parse one <diagram> page into a list of vertices + edges
 function parseDrawioPage(rootEl) {
-  const cells = rootEl.querySelectorAll('mxCell');
-  const userObjects = rootEl.querySelectorAll('UserObject');
+  const allCells = Array.from(rootEl.querySelectorAll('mxCell'));
+  const userObjects = Array.from(rootEl.querySelectorAll('UserObject'));
 
-  // Map: cellId → vertex object
   const vertices = new Map();
   const edges = [];
-  // child labels: parent vertex id → text from child cell
   const childLabels = new Map();
 
-  // Pass 1: vertices from <UserObject>
-  // Tags that mark NON-block elements (backgrounds, decorations) — skip them
-  const SKIP_TAGS = ['фон', 'background', 'подложка', 'рамка', 'frame', 'логотип', 'logo', 'легенда', 'legend'];
+  const SKIP_TAGS = ['фон', 'background', 'подложка', 'логотип', 'logo', 'легенда', 'legend'];
+
+  // ── Index every element by id, and record parent + geometry, so we can resolve
+  //    nested (grouped) blocks and convert their relative coords to absolute. ──
+  const byId = new Map();            // id → { el, cellEl, parent, x,y,w,h, style, isVertex, isEdge, tags, labelHtml, value }
+  const readGeom = (cellEl) => {
+    const g = cellEl && cellEl.querySelector(':scope > mxGeometry') || (cellEl && cellEl.querySelector('mxGeometry'));
+    return {
+      x: g ? (parseFloat(g.getAttribute('x') || '0') || 0) : 0,
+      y: g ? (parseFloat(g.getAttribute('y') || '0') || 0) : 0,
+      w: g ? (parseFloat(g.getAttribute('width') || '0') || 0) : 0,
+      h: g ? (parseFloat(g.getAttribute('height') || '0') || 0) : 0,
+      hasGeom: !!g
+    };
+  };
+
   userObjects.forEach(uo => {
-    const id = uo.getAttribute('id');
-    if (!id) return;
-    // Skip background/decoration elements by tag
-    const tags = (uo.getAttribute('tags') || '').toLowerCase();
-    if (tags && SKIP_TAGS.some(t => tags.includes(t))) return;
-    const innerCell = uo.querySelector('mxCell');
-    if (!innerCell || innerCell.getAttribute('vertex') !== '1') return;
-    const styleStr = innerCell.getAttribute('style') || '';
-    const geom = innerCell.querySelector('mxGeometry');
-    if (!geom) return;
-    const x = parseFloat(geom.getAttribute('x') || '0') || 0;
-    const y = parseFloat(geom.getAttribute('y') || '0') || 0;
-    const w = parseFloat(geom.getAttribute('width') || '120') || 120;
-    const h = parseFloat(geom.getAttribute('height') || '60') || 60;
-    const labelHtml = uo.getAttribute('label') || '';
-    const text = cleanCellText(labelHtml);
-    vertices.set(id, {
-      mxId: id,
-      title: text,
-      styleStr,
-      x, y, w, h,
-      isUserObject: true
+    const id = uo.getAttribute('id'); if (!id) return;
+    const inner = uo.querySelector('mxCell'); if (!inner) return;
+    const g = readGeom(inner);
+    byId.set(id, {
+      cellEl: inner, parent: inner.getAttribute('parent') || '',
+      style: inner.getAttribute('style') || '',
+      isVertex: inner.getAttribute('vertex') === '1',
+      isEdge: inner.getAttribute('edge') === '1',
+      tags: (uo.getAttribute('tags') || '').toLowerCase(),
+      labelHtml: uo.getAttribute('label') || '',
+      value: uo.getAttribute('value') || '',
+      source: inner.getAttribute('source'), target: inner.getAttribute('target'),
+      ...g
+    });
+  });
+  allCells.forEach(c => {
+    const id = c.getAttribute('id'); if (!id || byId.has(id)) return;
+    const g = readGeom(c);
+    byId.set(id, {
+      cellEl: c, parent: c.getAttribute('parent') || '',
+      style: c.getAttribute('style') || '',
+      isVertex: c.getAttribute('vertex') === '1',
+      isEdge: c.getAttribute('edge') === '1',
+      tags: '', labelHtml: '', value: c.getAttribute('value') || '',
+      source: c.getAttribute('source'), target: c.getAttribute('target'),
+      ...g
     });
   });
 
-  // Pass 2: vertices from plain <mxCell vertex="1"> that are NOT child labels
-  // and edges
-  cells.forEach(cell => {
-    const id = cell.getAttribute('id');
-    const isVertex = cell.getAttribute('vertex') === '1';
-    const isEdge = cell.getAttribute('edge') === '1';
+  const isLayerId = (id) => !id || !byId.has(id); // parent points to layer/root (id "0"/"1" not indexed)
+  // Absolute top-left of a cell = its own x/y plus every ancestor group's x/y.
+  const absPos = (id, guard = 0) => {
+    const n = byId.get(id);
+    if (!n || guard > 40) return { x: n ? n.x : 0, y: n ? n.y : 0 };
+    if (isLayerId(n.parent)) return { x: n.x, y: n.y };
+    const p = absPos(n.parent, guard + 1);
+    return { x: p.x + n.x, y: p.y + n.y };
+  };
 
-    // For edges/vertices wrapped in UserObject, the cell itself has NO id —
-    // the id is on the parent <UserObject>. So we don't skip those.
-    if (id === '0' || id === '1') return;
+  const isTextLabel = (style) => /(?:^|;)\s*text\s*;/.test(style) || style.startsWith('text;');
+  const isEdgeLabel = (style) => style.includes('edgeLabel');
+  const looksLikeGroup = (n) => /(?:^|;)group(?:;|$)/.test(n.style) || n.style.includes('container=1');
 
-    const parent = cell.getAttribute('parent') || '';
-    const styleStr = cell.getAttribute('style') || '';
-    const value = cell.getAttribute('value') || '';
+  // ── Which cells are REAL blocks?  A vertex is a block unless it's an
+  //    edge-label, or a pure group/container wrapper with no text of its own. ──
+  const isBlockVertex = (id) => {
+    const n = byId.get(id);
+    if (!n || !n.isVertex) return false;
+    if (n.tags && SKIP_TAGS.some(t => n.tags.includes(t))) return false;
+    if (isEdgeLabel(n.style)) return false;
+    // A group/container that merely holds children and has no label → not a block itself
+    if (looksLikeGroup(n)) {
+      const txt = cleanCellText(n.labelHtml || n.value || '');
+      if (!txt) return false;
+    }
+    return true;
+  };
 
-    if (isVertex) {
-      const isTextLabel = styleStr.startsWith('text;') || /^text;|;text;/.test(styleStr);
-      // A text-label whose parent is another element (not root "1") is an
-      // internal caption — attach to parent if we have it, otherwise DROP it
-      // (never promote a child caption to a standalone block).
-      if (isTextLabel && parent && parent !== '1') {
-        if (vertices.has(parent)) {
-          const text = cleanCellText(value);
-          if (text) {
-            const existing = childLabels.get(parent) || '';
-            childLabels.set(parent, existing ? existing + '\n' + text : text);
-          }
-        }
-        return; // drop child caption regardless
-      }
-      // Skip cells already covered by UserObject (those wrap mxCells with no id)
-      if (!id) return;
-      if (vertices.has(id)) return;
-      // Skip cells nested inside another vertex (internal labels)
-      if (parent && parent !== '1' && vertices.has(parent)) return;
+  // ── Build blocks (absolute coords) ──
+  byId.forEach((n, id) => {
+    if (!n.isVertex) return;
+    if (!isBlockVertex(id)) return;
+    // text-label cell: if its parent is a real block, fold it in as caption; else keep as own block
+    if (isTextLabel(n.style) && !isLayerId(n.parent) && isBlockVertex(n.parent)) {
+      const t = cleanCellText(n.value || n.labelHtml || '');
+      if (t) { const ex = childLabels.get(n.parent) || ''; childLabels.set(n.parent, ex ? ex + '\n' + t : t); }
+      return;
+    }
+    const pos = absPos(id);
+    const text = cleanCellText(n.labelHtml || n.value || '');
+    vertices.set(id, {
+      mxId: id, title: text, styleStr: n.style,
+      x: pos.x, y: pos.y,
+      w: n.w || 120, h: n.h || 60,
+      isUserObject: !!n.labelHtml
+    });
+  });
 
-      // Plain vertex (real block at root level)
-      const geom = cell.querySelector('mxGeometry');
-      if (!geom) return;
-      // A vertex with relative coords (parent is another vertex) but parent
-      // was filtered (e.g. Фон) — skip to avoid misplaced blocks
-      if (parent && parent !== '1' && !vertices.has(parent)) {
-        // parent exists in DOM but was filtered out as background → skip child
-        const parentEl = rootEl.querySelector(`[id="${parent}"]`);
-        if (parentEl) return;
-      }
-      const x = parseFloat(geom.getAttribute('x') || '0') || 0;
-      const y = parseFloat(geom.getAttribute('y') || '0') || 0;
-      const w = parseFloat(geom.getAttribute('width') || '120') || 120;
-      const h = parseFloat(geom.getAttribute('height') || '60') || 60;
-      const text = cleanCellText(value);
-      vertices.set(id, {
-        mxId: id,
-        title: text,
-        styleStr,
-        x, y, w, h,
-        isUserObject: false
-      });
-    } else if (isEdge) {
-      const source = cell.getAttribute('source');
-      const target = cell.getAttribute('target');
-      if (!source || !target) return;
-      // Edge label may be on parent <UserObject value=""> or on the cell itself
-      let label = cleanCellText(value);
-      if (!label && cell.parentElement && cell.parentElement.tagName === 'UserObject') {
-        label = cleanCellText(cell.parentElement.getAttribute('value') || cell.parentElement.getAttribute('label') || '');
-      }
-      // Extract waypoints (bend points) so we can reproduce the Draw.io routing
-      let waypoints = [];
-      const egeom = cell.querySelector('mxGeometry');
-      if (egeom) {
-        const ptsArray = egeom.querySelector('Array[as="points"]');
-        if (ptsArray) {
-          ptsArray.querySelectorAll('mxPoint').forEach(p => {
-            const px = parseFloat(p.getAttribute('x'));
-            const py = parseFloat(p.getAttribute('y'));
-            if (!isNaN(px) && !isNaN(py)) waypoints.push({ x: px, y: py });
-          });
-        }
-      }
-      // Extract exit/entry connection styles (which side of the block the arrow attaches)
-      const est = parseDrawioStyle(styleStr);
-      edges.push({
-        source,
-        target,
-        label,
-        waypoints,
-        exitX: est.exitX !== undefined ? parseFloat(est.exitX) : undefined,
-        exitY: est.exitY !== undefined ? parseFloat(est.exitY) : undefined,
-        entryX: est.entryX !== undefined ? parseFloat(est.entryX) : undefined,
-        entryY: est.entryY !== undefined ? parseFloat(est.entryY) : undefined
-      });
+  // ── Fold non-block child captions (edgeLabel/text children of blocks) into titles ──
+  byId.forEach((n, id) => {
+    if (!n.isVertex || vertices.has(id)) return;
+    if (isLayerId(n.parent) || !vertices.has(n.parent)) return;
+    if (isTextLabel(n.style) || isEdgeLabel(n.style)) {
+      const t = cleanCellText(n.value || n.labelHtml || '');
+      if (t) { const ex = childLabels.get(n.parent) || ''; childLabels.set(n.parent, ex ? ex + '\n' + t : t); }
     }
   });
 
-  // Merge child labels into vertex titles (when UserObject label was empty but child has text)
+  // ── Edges ──
+  byId.forEach((n, id) => {
+    if (!n.isEdge) return;
+    const source = n.source, target = n.target;
+    if (!source || !target) return;
+    let label = cleanCellText(n.value || n.labelHtml || '');
+    // edge label may live in a child edgeLabel cell
+    if (!label) {
+      byId.forEach((c) => {
+        if (!label && c.parent === id && isEdgeLabel(c.style)) label = cleanCellText(c.value || c.labelHtml || '');
+      });
+    }
+    let waypoints = [];
+    const egeom = n.cellEl.querySelector('mxGeometry');
+    if (egeom) {
+      const ptsArray = egeom.querySelector('Array[as="points"]');
+      if (ptsArray) ptsArray.querySelectorAll('mxPoint').forEach(pt => {
+        const px = parseFloat(pt.getAttribute('x')), py = parseFloat(pt.getAttribute('y'));
+        if (!isNaN(px) && !isNaN(py)) waypoints.push({ x: px, y: py });
+      });
+    }
+    const est = parseDrawioStyle(n.style);
+    edges.push({
+      source, target, label, waypoints,
+      exitX: est.exitX !== undefined ? parseFloat(est.exitX) : undefined,
+      exitY: est.exitY !== undefined ? parseFloat(est.exitY) : undefined,
+      entryX: est.entryX !== undefined ? parseFloat(est.entryX) : undefined,
+      entryY: est.entryY !== undefined ? parseFloat(est.entryY) : undefined
+    });
+  });
+
+  // Merge child labels into vertex titles when the block had no text of its own
   childLabels.forEach((labelText, parentId) => {
     const v = vertices.get(parentId);
-    if (v && (!v.title || v.title === '')) {
-      v.title = labelText;
-    }
+    if (v && (!v.title || v.title === '')) v.title = labelText;
   });
 
   return { vertices, edges };
@@ -2998,6 +3006,16 @@ function parseDrawioXML(xmlString) {
     if (mainPage.vertices.has(e.source)) outgoing.set(e.source, (outgoing.get(e.source) || 0) + 1);
     if (mainPage.vertices.has(e.target)) incoming.set(e.target, (incoming.get(e.target) || 0) + 1);
   });
+
+  // ──── Drop orphan decorations: a vertex with NO text AND no edges is not a
+  //      dialog block (logo pieces, background shapes from Visio). ──
+  const droppedDecor = [];
+  mainPage.vertices.forEach((v, mxId) => {
+    const hasText = (v.title || '').trim().length > 0;
+    const linked = (incoming.get(mxId) || 0) + (outgoing.get(mxId) || 0) > 0;
+    if (!hasText && !linked) droppedDecor.push(mxId);
+  });
+  droppedDecor.forEach(id => mainPage.vertices.delete(id));
 
   // ──── Generate readable IDs and detect type ──────
   const usedIds = new Set();
