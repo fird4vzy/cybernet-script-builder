@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   DESIGN SYSTEM v3 — Cybernet Script Constructor
+   DESIGN SYSTEM v3 — Cybernet Vault tokens
    Navy + indigo accent, Unbounded/Sora/JetBrains Mono
    ═══════════════════════════════════════════════════════════════ */
 :root {
@@ -4214,3 +4214,34 @@ body.canvas-fullscreen-active .side-rail {
 .rail-profile-out { display: none; background: transparent; border: none; color: var(--tx-tertiary); cursor: pointer; padding: 5px; border-radius: 6px; flex-shrink: 0; }
 .rail-profile-out:hover { color: #dc2626; background: var(--bg-surface-2); }
 .side-rail.expanded .rail-profile-out { display: flex; }
+
+
+/* ═══ NEW BLOCK TYPES (Visio-style) + review rows + node polish ═══ */
+/* Process — bot line: clean rectangle, blue accent (matches image-2 "Процесс") */
+.cv-node[data-type="process"] { background: var(--bg-surface); border-color: var(--bd-strong); border-left: 4px solid #2563eb; border-radius: 8px; }
+[data-theme="dark"] .cv-node[data-type="process"] { border-left-color: #3b82f6; }
+.cv-node[data-type="process"] .cv-node-head { background: transparent; }
+
+/* Subprocess — predefined process: double vertical bars on the sides */
+.cv-node[data-type="subprocess"] { background: var(--bg-surface); border-color: var(--bd-strong); border-radius: 6px; border-left: 5px double #64748b; border-right: 5px double #64748b; }
+.cv-node[data-type="subprocess"] .cv-node-head { background: transparent; }
+.cv-node[data-type="subprocess"] .cv-node-head::before { content: "▤"; color: #64748b; font-size: 11px; margin-right: 5px; }
+
+/* Start/End already capsule; make END distinct from START via marker */
+.cv-node[data-type="start"] .cv-node-head::before { content: "▶"; color: #16a34a; font-size: 9px; margin-right: 6px; }
+.cv-node[data-type="end"] .cv-node-head::before { content: "■"; color: #dc2626; font-size: 9px; margin-right: 6px; }
+
+/* "Ответ клиента" / service nodes: quieter, dashed, muted — clearly a caption, not a bot line */
+.cv-node.cv-node-service { border-style: dashed !important; opacity: 0.92; }
+.cv-node.cv-node-service .cv-node-head { background: transparent; opacity: 0.75; font-style: italic; }
+.cv-node.cv-node-service .cv-node-body { color: var(--tx-tertiary); font-style: italic; }
+
+/* Review issue: before / after / reason rows */
+.review-issue-before, .review-issue-sugg { font-size: 12.5px; line-height: 1.5; padding: 6px 8px; border-radius: 6px; margin-top: 6px; }
+.review-issue-before { background: rgba(220,38,38,0.06); border: 1px solid rgba(220,38,38,0.18); text-decoration: none; }
+.review-issue-sugg { background: rgba(22,163,74,0.07); border: 1px solid rgba(22,163,74,0.20); }
+[data-theme="dark"] .review-issue-before { background: rgba(220,38,38,0.12); }
+[data-theme="dark"] .review-issue-sugg { background: rgba(22,163,74,0.14); }
+.ri-tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .4px; padding: 1px 6px; border-radius: 5px; margin-right: 6px; background: #dc2626; color: #fff; vertical-align: 1px; }
+.ri-tag-ok { background: #16a34a; }
+.review-issue-reason { font-size: 11.5px; color: var(--tx-tertiary); margin-top: 5px; padding-left: 2px; }
