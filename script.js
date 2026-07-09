@@ -5979,7 +5979,7 @@ const DEFAULT_PROMPTS = {
 2) ЕСТЕСТВЕННОСТЬ узбекского (натуральный разговорный, не дословный перевод; ТОЛЬКО латиница).
 3) Логика диалога (тупики, недостающие типичные ответы клиента) — но это ВТОРИЧНО и упоминай, только если реально ломает разговор.
 Для КАЖДОЙ проблемы по тексту давай конкретную переработку: было → стало, и КОРОТКИЙ резон, почему новый вариант лучше (что это даёт: звучит живее / снимает агрессию / короче для звонка / точнее по смыслу).
-Возвращаешь JSON: {"score": 7, "summary": "1-2 предложения: общий вывод и главный приоритет", "strengths": ["сильная сторона 1","сильная сторона 2"], "issues": [{"severity":"high"|"medium"|"low","blockId":"...","type":"тон|формулировка|смысл|узбекский|длина|логика","message":"в чём проблема","before":"проблемная фраза как есть (кратко)","suggestion":"переписанный вариант фразы","reason":"почему так лучше — 1 короткое предложение"}]}. score — целое 1-10. Только сам JSON-объект, без markdown-обёртки из тройных обратных кавычек.`,
+Возвращаешь JSON: {"score": 7, "summary": "1-2 предложения: общий вывод и главный приоритет", "to_next_score": "коротко и по делу: что конкретно исправить, чтобы поднять оценку на 1-2 балла (2-3 самых важных пункта одной фразой)", "strengths": ["сильная сторона 1","сильная сторона 2"], "issues": [{"severity":"high"|"medium"|"low","blockId":"...","type":"тон|формулировка|смысл|узбекский|длина|логика","message":"в чём проблема","before":"проблемная фраза как есть (кратко)","suggestion":"переписанный вариант фразы","reason":"почему так лучше — 1 короткое предложение"}]}. score — целое 1-10. Только сам JSON-объект, без markdown-обёртки из тройных обратных кавычек.`,
   review_user: `Тип скрипта определи сам по содержанию (взыскание долга / телемаркетинг / поддержка) и оценивай реплики под ЭТУ задачу.
 
 ГЛАВНОЕ — качество текста реплик бота (поле ru и uz). По каждой значимой реплике оцени:
@@ -7483,10 +7483,20 @@ async function runAIReview(mode) {
   // Show modal in loading state
   document.getElementById('ai-review-modal').style.display = 'flex';
   document.getElementById('review-content').innerHTML = `
-    <div class="ai-loading" style="padding: 40px 20px;">
-      <div class="ai-spinner"></div>
-      <span>AI проверяет ваш скрипт (${REVIEW_MODE_LABEL[mode]})... (15-30 сек)</span>
+    <div class="review-loader">
+      <svg class="rl-svg" viewBox="0 0 120 120" width="110" height="110">
+        <circle class="rl-ring" cx="60" cy="60" r="46" fill="none" stroke="var(--bd-default)" stroke-width="3"/>
+        <circle class="rl-ring-anim" cx="60" cy="60" r="46" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-dasharray="70 220"/>
+        <g class="rl-glass">
+          <circle cx="54" cy="54" r="17" fill="none" stroke="currentColor" stroke-width="4"/>
+          <line x1="66" y1="66" x2="80" y2="80" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+          <path class="rl-check" d="M47 54l5 5 10-11" fill="none" stroke="var(--accent)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
+      </svg>
+      <div class="rl-text">AI проверяет ваш скрипт <b>(${REVIEW_MODE_LABEL[mode]})</b></div>
+      <div class="rl-sub" id="rl-sub">Читаю реплики…</div>
     </div>
+    <script>(function(){var msgs=['Читаю реплики…','Смотрю на тон…','Проверяю узбекский…','Ищу канцелярит…','Взвешиваю формулировки…','Почти готово…'];var i=0;var el=document.getElementById('rl-sub');if(el){window.__rlTimer&&clearInterval(window.__rlTimer);window.__rlTimer=setInterval(function(){i=(i+1)%msgs.length;var e=document.getElementById('rl-sub');if(!e){clearInterval(window.__rlTimer);return;}e.style.opacity=0;setTimeout(function(){e.textContent=msgs[i];e.style.opacity=0.75;},200);},1800);}})();<\/script>
   `;
 
   // Compact script: keep only what matters for review
@@ -7537,6 +7547,7 @@ async function runAIReview(mode) {
       issues: Array.isArray(parsed.issues) ? parsed.issues : [],
       summary: parsed.summary || '',
       score: parsed.score,
+      toNext: parsed.to_next_score || parsed.toNext || '',
       strengths: Array.isArray(parsed.strengths) ? parsed.strengths : []
     };
     lastReviewCache = { mode, result };
@@ -7620,12 +7631,14 @@ function renderReviewResults(result, mode) {
   const sc = Number.isFinite(scoreNum) ? Math.max(1, Math.min(10, Math.round(scoreNum))) : null;
   if (sc !== null || res.summary || (res.strengths && res.strengths.length)) {
     const scColor = sc === null ? 'var(--tx-tertiary)' : sc >= 8 ? '#16a34a' : sc >= 5 ? '#f59e0b' : '#dc2626';
+    const nextTarget = sc !== null ? Math.min(10, sc + (sc >= 8 ? 1 : 2)) : null;
     head = `
       <div style="display:flex; gap:14px; align-items:flex-start; padding:14px; border:1px solid var(--bd-default); border-radius:10px; margin-bottom:14px;">
         ${sc !== null ? `<div style="min-width:64px; text-align:center;"><div style="font-size:26px; font-weight:800; color:${scColor};">${sc}/10</div><div style="font-size:10px; color:var(--tx-tertiary); letter-spacing:0.4px;">ОЦЕНКА</div></div>` : ''}
         <div style="flex:1;">
           ${res.summary ? `<div style="font-size:13px; line-height:1.55;">${esc(res.summary)}</div>` : ''}
           ${(res.strengths || []).map(st => `<div style="font-size:12px; color:#16a34a; margin-top:4px;">✓ ${esc(st)}</div>`).join('')}
+          ${res.toNext && sc !== null && sc < 10 ? `<div class="review-tonext">${csIcon('target',12)} <b>Чтобы поднять до ${nextTarget}/10:</b> ${esc(res.toNext)}</div>` : ''}
         </div>
       </div>`;
   }
