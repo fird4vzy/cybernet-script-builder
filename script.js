@@ -732,10 +732,12 @@ function renderBlocks() {
             <div class="field">
               <label class="field-label">Тип узла</label>
               <select class="input" id="fty-${b.id}">
-                <option value="start" ${type==='start'?'selected':''}>Начало</option>
-                <option value="normal" ${type==='normal'?'selected':''}>Ответ бота (белый)</option>
+                <option value="start" ${type==='start'?'selected':''}>Начало / конец (капсула)</option>
+                <option value="process" ${type==='process'?'selected':''}>Процесс — реплика бота (прямоуг.)</option>
+                <option value="decision" ${type==='decision'?'selected':''}>Решение / ветвление (ромб)</option>
+                <option value="subprocess" ${type==='subprocess'?'selected':''}>Подпроцесс (двойная рамка)</option>
                 <option value="question" ${type==='question'?'selected':''}>Вопрос клиента (оранжевый)</option>
-                <option value="decision" ${type==='decision'?'selected':''}>Решение / ромб</option>
+                <option value="normal" ${type==='normal'?'selected':''}>Обычный (белый)</option>
                 <option value="end" ${type==='end'?'selected':''}>Конец</option>
               </select>
             </div>
@@ -2744,17 +2746,32 @@ function makeIdFromTitle(title, used) {
 // Detect block type by combining: shape style, text content, edge counts
 function detectBlockType(text, styleStr, incomingCount, outgoingCount) {
   const t = (text || '').toLowerCase().trim();
+  const st = (styleStr || '').toLowerCase();
 
-  // Text-based hints — most reliable for start/end
-  if (/^(старт|начало|start|boshlash|нача\u0301ло)/i.test(t)) return 'start';
+  // ── Shape-based (most reliable for Visio / Draw.io flowcharts) ──
+  // Decision = rhombus/diamond
+  if (/rhombus|shape=decision|mscae\/.*decision/.test(st)) return 'decision';
+  // Terminator / start-end = stadium (rounded ellipse) or ellipse
+  if (/shape=terminator|ellipse/.test(st)) {
+    if (incomingCount === 0 && outgoingCount > 0) return 'start';
+    return 'end';
+  }
+  // Subprocess / predefined process = double-struck rectangle
+  if (/shape=process\b|predefinedprocess|shape=predefined/.test(st)) return 'subprocess';
+
+  // ── Text-based hints ──
+  if (/^(старт|начало|start|boshlash)/i.test(t)) return 'start';
   if (/(конец|завершение|end|tugatish|tamomlash|завершение звонка)$/i.test(t)) return 'end';
+  // A question that routes to several answers → decision
+  if (/[?？]\s*$/.test(t) && outgoingCount >= 2) return 'decision';
 
-  // Edge-based fallback for start/end only
+  // ── Edge-based fallback ──
   if (incomingCount === 0 && outgoingCount > 0) return 'start';
   if (outgoingCount === 0 && incomingCount > 0) return 'end';
+  if (outgoingCount >= 3) return 'decision';
 
-  // Everything else = normal (no auto-coloring)
-  return 'normal';
+  // Plain rectangle = process (bot line / action)
+  return 'process';
 }
 
 // Parse one <diagram> page into a list of vertices + edges
@@ -3779,7 +3796,8 @@ function canvasRender() {
     const colorClass = b.color ? ' cv-node-custom' : '';
     const selectedCls = isSelected(b.id) ? ' selected' : '';
     const primaryCls = (canvasState.selectedId === b.id && canvasState.selectedIds.size > 1) ? ' selected-primary' : '';
-    node.className = 'cv-node cv-shape-' + type + colorClass + selectedCls + primaryCls;
+    const isServiceNode = ['start','end','decision','subprocess'].includes(type) || /ответ клиента|^нача|заверш|^конец/i.test((b.title||'').trim());
+    node.className = 'cv-node cv-shape-' + type + colorClass + selectedCls + primaryCls + (isServiceNode ? ' cv-node-service' : '');
     node.dataset.id = b.id;
     node.dataset.type = type;
     node.style.left = x + 'px';
@@ -6073,36 +6091,33 @@ const DEFAULT_PROMPTS = {
 Задача: {task}.
 
 Перепиши ОБА текста (ru и uz) с учётом этой задачи. Сохрани переменные в фигурных скобках как есть (например {BANK_NAME}, {AMOUNT}). Верни JSON: {"ru": "новый русский", "uz": "новый узбекский"}.`,
-  review_system: `Ты эксперт по скриптам колл-центра в банках Узбекистана. Анализируешь готовый скрипт: даёшь общую оценку и находишь проблемы. Возвращаешь JSON: {"score": 7, "summary": "1-2 предложения: общий вывод о скрипте и главный приоритет доработки", "strengths": ["что сделано хорошо 1", "что сделано хорошо 2"], "issues": [{"severity": "high"|"medium"|"low", "blockId": "...", "type": "...", "message": "...", "suggestion": "..."}]}. score — целое 1-10 (10 = готов к продакшену без правок). strengths — 2-3 конкретных пункта. severity: high — критично, medium — важно, low — мелочи. Только сам JSON-объект, без markdown-обёртки из тройных обратных кавычек.`,
-  review_user: `Проанализируй скрипт и найди до 10 самых важных проблем.
+  review_system: `Ты — старший методолог скриптов колл-центра в банках Узбекистана: оцениваешь не столько схему, сколько КАЧЕСТВО РЕЧИ и её уместность.
+Твой главный фокус (в порядке важности):
+1) ТЕКСТ И СМЫСЛ реплик: тон (для взыскания долга — уверенно и по делу; для телемаркетинга — тепло и не навязчиво), вежливость, ясность, отсутствие канцелярита и роботизированных фраз, правовая корректность (не угрожать, не давить сверх нормы), длина под устный звонок.
+2) ЕСТЕСТВЕННОСТЬ узбекского (натуральный разговорный, не дословный перевод; ТОЛЬКО латиница).
+3) Логика диалога (тупики, недостающие типичные ответы клиента) — но это ВТОРИЧНО и упоминай, только если реально ломает разговор.
+Для КАЖДОЙ проблемы по тексту давай конкретную переработку: было → стало, и КОРОТКИЙ резон, почему новый вариант лучше (что это даёт: звучит живее / снимает агрессию / короче для звонка / точнее по смыслу).
+Возвращаешь JSON: {"score": 7, "summary": "1-2 предложения: общий вывод и главный приоритет", "strengths": ["сильная сторона 1","сильная сторона 2"], "issues": [{"severity":"high"|"medium"|"low","blockId":"...","type":"тон|формулировка|смысл|узбекский|длина|логика","message":"в чём проблема","before":"проблемная фраза как есть (кратко)","suggestion":"переписанный вариант фразы","reason":"почему так лучше — 1 короткое предложение"}]}. score — целое 1-10. Только сам JSON-объект, без markdown-обёртки из тройных обратных кавычек.`,
+  review_user: `Тип скрипта определи сам по содержанию (взыскание долга / телемаркетинг / поддержка) и оценивай реплики под ЭТУ задачу.
 
-Что искать:
-- Тупики (блоки без выхода, кроме end)
-- Битые ссылки на несуществующие id
-- Отсутствие счётчиков повторов в обработке возражений (intent_2, intent_3)
-- Слишком формальный/официальный/роботизированный тон
-- Несоответствие RU и UZ текстов
-- Неестественные формулировки
-- Отсутствие важных типичных интентов (мошенничество, не слышно, оператор)
-- Слишком длинные тексты (более 30 слов на блок — плохо для звонка)
-- Неиспользуемые переменные в vars
-- Отсутствие type: end (разговор не завершается)
-- Кириллица в узбекском тексте (uz должен быть ТОЛЬКО на латинице — o', g', sh, ch; любая кириллица в uz это высокая критичность)
+ГЛАВНОЕ — качество текста реплик бота (поле ru и uz). По каждой значимой реплике оцени:
+- Тон уместен задаче? (не грубо, не заискивающе, не роботизированно, не юридически опасно)
+- Формулировка живая и понятная по телефону? Нет ли канцелярита, штампов, двусмысленности?
+- Смысл корректен и полный? Не вводит клиента в заблуждение?
+- Узбекский — натуральный и на латинице? (кириллица в uz = высокая критичность)
+- Не длинно ли для устной речи (>30 слов — обычно длинно)?
+Для таких проблем ОБЯЗАТЕЛЬНО заполни before (как есть) → suggestion (переписанный вариант) и reason (почему лучше).
 
-ОБЯЗАТЕЛЬНЫЙ ЧЕК-ЛИСТ ИНТЕНТОВ — проверь, что скрипт обрабатывает КАЖДЫЙ пункт. Отсутствие обработки = отдельная проблема (medium, для мошенничества — high):
-1. Мошенничество / недоверие («вы мошенники», «откуда у вас мой номер»)
-2. Не слышно / плохая связь
-3. Трубку взял другой человек (родственник, коллега)
-4. Просьба перевести на живого оператора
-5. Просьба перезвонить позже / неудобно говорить
-6. Автоответчик / голосовая почта
+Вторично (упоминай, только если реально мешает разговору): тупики, битые ссылки, нет счётчиков повторов у возражений, отсутствие типичных ответов клиента (мошенник / не слышно / родственник / оператор / перезвонить позже / автоответчик).
 
-Скрипт в JSON формате (имя: "{name}", блоков: {blockCount}):
+НЕ придирайся к техническим/служебным блокам: узлы «Ответ клиента», «Начало», «Конец/Завершение», ветвления-вопросы и подпроцессы — это каркас, у них часто нет своей речи. НЕ создавай issue вида «блок Ответ клиента слишком короткий» или «у Начало нет текста» — это нормально. Проверяй РЕЧЬ там, где бот реально говорит.
+
+Скрипт в JSON (имя: "{name}", блоков: {blockCount}); у блоков есть поле type — используй его, чтобы отличать реплики бота от служебных узлов:
 {scriptJson}
 
 {referencesSection}
 
-Верни JSON со списком issues. Для каждой проблемы укажи blockId если применимо. Не более 10 issues. Не выдумывай — отвечай только если уверен.`
+Верни JSON. До 12 issues, приоритет — проблемам ТЕКСТА и ТОНА. Не выдумывай; если реплика хорошая — не трогай её.`
 };
 
 let aiPrompts = { ...DEFAULT_PROMPTS };
@@ -7634,6 +7649,19 @@ function renderReviewResults(result) {
     const order = { high: 0, medium: 1, low: 2 };
     return (order[a.severity] ?? 3) - (order[b.severity] ?? 3); // ?? not ||: high=0 is falsy!
   });
+  // Safety net: ignore nitpicks aimed at structural/service blocks (no bot speech)
+  const d0 = data();
+  const blockById0 = new Map((d0.blocks || []).map(b => [b.id, b]));
+  const isServiceTitle = (t) => /ответ клиента|^нача|^старт|заверш|^конец|^end$|^start$/i.test((t || '').trim());
+  issues = issues.filter(iss => {
+    if (!iss.blockId) return true;
+    const b = blockById0.get(iss.blockId);
+    if (!b) return true;
+    const mechanical = ['start','end','decision','subprocess'].includes(b.type) || isServiceTitle(b.title);
+    // keep only if it's NOT a length/short/empty-text style nitpick on a mechanical node
+    if (mechanical && /коротк|длин|пуст|нет текста|too short|too long|empty/i.test((iss.message || '') + (iss.type || ''))) return false;
+    return true;
+  });
   lastReviewIssues = issues;
 
   // Verdict header: score + summary + strengths
@@ -7681,7 +7709,9 @@ function renderReviewResults(result) {
               ${iss.type ? `<span class="review-issue-type">${esc(iss.type)}</span>` : ''}
             </div>
             <div class="review-issue-msg">${esc(iss.message || '')}</div>
-            ${iss.suggestion ? `<div class="review-issue-sugg">${csIcon('spark',11)} ${esc(iss.suggestion)}</div>` : ''}
+            ${iss.before ? `<div class="review-issue-before"><span class="ri-tag">Было</span> ${esc(iss.before)}</div>` : ''}
+            ${iss.suggestion ? `<div class="review-issue-sugg"><span class="ri-tag ri-tag-ok">Стало</span> ${esc(iss.suggestion)}</div>` : ''}
+            ${iss.reason ? `<div class="review-issue-reason">${csIcon('spark',10)} ${esc(iss.reason)}</div>` : ''}
             ${iss.blockId ? `<div style="margin-top:8px;"><button id="fix-issue-btn-${i}" class="btn btn-sm" onclick="fixIssueFromReview(${i})" title="AI перепишет тексты этого блока (ru и uz) с учётом проблемы. Откат — Ctrl+Z">${csIcon('spark',11)} Исправить</button></div>` : ''}
           </div>
         `).join('')}
