@@ -7558,7 +7558,38 @@ function useReferenceAsProfile(idx) {
 // ═══════════════════════════════════════════════════════════════
 // AI REVIEW — analyze current profile and suggest improvements
 // ═══════════════════════════════════════════════════════════════
-async function runAIReview() {
+let lastReviewCache = null; // { mode, result } — kept until user hits Перепроверить
+const REVIEW_MODE_LABEL = { logic: 'по логике', text: 'по текстам', all: 'всё вместе' };
+
+function openAIReview() {
+  document.getElementById('ai-review-modal').style.display = 'flex';
+  if (lastReviewCache) { renderReviewResults(lastReviewCache.result, lastReviewCache.mode); }
+  else { renderReviewIntro(); }
+}
+
+function renderReviewIntro() {
+  document.getElementById('review-content').innerHTML = `
+    <div class="review-intro">
+      <p class="review-intro-lead">Выберите тип проверки — это влияет на глубину и расход токенов:</p>
+      <div class="review-mode-grid">
+        <button class="review-mode-card" onclick="runAIReview('text')">
+          <span class="rmc-title">${csIcon('spark',15)} Тексты и формулировки</span>
+          <span class="rmc-desc">Тон, живость фраз, смысл, естественность узбекского, перевод. Рекомендуется.</span>
+        </button>
+        <button class="review-mode-card" onclick="runAIReview('logic')">
+          <span class="rmc-title">${csIcon('target',15)} Логика и структура</span>
+          <span class="rmc-desc">Тупики, битые связи, недостающие интенты, счётчики повторов. Дешевле по токенам.</span>
+        </button>
+        <button class="review-mode-card review-mode-card--all" onclick="runAIReview('all')">
+          <span class="rmc-title">${csIcon('checkDiamond',15)} Всё вместе</span>
+          <span class="rmc-desc">Полная проверка: и тексты, и логика. Дороже всего по токенам.</span>
+        </button>
+      </div>
+    </div>`;
+}
+
+async function runAIReview(mode) {
+  mode = (mode === 'logic' || mode === 'text' || mode === 'all') ? mode : 'all';
   if (!llmSettings.apiKey) {
     openLLMSettings();
     toast('Сначала настройте API ключ', 'error');
@@ -7572,7 +7603,7 @@ async function runAIReview() {
   document.getElementById('review-content').innerHTML = `
     <div class="ai-loading" style="padding: 40px 20px;">
       <div class="ai-spinner"></div>
-      <span>AI проверяет ваш скрипт... (15-30 сек)</span>
+      <span>AI проверяет ваш скрипт (${REVIEW_MODE_LABEL[mode]})... (15-30 сек)</span>
     </div>
   `;
 
@@ -7599,12 +7630,18 @@ async function runAIReview() {
     refsSection = `\n\nДля сравнения, наши эталонные скрипты:\n${refsCompact}\n\nЕсли проверяемый скрипт сильно отличается по структуре от эталонов (не хватает важных интентов, нет счётчиков повторов и т.п.) — отметь это.`;
   }
 
-  const userPrompt = fillTemplate(aiPrompts.review_user, {
+  let userPrompt = fillTemplate(aiPrompts.review_user, {
     name: d.name,
     blockCount: d.blocks.length,
     scriptJson: JSON.stringify(compact, null, 2),
     referencesSection: refsSection
   });
+  // Narrow the scope by mode to save tokens and sharpen focus
+  if (mode === 'logic') {
+    userPrompt += '\n\n=== РЕЖИМ: ТОЛЬКО ЛОГИКА И СТРУКТУРА ===\nПроверяй ИСКЛЮЧИТЕЛЬНО структуру диалога: тупики, битые ссылки на несуществующие id, недостающие типичные интенты (мошенник/не слышно/родственник/оператор/перезвонить/автоответчик), отсутствие счётчиков повторов у возражений, незавершённость (нет end). НЕ комментируй тон, формулировки, перевод и длину. Поля before/suggestion/reason можно опустить — достаточно message.';
+  } else if (mode === 'text') {
+    userPrompt += '\n\n=== РЕЖИМ: ТОЛЬКО ТЕКСТ, ТОН И ПЕРЕВОД ===\nПроверяй ИСКЛЮЧИТЕЛЬНО качество речи реплик бота: тон под задачу, живость и ясность формулировок, канцелярит, смысл, естественность и латиницу узбекского, качество перевода RU↔UZ, длину для звонка. НЕ комментируй структуру, тупики и связи. Для КАЖДОЙ проблемы обязательно заполни before → suggestion → reason.';
+  }
 
   try {
     const raw = await aiGenerate(aiPrompts.review_system, userPrompt, {
@@ -7612,32 +7649,63 @@ async function runAIReview() {
       temperature: 0.3,
       maxTokens: 8000
     });
-    let parsed;
-    try { parsed = JSON.parse(raw); } catch {
-      const m = raw.match(/\{[\s\S]*\}/);
-      if (!m) throw new Error('Не могу распарсить JSON');
-      parsed = JSON.parse(m[0]);
-    }
-    renderReviewResults({
-      issues: parsed.issues || [],
+    const parsed = parseAIJson(raw);
+    if (!parsed) throw new Error('Модель вернула повреждённый JSON. Нажмите «Перепроверить».');
+    const result = {
+      issues: Array.isArray(parsed.issues) ? parsed.issues : [],
       summary: parsed.summary || '',
       score: parsed.score,
       strengths: Array.isArray(parsed.strengths) ? parsed.strengths : []
-    });
+    };
+    lastReviewCache = { mode, result };
+    renderReviewResults(result, mode);
   } catch (err) {
     document.getElementById('review-content').innerHTML = `
       <div style="padding: 30px; text-align:center; color:#dc2626;">
         <div style="font-size:42px;">${csIcon('warn',40)}</div>
         <h3>Ошибка проверки</h3>
         <p>${esc(err.message)}</p>
+        <button class="btn btn-sm" style="margin-top:14px;" onclick="renderReviewIntro()">← Выбрать тип проверки</button>
       </div>
     `;
   }
 }
 
+// Tolerant JSON extractor for LLM output: strips fences, finds the object,
+// and repairs the most common truncation (unclosed arrays/strings/braces).
+function parseAIJson(raw) {
+  if (!raw) return null;
+  let t = String(raw).trim().replace(/^```(?:json)?/i, '').replace(/```$/,'').trim();
+  try { return JSON.parse(t); } catch {}
+  const start = t.indexOf('{');
+  if (start === -1) return null;
+  t = t.slice(start);
+  try { return JSON.parse(t); } catch {}
+  // Repair truncated output: close dangling string, then balance ] and }
+  let s2 = t;
+  const quotes = (s2.match(/(?<!\\)"/g) || []).length;
+  if (quotes % 2 === 1) s2 += '"';
+  const opens = (s2.match(/[\[{]/g) || []);
+  const closes = (s2.match(/[\]}]/g) || []);
+  let deficit = opens.length - closes.length;
+  // trim trailing comma/partial token before closing
+  s2 = s2.replace(/,\s*$/,'');
+  const stack = [];
+  for (const ch of s2) { if (ch === '{' || ch === '[') stack.push(ch); else if (ch === '}' || ch === ']') stack.pop(); }
+  while (stack.length) { const o = stack.pop(); s2 += (o === '{' ? '}' : ']'); }
+  try { return JSON.parse(s2); } catch {}
+  // Last resort: cut to last complete issue object inside issues array
+  const lastObj = s2.lastIndexOf('},');
+  if (lastObj > start) {
+    let s3 = s2.slice(0, lastObj + 1) + ']}';
+    try { return JSON.parse(s3); } catch {}
+  }
+  return null;
+}
+
 let lastReviewIssues = [];
 
-function renderReviewResults(result) {
+function renderReviewResults(result, mode) {
   // Back-compat: accept both the old array shape and the new verdict object
   const res = Array.isArray(result) ? { issues: result } : (result || {});
   let issues = res.issues || [];
