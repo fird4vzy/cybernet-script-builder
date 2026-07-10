@@ -5973,33 +5973,27 @@ const DEFAULT_PROMPTS = {
 Задача: {task}.
 
 Перепиши ОБА текста (ru и uz) с учётом этой задачи. Сохрани переменные в фигурных скобках как есть (например {BANK_NAME}, {AMOUNT}). Верни JSON: {"ru": "новый русский", "uz": "новый узбекский"}.`,
-  review_system: `Ты — старший методолог скриптов колл-центра в банках Узбекистана: оцениваешь не столько схему, сколько КАЧЕСТВО РЕЧИ и её уместность.
-Твой главный фокус (в порядке важности):
-1) ТЕКСТ И СМЫСЛ реплик: тон (для взыскания долга — уверенно и по делу; для телемаркетинга — тепло и не навязчиво), вежливость, ясность, отсутствие канцелярита и роботизированных фраз, правовая корректность (не угрожать, не давить сверх нормы), длина под устный звонок.
-2) ЕСТЕСТВЕННОСТЬ узбекского (натуральный разговорный, не дословный перевод; ТОЛЬКО латиница).
-3) Логика диалога (тупики, недостающие типичные ответы клиента) — но это ВТОРИЧНО и упоминай, только если реально ломает разговор.
-Для КАЖДОЙ проблемы по тексту давай конкретную переработку: было → стало, и КОРОТКИЙ резон, почему новый вариант лучше (что это даёт: звучит живее / снимает агрессию / короче для звонка / точнее по смыслу).
-Возвращаешь JSON: {"score": 7, "summary": "1-2 предложения: общий вывод и главный приоритет", "to_next_score": "коротко и по делу: что конкретно исправить, чтобы поднять оценку на 1-2 балла (2-3 самых важных пункта одной фразой)", "strengths": ["сильная сторона 1","сильная сторона 2"], "issues": [{"severity":"high"|"medium"|"low","blockId":"...","type":"тон|формулировка|смысл|узбекский|длина|логика","message":"в чём проблема","before":"проблемная фраза как есть (кратко)","suggestion":"переписанный вариант фразы","reason":"почему так лучше — 1 короткое предложение"}]}. score — целое 1-10. Только сам JSON-объект, без markdown-обёртки из тройных обратных кавычек.`,
-  review_user: `Тип скрипта определи сам по содержанию (взыскание долга / телемаркетинг / поддержка) и оценивай реплики под ЭТУ задачу.
+  review_system: `Ты — старший методолог скриптов колл-центра в банках Узбекистана и эксперт по конверсии телефонных продаж и взысканий. Разбираешь скрипт ПРАКТИЧНО и ПО РАЗДЕЛАМ, без общей воды — как опытный методолог коллеге.
+Тип скрипта (продажи / взыскание / поддержка) определи сам и оценивай реплики под эту задачу, с упором на ВЫБРАННЫЕ пользователем аспекты.
+Правила разбора:
+- Иди по функциональным разделам скрипта (приветствие, выявление/верификация, оффер, работа с возражениями, дожим/целевое действие, завершение). Используй разделы sections из входных данных, если они есть.
+- Для каждого раздела дай короткую оценку (assessment): работает ли он на цель и что главное улучшить для конверсии.
+- Для проблем по тексту ОБЯЗАТЕЛЬНО давай конкретную переработку: before (как есть) → suggestion (переписанный вариант) → reason (что это даёт: выше конверсия / снимает возражение / живее тон / короче для звонка).
+- НЕ трогай служебные узлы (Ответ клиента, Начало, Конец, ромбы-ветвления, подпроцессы) — у них нет своей речи.
+- Не выдумывай проблем: хорошую реплику отметь в strengths, а не выдавливай из неё замечание.
+Возвращаешь СТРОГО JSON: {"score":7,"summary":"1-2 предложения: общий вывод и главный приоритет","to_next_score":"что исправить, чтобы поднять оценку на 1-2 балла (2-3 пункта одной фразой)","strengths":["сильная сторона 1","сильная сторона 2"],"sections":[{"name":"Название раздела","assessment":"1-2 предложения: как раздел работает на цель и что улучшить","issues":[{"severity":"high|medium|low","blockId":"id блока или пусто","type":"конверсия|возражение|тон|смысл|узбекский|длина|логика","message":"в чём проблема","before":"проблемная фраза как есть","suggestion":"переписанный вариант","reason":"почему так лучше — 1 предложение"}]}]}. score — целое 1-10. Только сам JSON-объект, без markdown-обёртки из тройных обратных кавычек.`,
+  review_user: `Разбери скрипт ПО РАЗДЕЛАМ и дай практичные рекомендации, повышающие конверсию и качество разговора.
 
-ГЛАВНОЕ — качество текста реплик бота (поле ru и uz). По каждой значимой реплике оцени:
-- Тон уместен задаче? (не грубо, не заискивающе, не роботизированно, не юридически опасно)
-- Формулировка живая и понятная по телефону? Нет ли канцелярита, штампов, двусмысленности?
-- Смысл корректен и полный? Не вводит клиента в заблуждение?
-- Узбекский — натуральный и на латинице? (кириллица в uz = высокая критичность)
-- Не длинно ли для устной речи (>30 слов — обычно длинно)?
-Для таких проблем ОБЯЗАТЕЛЬНО заполни before (как есть) → suggestion (переписанный вариант) и reason (почему лучше).
+Для каждого раздела: короткая оценка (assessment) + конкретные проблемы реплик с before → suggestion → reason.
+Проверяй РЕЧЬ там, где бот реально говорит; служебные узлы (Ответ клиента / Начало / Конец / ромбы / подпроцессы) не трогай.
 
-Вторично (упоминай, только если реально мешает разговору): тупики, битые ссылки, нет счётчиков повторов у возражений, отсутствие типичных ответов клиента (мошенник / не слышно / родственник / оператор / перезвонить позже / автоответчик).
-
-НЕ придирайся к техническим/служебным блокам: узлы «Ответ клиента», «Начало», «Конец/Завершение», ветвления-вопросы и подпроцессы — это каркас, у них часто нет своей речи. НЕ создавай issue вида «блок Ответ клиента слишком короткий» или «у Начало нет текста» — это нормально. Проверяй РЕЧЬ там, где бот реально говорит.
-
-Скрипт в JSON (имя: "{name}", блоков: {blockCount}); у блоков есть поле type — используй его, чтобы отличать реплики бота от служебных узлов:
+Данные скрипта (у блоков: type — тип узла, sec — id раздела; список разделов — в sections):
+Имя: "{name}", блоков: {blockCount}
 {scriptJson}
 
 {referencesSection}
 
-Верни JSON. До 12 issues, приоритет — проблемам ТЕКСТА и ТОНА. Не выдумывай; если реплика хорошая — не трогай её.`
+Верни JSON строго по схеме (массив sections). Приоритет — рекомендациям, которые повышают конверсию.`
 };
 
 let aiPrompts = { ...DEFAULT_PROMPTS };
@@ -7440,38 +7434,53 @@ function useReferenceAsProfile(idx) {
 // ═══════════════════════════════════════════════════════════════
 // AI REVIEW — analyze current profile and suggest improvements
 // ═══════════════════════════════════════════════════════════════
-let lastReviewCache = null; // { mode, result } — kept until user hits Перепроверить
-const REVIEW_MODE_LABEL = { logic: 'по логике', text: 'по текстам', all: 'всё вместе' };
+let lastReviewCache = null;   // { result } — kept until user reruns
+let lastReviewParams = null;  // { aspects:[], custom:'' } — remembers the picker
+const REVIEW_ASPECTS = [
+  { id: 'conversion', label: 'Конверсия и продажи', hint: 'зацепить клиента, довести до целевого действия, усилить оффер' },
+  { id: 'objections', label: 'Снятие возражений', hint: 'обработка отказов и сомнений, удержание в разговоре' },
+  { id: 'tone', label: 'Тон и вежливость', hint: 'тон под задачу, эмпатия, не грубо и не заискивающе' },
+  { id: 'clarity', label: 'Ясность формулировок', hint: 'живой язык без канцелярита, понятность по телефону' },
+  { id: 'uzbek', label: 'Узбекский и перевод', hint: 'натуральность, латиница, соответствие RU и UZ' },
+  { id: 'legal', label: 'Юр. корректность', hint: 'без угроз и давления сверх нормы' },
+  { id: 'length', label: 'Длина реплик', hint: 'коротко для устной речи' },
+  { id: 'logic', label: 'Логика и структура', hint: 'тупики, битые связи, недостающие интенты, счётчики повторов' }
+];
+const REVIEW_ASPECT_DEFAULT = ['conversion', 'objections', 'tone', 'clarity', 'uzbek'];
 
 function openAIReview() {
   document.getElementById('ai-review-modal').style.display = 'flex';
-  if (lastReviewCache) { renderReviewResults(lastReviewCache.result, lastReviewCache.mode); }
+  if (lastReviewCache) { renderReviewResults(lastReviewCache.result); }
   else { renderReviewIntro(); }
 }
 
 function renderReviewIntro() {
+  const sel = (lastReviewParams && lastReviewParams.aspects) || REVIEW_ASPECT_DEFAULT;
+  const custom = (lastReviewParams && lastReviewParams.custom) || '';
+  const chips = REVIEW_ASPECTS.map(a => `
+    <label class="review-aspect-chip" title="${esc(a.hint)}">
+      <input type="checkbox" class="review-aspect" value="${a.id}" ${sel.includes(a.id) ? 'checked' : ''}>
+      <span class="rac-label">${esc(a.label)}</span>
+    </label>`).join('');
   document.getElementById('review-content').innerHTML = `
     <div class="review-intro">
-      <p class="review-intro-lead">Выберите тип проверки — это влияет на глубину и расход токенов:</p>
-      <div class="review-mode-grid">
-        <button class="review-mode-card" onclick="runAIReview('text')">
-          <span class="rmc-title">${csIcon('spark',15)} Тексты и формулировки</span>
-          <span class="rmc-desc">Тон, живость фраз, смысл, естественность узбекского, перевод. Рекомендуется.</span>
-        </button>
-        <button class="review-mode-card" onclick="runAIReview('logic')">
-          <span class="rmc-title">${csIcon('target',15)} Логика и структура</span>
-          <span class="rmc-desc">Тупики, битые связи, недостающие интенты, счётчики повторов. Дешевле по токенам.</span>
-        </button>
-        <button class="review-mode-card review-mode-card--all" onclick="runAIReview('all')">
-          <span class="rmc-title">${csIcon('checkDiamond',15)} Всё вместе</span>
-          <span class="rmc-desc">Полная проверка: и тексты, и логика. Дороже всего по токенам.</span>
-        </button>
+      <p class="review-intro-lead">Отчёт строится <b>по разделам скрипта</b> (приветствие → возражения → оффер → завершение) с рекомендациями под конверсию. Отметьте, что проверять — это фокусирует разбор и экономит токены:</p>
+      <div class="review-aspect-grid">${chips}</div>
+      <div class="review-custom">
+        <label class="field-label" style="display:block;margin-bottom:6px;">Своя задача для проверки (необязательно)</label>
+        <textarea id="review-custom-task" class="input" rows="2" placeholder="Напр.: не слишком ли давим в блоке про оплату? добавь цепляющих фраз в оффер; звучит ли приветствие доверительно?">${esc(custom)}</textarea>
       </div>
+      <button class="btn btn-primary review-run-btn" onclick="runAIReview()">${csIcon('spark',15)} Запустить проверку</button>
     </div>`;
 }
 
-async function runAIReview(mode) {
-  mode = (mode === 'logic' || mode === 'text' || mode === 'all') ? mode : 'all';
+async function runAIReview() {
+  // Gather aspects + custom task from the picker; on rerun reuse last params
+  let aspects = [...document.querySelectorAll('.review-aspect:checked')].map(el => el.value);
+  let custom = (document.getElementById('review-custom-task')?.value || '').trim();
+  if (!aspects.length && lastReviewParams) { aspects = lastReviewParams.aspects; custom = lastReviewParams.custom; }
+  if (!aspects.length) aspects = REVIEW_ASPECT_DEFAULT.slice();
+  lastReviewParams = { aspects, custom };
   if (!llmSettings.apiKey) {
     openLLMSettings();
     toast('Сначала настройте API ключ', 'error');
@@ -7493,7 +7502,7 @@ async function runAIReview(mode) {
           <path class="rl-check" d="M47 54l5 5 10-11" fill="none" stroke="var(--accent)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
         </g>
       </svg>
-      <div class="rl-text">AI проверяет ваш скрипт <b>(${REVIEW_MODE_LABEL[mode]})</b></div>
+      <div class="rl-text">AI разбирает скрипт по разделам…</div>
       <div class="rl-sub" id="rl-sub">Читаю реплики…</div>
     </div>
     <script>(function(){var msgs=['Читаю реплики…','Смотрю на тон…','Проверяю узбекский…','Ищу канцелярит…','Взвешиваю формулировки…','Почти готово…'];var i=0;var el=document.getElementById('rl-sub');if(el){window.__rlTimer&&clearInterval(window.__rlTimer);window.__rlTimer=setInterval(function(){i=(i+1)%msgs.length;var e=document.getElementById('rl-sub');if(!e){clearInterval(window.__rlTimer);return;}e.style.opacity=0;setTimeout(function(){e.textContent=msgs[i];e.style.opacity=0.75;},200);},1800);}})();<\/script>
@@ -7503,9 +7512,11 @@ async function runAIReview(mode) {
   const compact = {
     name: d.name,
     vars: d.vars,
+    sections: (d.sections || []).map(sn => ({ id: sn.id, label: sn.label })),
     blocks: d.blocks.map(b => ({
       id: b.id,
       title: b.title,
+      sec: b.sec,
       intent: b.intent,
       type: b.type,
       ru: b.ru,
@@ -7528,30 +7539,30 @@ async function runAIReview(mode) {
     scriptJson: JSON.stringify(compact, null, 2),
     referencesSection: refsSection
   });
-  // Narrow the scope by mode to save tokens and sharpen focus
-  if (mode === 'logic') {
-    userPrompt += '\n\n=== РЕЖИМ: ТОЛЬКО ЛОГИКА И СТРУКТУРА ===\nПроверяй ИСКЛЮЧИТЕЛЬНО структуру диалога: тупики, битые ссылки на несуществующие id, недостающие типичные интенты (мошенник/не слышно/родственник/оператор/перезвонить/автоответчик), отсутствие счётчиков повторов у возражений, незавершённость (нет end). НЕ комментируй тон, формулировки, перевод и длину. Поля before/suggestion/reason можно опустить — достаточно message.';
-  } else if (mode === 'text') {
-    userPrompt += '\n\n=== РЕЖИМ: ТОЛЬКО ТЕКСТ, ТОН И ПЕРЕВОД ===\nПроверяй ИСКЛЮЧИТЕЛЬНО качество речи реплик бота: тон под задачу, живость и ясность формулировок, канцелярит, смысл, естественность и латиницу узбекского, качество перевода RU↔UZ, длину для звонка. НЕ комментируй структуру, тупики и связи. Для КАЖДОЙ проблемы обязательно заполни before → suggestion → reason.';
-  }
+  // Focus the review on the chosen aspects + the user's own task
+  const aspLabels = aspects.map(id => { const a = REVIEW_ASPECTS.find(x => x.id === id); return a ? `- ${a.label}: ${a.hint}` : null; }).filter(Boolean).join('\n');
+  userPrompt += '\n\n=== ФОКУС ПРОВЕРКИ (проверяй прежде всего это) ===\n' + aspLabels;
+  if (custom) userPrompt += '\n\n=== ОСОБАЯ ЗАДАЧА ОТ ПОЛЬЗОВАТЕЛЯ (обязательно учти и вынеси в отдельный раздел "По вашему запросу") ===\n' + custom;
+  if (!aspects.includes('logic')) userPrompt += '\n\nЛогику/структуру (тупики, связи) подробно не разбирай — она не в фокусе этой проверки.';
 
   try {
     const raw = await aiGenerate(aiPrompts.review_system, userPrompt, {
       json: true,
-      temperature: 0.3,
-      maxTokens: 8000
+      temperature: 0.35,
+      maxTokens: 12000
     });
     const parsed = parseAIJson(raw);
     if (!parsed) throw new Error('Модель вернула повреждённый JSON. Нажмите «Перепроверить».');
     const result = {
       issues: Array.isArray(parsed.issues) ? parsed.issues : [],
+      sections: Array.isArray(parsed.sections) ? parsed.sections : [],
       summary: parsed.summary || '',
       score: parsed.score,
       toNext: parsed.to_next_score || parsed.toNext || '',
       strengths: Array.isArray(parsed.strengths) ? parsed.strengths : []
     };
-    lastReviewCache = { mode, result };
-    renderReviewResults(result, mode);
+    lastReviewCache = { result };
+    renderReviewResults(result);
   } catch (err) {
     document.getElementById('review-content').innerHTML = `
       <div style="padding: 30px; text-align:center; color:#dc2626;">
@@ -7598,34 +7609,47 @@ function parseAIJson(raw) {
 
 let lastReviewIssues = [];
 
-function renderReviewResults(result, mode) {
-  // Back-compat: accept both the old array shape and the new verdict object
+function renderReviewResults(result) {
   const res = Array.isArray(result) ? { issues: result } : (result || {});
-  let issues = res.issues || [];
   const sevLabels = { high: 'Критично', medium: 'Важно', low: 'Мелочь' };
   const sevIcons = { high: csSevDiamond('#dc2626'), medium: csSevDiamond('#f59e0b'), low: csSevDiamond('#9ca3af') };
+  const sevRank = { high: 0, medium: 1, low: 2 };
 
-  // Sort by severity FIRST, then remember: fix buttons reference indices in this array
-  issues.sort((a, b) => {
-    const order = { high: 0, medium: 1, low: 2 };
-    return (order[a.severity] ?? 3) - (order[b.severity] ?? 3); // ?? not ||: high=0 is falsy!
-  });
-  // Safety net: ignore nitpicks aimed at structural/service blocks (no bot speech)
   const d0 = data();
   const blockById0 = new Map((d0.blocks || []).map(b => [b.id, b]));
   const isServiceTitle = (t) => /ответ клиента|^нача|^старт|заверш|^конец|^end$|^start$/i.test((t || '').trim());
-  issues = issues.filter(iss => {
+  const keepIssue = (iss) => {
+    if (!iss || typeof iss !== 'object') return false;
     if (!iss.blockId) return true;
     const b = blockById0.get(iss.blockId);
     if (!b) return true;
-    const mechanical = ['start','end','decision','subprocess'].includes(b.type) || isServiceTitle(b.title);
-    // keep only if it's NOT a length/short/empty-text style nitpick on a mechanical node
+    const mechanical = ['start', 'end', 'decision', 'subprocess'].includes(b.type) || isServiceTitle(b.title);
     if (mechanical && /коротк|длин|пуст|нет текста|too short|too long|empty/i.test((iss.message || '') + (iss.type || ''))) return false;
     return true;
-  });
-  lastReviewIssues = issues;
+  };
 
-  // Verdict header: score + summary + strengths
+  // Normalise into section-groups. New shape = res.sections[]; old shape = flat res.issues[].
+  let groups;
+  if (Array.isArray(res.sections) && res.sections.length) {
+    groups = res.sections.map(sec => ({
+      name: sec.name || 'Раздел',
+      assessment: sec.assessment || '',
+      issues: (Array.isArray(sec.issues) ? sec.issues : []).filter(keepIssue)
+    }));
+  } else {
+    groups = [{ name: null, assessment: '', issues: (res.issues || []).filter(keepIssue) }];
+  }
+
+  // Global index for fix buttons + counts; sort issues by severity inside each group
+  lastReviewIssues = [];
+  const counts = { high: 0, medium: 0, low: 0 };
+  groups.forEach(g => {
+    g.issues.sort((a, b) => (sevRank[a.severity] ?? 3) - (sevRank[b.severity] ?? 3));
+    g.issues.forEach(iss => { iss.__i = lastReviewIssues.length; lastReviewIssues.push(iss); if (counts[iss.severity] !== undefined) counts[iss.severity]++; });
+  });
+  const totalIssues = lastReviewIssues.length;
+
+  // ── Verdict header ──
   let head = '';
   const scoreNum = Number(res.score);
   const sc = Number.isFinite(scoreNum) ? Math.max(1, Math.min(10, Math.round(scoreNum))) : null;
@@ -7633,53 +7657,55 @@ function renderReviewResults(result, mode) {
     const scColor = sc === null ? 'var(--tx-tertiary)' : sc >= 8 ? '#16a34a' : sc >= 5 ? '#f59e0b' : '#dc2626';
     const nextTarget = sc !== null ? Math.min(10, sc + (sc >= 8 ? 1 : 2)) : null;
     head = `
-      <div style="display:flex; gap:14px; align-items:flex-start; padding:14px; border:1px solid var(--bd-default); border-radius:10px; margin-bottom:14px;">
-        ${sc !== null ? `<div style="min-width:64px; text-align:center;"><div style="font-size:26px; font-weight:800; color:${scColor};">${sc}/10</div><div style="font-size:10px; color:var(--tx-tertiary); letter-spacing:0.4px;">ОЦЕНКА</div></div>` : ''}
+      <div class="review-verdict-card">
+        ${sc !== null ? `<div class="review-score"><div class="review-score-num" style="color:${scColor};">${sc}/10</div><div class="review-score-lbl">ОЦЕНКА</div></div>` : ''}
         <div style="flex:1;">
-          ${res.summary ? `<div style="font-size:13px; line-height:1.55;">${esc(res.summary)}</div>` : ''}
-          ${(res.strengths || []).map(st => `<div style="font-size:12px; color:#16a34a; margin-top:4px;">✓ ${esc(st)}</div>`).join('')}
+          ${res.summary ? `<div class="review-verdict-summary">${esc(res.summary)}</div>` : ''}
+          ${(res.strengths || []).map(st => `<div class="review-strength">✓ ${esc(st)}</div>`).join('')}
           ${res.toNext && sc !== null && sc < 10 ? `<div class="review-tonext">${csIcon('target',12)} <b>Чтобы поднять до ${nextTarget}/10:</b> ${esc(res.toNext)}</div>` : ''}
         </div>
       </div>`;
   }
 
-  let html = '';
-  if (!issues.length) {
-    html = head + `
+  const issueCard = (iss) => `
+    <div class="review-issue sev-${iss.severity || 'low'}">
+      <div class="review-issue-head">
+        <span class="review-issue-icon">${sevIcons[iss.severity] || csSevDiamond('#9ca3af')}</span>
+        <span class="review-issue-sev">${sevLabels[iss.severity] || 'Замечание'}</span>
+        ${iss.blockId ? `<span class="review-issue-block" onclick="jumpToBlockFromReview('${esc(iss.blockId)}')">${csIcon('pin',10)} ${esc(iss.blockId)}</span>` : ''}
+        ${iss.type ? `<span class="review-issue-type">${esc(iss.type)}</span>` : ''}
+      </div>
+      <div class="review-issue-msg">${esc(iss.message || '')}</div>
+      ${iss.before ? `<div class="review-issue-before"><span class="ri-tag">Было</span> ${esc(iss.before)}</div>` : ''}
+      ${iss.suggestion ? `<div class="review-issue-sugg"><span class="ri-tag ri-tag-ok">Стало</span> ${esc(iss.suggestion)}</div>` : ''}
+      ${iss.reason ? `<div class="review-issue-reason">${csIcon('spark',10)} ${esc(iss.reason)}</div>` : ''}
+      ${iss.blockId ? `<div class="review-issue-fix"><button id="fix-issue-btn-${iss.__i}" class="btn btn-sm" onclick="fixIssueFromReview(${iss.__i})" title="AI перепишет тексты этого блока (ru и uz) с учётом проблемы. Откат — Ctrl+Z">${csIcon('spark',11)} Исправить</button></div>` : ''}
+    </div>`;
+
+  let html = head;
+  if (!totalIssues && !groups.some(g => g.assessment)) {
+    html += `
       <div style="padding: 30px 20px; text-align: center;">
         <div style="font-size: 56px; margin-bottom: 12px;">${csIcon('checkDiamond',48,'color:#16a34a;')}</div>
         <h3>Скрипт выглядит отлично!</h3>
-        <p style="color:#6b7280;">AI не нашёл серьёзных проблем.</p>
-      </div>
-    `;
+        <p style="color:var(--tx-tertiary);">AI не нашёл существенных проблем.</p>
+      </div>`;
   } else {
-    const counts = { high: 0, medium: 0, low: 0 };
-    issues.forEach(i => { if (counts[i.severity] !== undefined) counts[i.severity]++; });
-
-    html = head + `
-      <div class="review-summary">
+    if (totalIssues) {
+      html += `<div class="review-summary">
         ${counts.high ? `<span class="review-count high">${counts.high} критичных</span>` : ''}
         ${counts.medium ? `<span class="review-count medium">${counts.medium} важных</span>` : ''}
         ${counts.low ? `<span class="review-count low">${counts.low} мелких</span>` : ''}
-      </div>
-      <div class="review-list">
-        ${issues.map((iss, i) => `
-          <div class="review-issue sev-${iss.severity || 'low'}">
-            <div class="review-issue-head">
-              <span class="review-issue-icon">${sevIcons[iss.severity] || csSevDiamond('#9ca3af')}</span>
-              <span class="review-issue-sev">${sevLabels[iss.severity] || 'Замечание'}</span>
-              ${iss.blockId ? `<span class="review-issue-block" onclick="jumpToBlockFromReview('${esc(iss.blockId)}')">${csIcon('pin',10)} ${esc(iss.blockId)}</span>` : ''}
-              ${iss.type ? `<span class="review-issue-type">${esc(iss.type)}</span>` : ''}
-            </div>
-            <div class="review-issue-msg">${esc(iss.message || '')}</div>
-            ${iss.before ? `<div class="review-issue-before"><span class="ri-tag">Было</span> ${esc(iss.before)}</div>` : ''}
-            ${iss.suggestion ? `<div class="review-issue-sugg"><span class="ri-tag ri-tag-ok">Стало</span> ${esc(iss.suggestion)}</div>` : ''}
-            ${iss.reason ? `<div class="review-issue-reason">${csIcon('spark',10)} ${esc(iss.reason)}</div>` : ''}
-            ${iss.blockId ? `<div style="margin-top:8px;"><button id="fix-issue-btn-${i}" class="btn btn-sm" onclick="fixIssueFromReview(${i})" title="AI перепишет тексты этого блока (ru и uz) с учётом проблемы. Откат — Ctrl+Z">${csIcon('spark',11)} Исправить</button></div>` : ''}
-          </div>
-        `).join('')}
-      </div>
-    `;
+      </div>`;
+    }
+    groups.forEach(g => {
+      if (!g.assessment && !g.issues.length) return;
+      html += `<div class="review-section">`;
+      if (g.name) html += `<div class="review-section-head">${esc(g.name)}</div>`;
+      if (g.assessment) html += `<div class="review-section-assess">${esc(g.assessment)}</div>`;
+      if (g.issues.length) html += `<div class="review-list">${g.issues.map(issueCard).join('')}</div>`;
+      html += `</div>`;
+    });
   }
   document.getElementById('review-content').innerHTML = html;
 }
