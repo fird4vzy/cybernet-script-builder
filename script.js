@@ -4134,12 +4134,10 @@ function buildCanvasEdges(blocks, opts = {}) {
     const tBoxF = boxOf(to);
     const fxCenter = sBoxF.cx;
     const fyExit = sBoxF.y + sBoxF.h;
+    // Always exit from bottom-CENTER (no fan-out): adding or removing a branch
+    // no longer shifts sibling arrows — each arrow's geometry is independent of
+    // how many siblings the source block has.
     let fx = fxCenter;
-    if (sourceTotal > 1) {
-      const usableW = sBoxF.w * 0.5;
-      const step = usableW / (sourceTotal + 1);
-      fx = sBoxF.x + (sBoxF.w - usableW) / 2 + step * (sourceIdx + 1);
-    }
 
     // Entry point on target's top edge — all INCOMING arrows CONVERGE to the
     // same center point (like Draw.io), so they merge into one clean line.
@@ -5988,7 +5986,7 @@ const DEFAULT_PROMPTS = {
 - Иди по функциональным разделам скрипта (приветствие, выявление/верификация, оффер, работа с возражениями, дожим/целевое действие, завершение). Используй разделы sections из входных данных, если они есть.
 - Для каждого раздела дай короткую оценку (assessment): работает ли он на цель и что главное улучшить для конверсии.
 - Для проблем по тексту ОБЯЗАТЕЛЬНО давай конкретную переработку: before (как есть) → suggestion (переписанный вариант) → reason (что это даёт: выше конверсия / снимает возражение / живее тон / короче для звонка).
-- НЕ трогай служебные узлы (Ответ клиента, Начало, Конец, ромбы-ветвления, подпроцессы) — у них нет своей речи.
+- НЕ трогай служебные узлы (Ответ клиента, Начало, Конец, ромбы-ветвления, подпроцессы) — у них нет своей речи. Для общих проблем (отсутствующие интенты, общая логика) оставляй blockId ПУСТЫМ — не привязывай их к служебным узлам, иначе они будут отброшены.
 - Не выдумывай проблем: хорошую реплику отметь в strengths, а не выдавливай из неё замечание.
 Возвращаешь СТРОГО JSON: {"score":7,"summary":"1-2 предложения: общий вывод и главный приоритет","to_next_score":"что исправить, чтобы поднять оценку на 1-2 балла (2-3 пункта одной фразой)","strengths":["сильная сторона 1","сильная сторона 2"],"sections":[{"name":"Название раздела","assessment":"1-2 предложения: как раздел работает на цель и что улучшить","issues":[{"severity":"high|medium|low","blockId":"id блока или пусто","type":"конверсия|возражение|тон|смысл|узбекский|длина|логика","message":"в чём проблема","before":"проблемная фраза как есть","suggestion":"переписанный вариант","reason":"почему так лучше — 1 предложение"}]}]}. score — целое 1-10. Только сам JSON-объект, без markdown-обёртки из тройных обратных кавычек.`,
   review_user: `Разбери скрипт ПО РАЗДЕЛАМ и дай практичные рекомендации, повышающие конверсию и качество разговора.
@@ -6014,6 +6012,16 @@ function loadPrompts() {
       const stored = JSON.parse(raw);
       // Merge with defaults so new prompts get added when we update the code
       aiPrompts = { ...DEFAULT_PROMPTS, ...stored };
+      // Auto-upgrade stale AI-review prompts: if the saved copy predates the
+      // section+score schema, silently replace it with the current default so the
+      // user doesn't have to press «По умолчанию» manually.
+      const rs = aiPrompts.review_system || '';
+      if (!/sections|to_next_score/i.test(rs)) {
+        aiPrompts.review_system = DEFAULT_PROMPTS.review_system;
+        aiPrompts.review_user = DEFAULT_PROMPTS.review_user;
+        try { localStorage.setItem(PROMPTS_KEY, JSON.stringify(aiPrompts)); } catch {}
+        console.log('AI-review prompts auto-upgraded to latest schema');
+      }
     }
   } catch (err) { console.error('Prompts load failed:', err); }
 }
@@ -7522,16 +7530,19 @@ async function runAIReview() {
     name: d.name,
     vars: d.vars,
     sections: (d.sections || []).map(sn => ({ id: sn.id, label: sn.label })),
-    blocks: d.blocks.map(b => ({
-      id: b.id,
-      title: b.title,
-      sec: b.sec,
-      intent: b.intent,
-      type: b.type,
-      ru: b.ru,
-      uz: b.uz,
-      branches: (b.branches || []).map(br => ({ label: br.label, next: br.next }))
-    }))
+    blocks: d.blocks.map(b => {
+      const svc = ['start', 'end', 'decision', 'subprocess'].includes(b.type) || /ответ клиента|^нача|заверш|^конец/i.test((b.title || '').trim());
+      // Service/decision nodes carry no bot speech — omit their ru/uz to save tokens
+      return {
+        id: b.id,
+        title: b.title,
+        sec: b.sec,
+        intent: b.intent,
+        type: b.type,
+        ...(svc ? {} : { ru: b.ru, uz: b.uz }),
+        branches: (b.branches || []).map(br => ({ label: br.label, next: br.next }))
+      };
+    })
   };
 
   // Active references (used as "good style examples")
@@ -7633,7 +7644,9 @@ function renderReviewResults(result) {
     const b = blockById0.get(iss.blockId);
     if (!b) return true;
     const mechanical = ['start', 'end', 'decision', 'subprocess'].includes(b.type) || isServiceTitle(b.title);
-    if (mechanical && /коротк|длин|пуст|нет текста|too short|too long|empty/i.test((iss.message || '') + (iss.type || ''))) return false;
+    // Service / decision / start-end nodes have no bot speech — never surface
+    // issues anchored to them (that's the noise on «Ответ клиента» / ромбы).
+    if (mechanical) return false;
     return true;
   };
 
