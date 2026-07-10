@@ -3877,7 +3877,7 @@ function csBlockBox(b) {
   else if (b.type === 'start' || b.type === 'end') h = 60;
   else { const t = (b.ru || b.uz || '').length; h = t < 30 ? 80 : t < 80 ? 110 : t < 160 ? 150 : 200; }
   const x = b.x || 0, y = b.y || 0;
-  return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+  return { x, y, w, h, cx: x + w / 2, cy: y + h / 2, type: b.type };
 }
 function csEdgeGeom(from, to, branch) {
   const s = csBlockBox(from), t = csBlockBox(to);
@@ -3886,6 +3886,11 @@ function csEdgeGeom(from, to, branch) {
   const anchorToward = (bx, tp) => {
     const dx = tp.x - bx.cx, dy = tp.y - bx.cy;
     if (dx === 0 && dy === 0) return { x: bx.cx, y: bx.y + bx.h };
+    if (bx.type === 'decision') {
+      // rhombus: land on the diamond face, not the invisible rectangle corner
+      const k = 1 / (Math.abs(dx) / (bx.w / 2) + Math.abs(dy) / (bx.h / 2));
+      return { x: bx.cx + dx * k, y: bx.cy + dy * k };
+    }
     const sx = dx === 0 ? Infinity : (bx.w / 2) / Math.abs(dx);
     const sy = dy === 0 ? Infinity : (bx.h / 2) / Math.abs(dy);
     const k = Math.min(sx, sy);
@@ -3994,12 +3999,16 @@ function buildCanvasEdges(blocks, opts = {}) {
     if (typeof b.h === 'number' && b.h > 40) h = Math.min(Math.max(b.h, 40), 600);
     else h = approxH(b);
     const x = b.x || 0, y = b.y || 0;
-    return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+    return { x, y, w, h, cx: x + w / 2, cy: y + h / 2, type: b.type };
   };
   const boxPoint = (box, fx, fy) => ({ x: box.x + box.w * fx, y: box.y + box.h * fy });
   const anchorToward = (box, target) => {
     const dx = target.x - box.cx, dy = target.y - box.cy;
     if (dx === 0 && dy === 0) return { x: box.cx, y: box.y + box.h };
+    if (box.type === 'decision') {
+      const t = 1 / (Math.abs(dx) / (box.w / 2) + Math.abs(dy) / (box.h / 2));
+      return { x: box.cx + dx * t, y: box.cy + dy * t };
+    }
     const sx = dx === 0 ? Infinity : (box.w / 2) / Math.abs(dx);
     const sy = dy === 0 ? Infinity : (box.h / 2) / Math.abs(dy);
     const t = Math.min(sx, sy);
