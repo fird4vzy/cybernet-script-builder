@@ -3695,7 +3695,7 @@ function canvasRender() {
     else if (contentLen > 40) nodeW = 210;
     else nodeW = 180;
     // decision/start/end tend to be shorter labels — keep compact
-    if (type === 'decision') nodeW = Math.min(nodeW, 220);
+    if (type === 'decision') nodeW = Math.min(nodeW, 300);
     if (type === 'start' || type === 'end') nodeW = Math.min(nodeW, 200);
     if (typeof b.w === 'number' && b.w > 40) nodeW = Math.min(Math.max(b.w, 120), 600); // respect imported Draw.io width
     node.style.width = nodeW + 'px';
@@ -3869,7 +3869,7 @@ function csBlockBox(b) {
     else if (contentLen > 90) w = 240;
     else if (contentLen > 40) w = 210;
     else w = 180;
-    if (b.type === 'decision') w = Math.min(w, 220);
+    if (b.type === 'decision') w = Math.min(w, 300);
     if (b.type === 'start' || b.type === 'end') w = Math.min(w, 200);
   }
   let h;
@@ -3992,7 +3992,7 @@ function buildCanvasEdges(blocks, opts = {}) {
       else if (contentLen > 90) w = 240;
       else if (contentLen > 40) w = 210;
       else w = 180;
-      if (b.type === 'decision') w = Math.min(w, 220);
+      if (b.type === 'decision') w = Math.min(w, 300);
       if (b.type === 'start' || b.type === 'end') w = Math.min(w, 200);
     }
     let h;
