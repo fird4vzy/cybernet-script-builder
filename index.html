@@ -688,11 +688,7 @@
       </div>
       <div class="modal-actions review-actions">
         <button class="btn" onclick="closeAIReview()">Закрыть</button>
-        <div class="review-actions-run">
-          <button class="btn btn-sm" onclick="runAIReview('text')" title="Проверить только тексты, тон и перевод">Тексты</button>
-          <button class="btn btn-sm" onclick="runAIReview('logic')" title="Проверить только логику и структуру">Логика</button>
-          <button class="btn btn-primary btn-sm" onclick="runAIReview('all')" title="Полная проверка">Всё вместе</button>
-        </div>
+        <button class="btn btn-sm" onclick="renderReviewIntro()" title="Выбрать аспекты и проверить заново">↺ Новая проверка</button>
       </div>
     </div>
   </div>
