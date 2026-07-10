@@ -4241,3 +4241,11 @@ body.canvas-fullscreen-active .side-rail {
 .review-section { margin-bottom: 18px; }
 .review-section-head { font-size: 13px; font-weight: 700; color: var(--tx-primary); text-transform: uppercase; letter-spacing: .04em; padding: 6px 0 8px; border-bottom: 1px solid var(--bd-default); margin-bottom: 10px; }
 .review-section-assess { font-size: 12.5px; line-height: 1.55; color: var(--tx-secondary); background: var(--bg-surface-2); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
+
+
+/* ═══ DECISION (ромб): fit long text + remove ◆ marker dots ═══ */
+.cv-node[data-type="decision"] { padding: 6px 26px !important; min-height: 64px; height: auto !important; }
+.cv-node[data-type="decision"] .cv-node-head::before { content: none !important; }
+.cv-shape-decision::after { content: none !important; }
+.cv-shape-decision { border-left: none !important; }
+.cv-node[data-type="decision"] .cv-node-head { border-bottom: none !important; }
