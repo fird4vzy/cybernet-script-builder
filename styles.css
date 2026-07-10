@@ -4218,3 +4218,26 @@ body.canvas-fullscreen-active .side-rail {
 
 .review-tonext { margin-top: 10px; padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.5; color: var(--tx-secondary); background: color-mix(in srgb, var(--accent) 8%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent); }
 .review-tonext b { color: var(--tx-primary); }
+
+
+/* ═══ AI REVIEW: aspect picker + section report ═══ */
+.review-aspect-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 16px; }
+.review-aspect-chip { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid var(--bd-default); border-radius: 10px; cursor: pointer; font-size: 13px; color: var(--tx-secondary); transition: border-color .12s, background .12s; user-select: none; }
+.review-aspect-chip:hover { border-color: var(--accent); }
+.review-aspect-chip:has(.review-aspect:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--tx-primary); font-weight: 600; }
+.review-aspect-chip input { width: 16px; height: 16px; accent-color: var(--accent); flex-shrink: 0; }
+.review-custom { margin-bottom: 16px; }
+.review-custom textarea { width: 100%; resize: vertical; font-family: inherit; }
+.review-run-btn { width: 100%; justify-content: center; padding: 12px; font-size: 14px; }
+
+.review-verdict-card { display: flex; gap: 14px; align-items: flex-start; padding: 14px; border: 1px solid var(--bd-default); border-radius: 12px; margin-bottom: 16px; background: var(--bg-surface); }
+.review-score { min-width: 64px; text-align: center; }
+.review-score-num { font-size: 26px; font-weight: 800; }
+.review-score-lbl { font-size: 10px; color: var(--tx-tertiary); letter-spacing: .4px; }
+.review-verdict-summary { font-size: 13px; line-height: 1.55; color: var(--tx-primary); }
+.review-strength { font-size: 12px; color: #16a34a; margin-top: 4px; }
+[data-theme="dark"] .review-strength { color: #4ade80; }
+
+.review-section { margin-bottom: 18px; }
+.review-section-head { font-size: 13px; font-weight: 700; color: var(--tx-primary); text-transform: uppercase; letter-spacing: .04em; padding: 6px 0 8px; border-bottom: 1px solid var(--bd-default); margin-bottom: 10px; }
+.review-section-assess { font-size: 12.5px; line-height: 1.55; color: var(--tx-secondary); background: var(--bg-surface-2); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; }
