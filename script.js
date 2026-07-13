@@ -3722,6 +3722,9 @@ function canvasRender() {
     if (type === 'decision') nodeW = Math.min(nodeW, 300);
     if (type === 'start' || type === 'end') nodeW = Math.min(nodeW, 200);
     if (typeof b.w === 'number' && b.w > 40) nodeW = Math.min(Math.max(b.w, 120), 600); // respect imported Draw.io width
+    // A diamond loses ~28px to its slanted sides + padding, so a narrow imported
+    // width strangles the text. Guarantee enough room for it to stay readable.
+    if (type === 'decision') nodeW = Math.max(nodeW, 200);
     node.style.width = nodeW + 'px';
     // Respect imported Draw.io height so edge endpoints line up with the original layout
     if (typeof b.h === 'number' && b.h > 40) node.style.minHeight = Math.min(Math.max(b.h, 40), 600) + 'px';
@@ -3900,6 +3903,7 @@ function csBlockBox(b) {
   if (typeof b.h === 'number' && b.h > 40) h = Math.min(Math.max(b.h, 40), 600);
   else if (b.type === 'start' || b.type === 'end') h = 60;
   else { const t = (b.ru || b.uz || '').length; h = t < 30 ? 80 : t < 80 ? 110 : t < 160 ? 150 : 200; }
+  if (b.type === 'decision') w = Math.max(w, 200); // keep diamonds readable (matches canvasRender)
   const x = b.x || 0, y = b.y || 0;
   return { x, y, w, h, cx: x + w / 2, cy: y + h / 2, type: b.type };
 }
