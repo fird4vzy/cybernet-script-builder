@@ -1447,14 +1447,21 @@ function buildStaticCanvasSVG(lang, scale, theme) {
     return 200;
   };
 
+  // Use the SAME geometry as the canvas (csBlockBox) so the export is 1:1.
+  const geomOf = (b) => {
+    const bx = csBlockBox(b);
+    const h = showBoth ? Math.max(bx.h, approxH(b)) : bx.h; // extra room for 2nd language
+    return { x: bx.x, y: bx.y, w: bx.w, h };
+  };
+
   // Compute bounds
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   blocks.forEach(b => {
-    const x = b.x || 0, y = b.y || 0, h = approxH(b);
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x + NW);
-    maxY = Math.max(maxY, y + h);
+    const g = geomOf(b);
+    minX = Math.min(minX, g.x);
+    minY = Math.min(minY, g.y);
+    maxX = Math.max(maxX, g.x + g.w);
+    maxY = Math.max(maxY, g.y + g.h);
   });
 
   // Reserve space for title header card above the diagram
@@ -1502,9 +1509,8 @@ function buildStaticCanvasSVG(lang, scale, theme) {
   svg += edgesInner;
 
   blocks.forEach(b => {
-    const x = b.x || 0;
-    const y = b.y || 0;
-    const h = approxH(b);
+    const g = geomOf(b);
+    const x = g.x, y = g.y, h = g.h, NW = g.w; // real per-block size (matches canvas)
     const type = b.type || 'normal';
     const title = b.title || '';
     if (showBoth) {
