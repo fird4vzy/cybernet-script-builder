@@ -1447,11 +1447,31 @@ function buildStaticCanvasSVG(lang, scale, theme) {
     return 200;
   };
 
-  // Use the SAME geometry as the canvas (csBlockBox) so the export is 1:1.
+  // Same X/Y/width as the canvas (csBlockBox) so the export matches it, but the
+  // HEIGHT grows to fit every wrapped line: the canvas can scroll/clip a node,
+  // a PDF cannot — text must never be cut off with '…'.
   const geomOf = (b) => {
     const bx = csBlockBox(b);
-    const h = showBoth ? Math.max(bx.h, approxH(b)) : bx.h; // extra room for 2nd language
-    return { x: bx.x, y: bx.y, w: bx.w, h };
+    const type = b.type || 'normal';
+    if (type === 'start' || type === 'end') return { x: bx.x, y: bx.y, w: bx.w, h: bx.h };
+    const leftAccent = 0;
+    const innerW = bx.w - (leftAccent + 10) - 20;
+    const titleLines = Math.min(wrapText(b.title || '', innerW, 12, 700).length, 2);
+    const headH = 12 + titleLines * 14;
+    let bodyH = 0;
+    if (showBoth) {
+      const ruL = wrapText(interpolate(b.ru || '', d.vars), innerW, 11, 400).length;
+      const uzL = wrapText(interpolate(b.uz || '', d.vars), innerW, 11, 400).length;
+      // two stacked language blocks, each with a small caption line + gap
+      bodyH = (ruL + uzL) * 14 + 2 * 16;
+    } else {
+      const t = interpolate(b[lang] || '', d.vars);
+      bodyH = t ? wrapText(t, innerW, 11, 400).length * 14 : 0;
+    }
+    // Renderer fits body via: bodyMaxLines = floor((h - headH - 14) / 14).
+    // Invert it exactly (+ a small safety margin) so no line is ever clipped.
+    const needed = headH + 14 + bodyH + 16;
+    return { x: bx.x, y: bx.y, w: bx.w, h: Math.max(bx.h, needed) };
   };
 
   // Compute bounds
