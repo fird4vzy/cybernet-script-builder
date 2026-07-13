@@ -1454,23 +1454,22 @@ function buildStaticCanvasSVG(lang, scale, theme) {
     const bx = csBlockBox(b);
     const type = b.type || 'normal';
     if (type === 'start' || type === 'end') return { x: bx.x, y: bx.y, w: bx.w, h: bx.h };
-    const leftAccent = 0;
-    const innerW = bx.w - (leftAccent + 10) - 20;
-    const titleLines = Math.min(wrapText(b.title || '', innerW, 12, 700).length, 2);
-    const headH = 12 + titleLines * 14;
-    let bodyH = 0;
+    // Mirror renderStaticNode exactly: header strip is a FIXED 28px, accent bar is
+    // 6px on question/warn nodes, and the body fits via floor((h-28-14)/14) lines.
+    const HEAD_H = 28, LINE_H = 14;
+    const accent = (type === 'question' || type === 'warn') ? 6 : 0;
+    const innerW = bx.w - (accent + 10) - 20;
+    let bodyLines = 0;
     if (showBoth) {
       const ruL = wrapText(interpolate(b.ru || '', d.vars), innerW, 11, 400).length;
       const uzL = wrapText(interpolate(b.uz || '', d.vars), innerW, 11, 400).length;
-      // two stacked language blocks, each with a small caption line + gap
-      bodyH = (ruL + uzL) * 14 + 2 * 16;
+      bodyLines = ruL + uzL + 3; // + captions/gap between the two languages
     } else {
       const t = interpolate(b[lang] || '', d.vars);
-      bodyH = t ? wrapText(t, innerW, 11, 400).length * 14 : 0;
+      bodyLines = t ? wrapText(t, innerW, 11, 400).length : 0;
     }
-    // Renderer fits body via: bodyMaxLines = floor((h - headH - 14) / 14).
-    // Invert it exactly (+ a small safety margin) so no line is ever clipped.
-    const needed = headH + 14 + bodyH + 16;
+    // Invert bodyMaxLines = floor((h - HEAD_H - 14) / 14)  =>  h >= HEAD_H + 14 + lines*14
+    const needed = bodyLines ? HEAD_H + 14 + bodyLines * LINE_H + 8 : HEAD_H + 16;
     return { x: bx.x, y: bx.y, w: bx.w, h: Math.max(bx.h, needed) };
   };
 
