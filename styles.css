@@ -4264,3 +4264,15 @@ body.canvas-fullscreen-active .side-rail {
 .cv-node[data-type="decision"] .cv-node-body { overflow: visible !important; }
 /* tighter head so more room is left for the text */
 .cv-node[data-type="decision"] .cv-node-head { padding: 5px 4px !important; min-height: 0 !important; }
+
+
+/* ═══ BLOCK RESIZE GRIP (Draw.io-style) ═══ */
+.cv-resize { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: nwse-resize; opacity: 0; transition: opacity .12s; z-index: 4; }
+.cv-resize::after { content: ""; position: absolute; right: 3px; bottom: 3px; width: 7px; height: 7px; border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent); border-radius: 0 0 2px 0; }
+.cv-node:hover .cv-resize, .cv-node.selected .cv-resize { opacity: 0.9; }
+/* diamonds clip their corners, so nudge the grip inward to stay grabbable */
+.cv-node[data-type="decision"] .cv-resize { right: 10px; bottom: 2px; }
+
+/* a user-resized block: body fills the space and scrolls only if still too small */
+.cv-node-body { overflow-y: auto; }
+/* user-resized block: body fills */
