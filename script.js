@@ -2770,7 +2770,13 @@ function parseDrawioPage(rootEl) {
   const isBlockVertex = (id) => {
     const n = byId.get(id);
     if (!n || !n.isVertex) return false;
-    if (n.tags && SKIP_TAGS.some(t => n.tags.includes(t))) return false;
+    // NOTE: a Visio layer tag (e.g. "Фон") is NOT proof of decoration — real dialog
+    // blocks carry it too. Only drop a tagged shape when it ALSO has no text; the
+    // orphan filter (no text AND no edges) later removes true decorations.
+    if (n.tags && SKIP_TAGS.some(t => n.tags.includes(t))) {
+      const txt = cleanCellText(n.labelHtml || n.value || '');
+      if (!txt) return false;
+    }
     if (isEdgeLabel(n.style)) return false;
     // A group/container that merely holds children and has no label → not a block itself
     if (looksLikeGroup(n)) {
