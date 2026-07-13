@@ -4276,3 +4276,8 @@ body.canvas-fullscreen-active .side-rail {
 /* a user-resized block: body fills the space and scrolls only if still too small */
 .cv-node-body { overflow-y: auto; }
 /* user-resized block: body fills */
+
+
+/* AI thinking GIF (inline loaders) */
+.ai-gif { width: 90px; height: auto; border-radius: 8px; display: block; margin: 0 auto 8px; }
+.ai-loading { text-align: center; }
