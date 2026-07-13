@@ -3739,13 +3739,16 @@ function canvasRender() {
     // width strangles the text. Guarantee enough room for it to stay readable.
     if (type === 'decision') nodeW = Math.max(nodeW, 200);
     node.style.width = nodeW + 'px';
-    // Respect stored/imported height so edge endpoints line up with the layout.
-    // A user-resized block sets both w and h explicitly (see the resize grip below).
+    // Height: only a MANUAL resize (b.hManual) pins the box. An imported Draw.io
+    // height is treated as a MINIMUM, as before — otherwise every imported block
+    // would be squashed to its original (often tiny) size and clip its text.
     if (typeof b.h === 'number' && b.h > 40) {
       const hh = Math.min(Math.max(b.h, 40), 600);
-      node.style.height = hh + 'px';
       node.style.minHeight = hh + 'px';
-      node.style.maxHeight = hh + 'px';
+      if (b.hManual) {
+        node.style.height = hh + 'px';
+        node.style.maxHeight = hh + 'px';
+      }
     }
     if (b.color) {
       node.style.background = b.color;
@@ -4607,6 +4610,7 @@ function initCanvasHandlers() {
       if (bb && rz.w && rz.h) {
         bb.w = rz.w;
         bb.h = rz.h;
+        bb.hManual = true; // only now is the height pinned exactly
         // sizes changed → stale manual waypoints on touching edges would look wrong
         (data().blocks || []).forEach(x => (x.branches || []).forEach(br => {
           if (br.waypoints && (x.id === rz.id || br.next === rz.id)) br.waypoints = undefined;
