@@ -6566,7 +6566,7 @@ async function improveBlockText(blockId, mode) {
     const spinner = document.createElement('div');
     spinner.id = 'ai-loading';
     spinner.className = 'ai-loading';
-    spinner.innerHTML = `<div class="ai-spinner"></div><span>Gemini думает...</span>`;
+    spinner.innerHTML = `<div class="ai-spinner"></div><span>AI думает…</span>`;
     aiGroup.appendChild(spinner);
   }
 
@@ -7150,7 +7150,7 @@ async function generateObjectionResponses(blockId) {
       <span>${csIcon('chat',13)} Варианты ответа на: "${esc(objection)}"</span>
       <button class="ai-sugg-close" onclick="document.getElementById('ai-objection').remove()">×</button>
     </div>
-    <div class="ai-loading"><div class="ai-spinner"></div><span>Gemini придумывает ответы...</span></div>
+    <div class="ai-loading"><div class="ai-spinner"></div><span>AI придумывает ответы…</span></div>
   `;
   const aiGroup = sidebar.querySelector('.ai-block-group');
   if (aiGroup) aiGroup.after(panel);
@@ -7256,7 +7256,7 @@ function renderReferences() {
       <div class="refs-empty">
         <div style="font-size: 42px; margin-bottom: 12px;">${csIcon('bookmark',40)}</div>
         <h3>Нет эталонных скриптов</h3>
-        <p>Загрузите JSON ваших качественных скриптов — Gemini будет использовать их как образец стиля при генерации новых.</p>
+        <p>Загрузите JSON ваших качественных скриптов — AI будет использовать их как образец стиля при генерации новых.</p>
         <p style="font-size: 12px; color:#9ca3af; margin-top:10px;">${csIcon('spark',11)} Совет: используйте уже готовые AVO или Collection как первый эталон. Откройте профиль → Экспорт → JSON, потом загрузите этот файл сюда.</p>
       </div>
     `;
