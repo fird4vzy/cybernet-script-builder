@@ -4281,3 +4281,9 @@ body.canvas-fullscreen-active .side-rail {
 /* AI thinking GIF (inline loaders) */
 .ai-gif { width: 90px; height: auto; border-radius: 8px; display: block; margin: 0 auto 8px; }
 .ai-loading { text-align: center; }
+
+
+/* ═══ AI LOADER LAYOUT FIX: gif on top, label under it, centred ═══ */
+.ai-loading { display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important; gap: 8px !important; padding: 16px 14px !important; text-align: center; }
+.ai-gif { width: 108px; max-width: 60%; height: auto; border-radius: 10px; display: block; margin: 0 !important; }
+.ai-loading span { font-size: 13px; font-weight: 600; color: var(--accent); letter-spacing: .2px; }
