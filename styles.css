@@ -4249,3 +4249,18 @@ body.canvas-fullscreen-active .side-rail {
 .cv-shape-decision::after { content: none !important; }
 .cv-shape-decision { border-left: none !important; }
 .cv-node[data-type="decision"] .cv-node-head { border-bottom: none !important; }
+
+
+/* AI-review loader GIF */
+.rl-gif { width: 220px; max-width: 80%; height: auto; border-radius: 12px; display: block; }
+
+
+/* ═══ DIAMOND TEXT FIX: show the full text inside ромб ═══ */
+/* smaller side padding — the clip-path already eats ~14px per side */
+.cv-node[data-type="decision"] { padding: 4px 16px !important; max-height: none !important; }
+/* title: let it wrap fully instead of being clamped to 2 lines with «…» */
+.cv-node[data-type="decision"] .cv-node-title { -webkit-line-clamp: unset !important; display: block !important; overflow: visible !important; text-align: center; }
+/* body: never scroll/clip — the node grows instead */
+.cv-node[data-type="decision"] .cv-node-body { overflow: visible !important; }
+/* tighter head so more room is left for the text */
+.cv-node[data-type="decision"] .cv-node-head { padding: 5px 4px !important; min-height: 0 !important; }
