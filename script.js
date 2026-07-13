@@ -518,7 +518,10 @@ function renameProfile() {
   snapshot('Переименование профиля');
   profiles[n] = profiles[activeProfile]; profiles[n].name = n;
   delete profiles[activeProfile]; activeProfile = n;
+  saveToStorage(); // persist immediately — otherwise a later cloud pull restores the
+                   // stale copy (which can lack x/y) and the canvas gets re-laid-out
   renderProfiles(); renderBlocks();
+  if (typeof canvasRender === 'function' && document.getElementById('canvas-stage')) canvasRender();
   toast('Профиль переименован');
 }
 
@@ -3568,8 +3571,22 @@ function ensureBlockCoords() {
   const d = data();
   const missing = d.blocks.filter(b => typeof b.x !== 'number' || typeof b.y !== 'number');
   if (!missing.length) return false;
-  // If this profile has never been auto-laid-out, do it now
-  canvasApplyAutoLayout();
+  const placed = d.blocks.filter(b => typeof b.x === 'number' && typeof b.y === 'number');
+  // Only a profile with NO layout at all gets auto-laid-out. If some blocks are already
+  // positioned, never re-layout everything (that used to wipe a hand-made layout) —
+  // just drop the new/missing blocks under the existing ones.
+  if (!placed.length) {
+    canvasApplyAutoLayout();
+    return true;
+  }
+  let maxY = -Infinity, minX = Infinity;
+  placed.forEach(b => { maxY = Math.max(maxY, b.y); minX = Math.min(minX, b.x); });
+  if (!isFinite(maxY)) maxY = 0;
+  if (!isFinite(minX)) minX = 40;
+  missing.forEach((b, i) => {
+    b.x = minX + (i % 5) * 260;
+    b.y = maxY + 200 + Math.floor(i / 5) * 180;
+  });
   return true;
 }
 
