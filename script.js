@@ -1459,14 +1459,16 @@ function buildStaticCanvasSVG(lang, scale, theme) {
     const HEAD_H = 28, LINE_H = 14;
     const accent = (type === 'question' || type === 'warn') ? 6 : 0;
     const innerW = bx.w - (accent + 10) - 20;
+    const ruL = wrapText(interpolate(b.ru || '', d.vars), innerW, 11, 400).length;
+    const uzL = wrapText(interpolate(b.uz || '', d.vars), innerW, 11, 400).length;
     let bodyLines = 0;
     if (showBoth) {
-      const ruL = wrapText(interpolate(b.ru || '', d.vars), innerW, 11, 400).length;
-      const uzL = wrapText(interpolate(b.uz || '', d.vars), innerW, 11, 400).length;
       bodyLines = ruL + uzL + 3; // + captions/gap between the two languages
     } else {
-      const t = interpolate(b[lang] || '', d.vars);
-      bodyLines = t ? wrapText(t, innerW, 11, 400).length : 0;
+      // Size by the LONGER language even when only one is shown: the RU and UZ
+      // pages must share identical block sizes, otherwise the longer (usually UZ)
+      // text grows its blocks and they collide with the ones below.
+      bodyLines = Math.max(ruL, uzL);
     }
     // Invert bodyMaxLines = floor((h - HEAD_H - 14) / 14)  =>  h >= HEAD_H + 14 + lines*14
     const needed = bodyLines ? HEAD_H + 14 + bodyLines * LINE_H + 8 : HEAD_H + 16;
@@ -1704,8 +1706,19 @@ function renderStaticNodeBoth(b, x, y, w, h, type, title, ruText, uzText, T) {
 }
 
 // Approximate text wrapping — assumes ~6.5px per char average
+// Measure text with the SAME font the export renders, so lines wrap where they
+// actually end — char-count guessing produced ragged lines and wasted width.
+let _measureCtx = null;
+function measureTextW(str, fontSize, weight) {
+  try {
+    if (!_measureCtx) _measureCtx = document.createElement('canvas').getContext('2d');
+    _measureCtx.font = `${weight >= 700 ? 700 : 400} ${fontSize}px -apple-system, 'Segoe UI', Roboto, Arial, sans-serif`;
+    return _measureCtx.measureText(str).width;
+  } catch { return str.length * fontSize * 0.55 * (weight >= 700 ? 1.1 : 1); }
+}
 function wrapText(text, maxWidth, fontSize, weight) {
   if (!text) return [];
+  const fits = (str) => measureTextW(str, fontSize, weight) <= maxWidth;
   const charW = fontSize * 0.55 * (weight >= 700 ? 1.1 : 1);
   const charsPerLine = Math.max(8, Math.floor(maxWidth / charW));
   // Split by explicit newlines first
@@ -1716,7 +1729,7 @@ function wrapText(text, maxWidth, fontSize, weight) {
     let cur = '';
     words.forEach(w => {
       const test = cur ? cur + ' ' + w : w;
-      if (test.length > charsPerLine && cur) {
+      if (cur && !fits(test)) {
         lines.push(cur);
         cur = w;
       } else {
