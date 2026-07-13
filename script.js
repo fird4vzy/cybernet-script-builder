@@ -6507,6 +6507,14 @@ function getStyleInfo(mode) {
 }
 
 // Render all style buttons (built-in + custom) for a block
+// Custom style names are user data (localStorage) and often contain emoji from the
+// old UI. Strip them at render time so buttons stay clean without touching the data.
+function stripEmoji(str) {
+  return String(str || '')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2190}-\u{2BFF}\u{FE0F}\u{200D}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 function renderStyleButtons(blockId, handlerName) {
   const builtins = Object.entries(IMPROVE_PROMPTS).filter(([k]) => k !== 'fix');
   const customs = Object.entries(customStyles);
@@ -6515,7 +6523,7 @@ function renderStyleButtons(blockId, handlerName) {
     html += `<button class="ai-btn" onclick="${handlerName}('${esc(blockId)}', '${k}')">${v.label}</button>`;
   });
   customs.forEach(([k, v]) => {
-    html += `<button class="ai-btn ai-btn-custom" onclick="${handlerName}('${esc(blockId)}', '${k}')">${esc(v.label)}</button>`;
+    html += `<button class="ai-btn" onclick="${handlerName}('${esc(blockId)}', '${k}')">${esc(stripEmoji(v.label))}</button>`;
   });
   // Fix style (full width) + Add style button
   html += `<button class="ai-btn" onclick="${handlerName}('${esc(blockId)}', 'fix')" style="grid-column: 1 / -1;">Исправить стиль</button>`;
@@ -6535,7 +6543,7 @@ function openStyleManager() {
     <div class="modal" style="max-width: 540px;">
       <div class="modal-head">
         <div class="modal-title">${csIcon('spark',14)} Мои стили AI</div>
-        <button class="modal-x" onclick="document.getElementById('style-manager-modal').remove()">×</button>
+        <button class="icon-btn" onclick="document.getElementById('style-manager-modal').remove()">×</button>
       </div>
       <div class="modal-body">
         <div class="info-box" style="margin-bottom:16px;">
@@ -6623,7 +6631,7 @@ async function improveBlockText(blockId, mode) {
     const spinner = document.createElement('div');
     spinner.id = 'ai-loading';
     spinner.className = 'ai-loading';
-    spinner.innerHTML = `<div class="ai-spinner"></div><span>AI думает…</span>`;
+    spinner.innerHTML = `<img class="ai-gif" src="https://media1.tenor.com/m/674UwwY25I8AAAAC/study-focus.gif" alt="" onerror="this.style.display='none';var f=this.nextElementSibling;if(f)f.style.display='inline-block';"><div class="ai-spinner" style="display:none;"></div><span>AI думает…</span>`;
     aiGroup.appendChild(spinner);
   }
 
@@ -7207,7 +7215,7 @@ async function generateObjectionResponses(blockId) {
       <span>${csIcon('chat',13)} Варианты ответа на: "${esc(objection)}"</span>
       <button class="ai-sugg-close" onclick="document.getElementById('ai-objection').remove()">×</button>
     </div>
-    <div class="ai-loading"><div class="ai-spinner"></div><span>AI придумывает ответы…</span></div>
+    <div class="ai-loading"><img class="ai-gif" src="https://media1.tenor.com/m/674UwwY25I8AAAAC/study-focus.gif" alt="" onerror="this.style.display='none';var f=this.nextElementSibling;if(f)f.style.display='inline-block';"><div class="ai-spinner" style="display:none;"></div><span>AI придумывает ответы…</span></div>
   `;
   const aiGroup = sidebar.querySelector('.ai-block-group');
   if (aiGroup) aiGroup.after(panel);
