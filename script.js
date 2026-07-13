@@ -1429,7 +1429,6 @@ function buildStaticCanvasSVG(lang, scale, theme) {
     metaText: '#4b5563', metaTitle: '#1e3a8a', accent: '#4f46e5'
   };
 
-  const NW = 230;
   const approxH = (b) => {
     if (b.type === 'start' || b.type === 'end') return 60;
     const ruLen = (b.ru || '').length;
@@ -4017,7 +4016,7 @@ function buildCanvasEdges(blocks, opts = {}) {
 
   let maxX = 0, maxY = 0;
   blocks.forEach(b => {
-    maxX = Math.max(maxX, (b.x || 0) + NW);
+    maxX = Math.max(maxX, (b.x || 0) + csBlockBox(b).w);
     maxY = Math.max(maxY, (b.y || 0) + 120);
   });
 
@@ -7510,7 +7509,8 @@ async function runAIReview() {
   document.getElementById('ai-review-modal').style.display = 'flex';
   document.getElementById('review-content').innerHTML = `
     <div class="review-loader">
-      <svg class="rl-svg" viewBox="0 0 120 120" width="110" height="110">
+      <img class="rl-gif" src="https://media1.tenor.com/m/674UwwY25I8AAAAC/study-focus.gif" alt="" onerror="this.style.display='none';var f=document.getElementById('rl-fallback');if(f)f.style.display='block';">
+      <svg id="rl-fallback" class="rl-svg" viewBox="0 0 120 120" width="110" height="110" style="display:none;">
         <circle class="rl-ring" cx="60" cy="60" r="46" fill="none" stroke="var(--bd-default)" stroke-width="3"/>
         <circle class="rl-ring-anim" cx="60" cy="60" r="46" fill="none" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" stroke-dasharray="70 220"/>
         <g class="rl-glass">
