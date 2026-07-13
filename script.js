@@ -3739,8 +3739,14 @@ function canvasRender() {
     // width strangles the text. Guarantee enough room for it to stay readable.
     if (type === 'decision') nodeW = Math.max(nodeW, 200);
     node.style.width = nodeW + 'px';
-    // Respect imported Draw.io height so edge endpoints line up with the original layout
-    if (typeof b.h === 'number' && b.h > 40) node.style.minHeight = Math.min(Math.max(b.h, 40), 600) + 'px';
+    // Respect stored/imported height so edge endpoints line up with the layout.
+    // A user-resized block sets both w and h explicitly (see the resize grip below).
+    if (typeof b.h === 'number' && b.h > 40) {
+      const hh = Math.min(Math.max(b.h, 40), 600);
+      node.style.height = hh + 'px';
+      node.style.minHeight = hh + 'px';
+      node.style.maxHeight = hh + 'px';
+    }
     if (b.color) {
       node.style.background = b.color;
       node.style.setProperty('--user-color', b.color);  // CSS .cv-node-custom reads var(--user-color) !important
@@ -3753,6 +3759,7 @@ function canvasRender() {
         <div class="cv-node-title">${esc(b.title || '')}</div>
       </div>
       ${showText && text ? `<div class="cv-node-body">${esc(text)}</div>` : ''}
+      <div class="cv-resize" title="Потяните, чтобы изменить размер блока"></div>
     `;
     stage.appendChild(node);
     attachNodeHandlers(node, b.id);
@@ -4310,6 +4317,24 @@ function attachNodeHandlers(node, id) {
     if (simState.active) return;
     e.stopPropagation();
 
+    // ── Resize grip (bottom-right corner) — Draw.io-style manual sizing ──
+    if (e.target.classList.contains('cv-resize')) {
+      e.preventDefault();
+      const bb = data().blocks.find(x => x.id === id);
+      if (!bb) return;
+      snapshot('Размер блока');
+      const r = node.getBoundingClientRect();
+      canvasState.resizing = {
+        id,
+        startX: e.clientX,
+        startY: e.clientY,
+        startW: r.width / canvasState.zoom,
+        startH: r.height / canvasState.zoom,
+        node
+      };
+      return;
+    }
+
     // Update selection BEFORE drag starts (so drag uses correct selection)
     if (e.shiftKey || e.ctrlKey || e.metaKey) {
       // Shift+click — toggle membership (light update, no full re-render to keep rects valid)
@@ -4459,6 +4484,18 @@ function initCanvasHandlers() {
   });
 
   document.addEventListener('mousemove', (e) => {
+    if (canvasState.resizing) {
+      const rz = canvasState.resizing;
+      const G = 10; // snap to the same grid the canvas uses
+      const w = Math.max(120, Math.min(600, Math.round((rz.startW + (e.clientX - rz.startX) / canvasState.zoom) / G) * G));
+      const h = Math.max(60, Math.min(600, Math.round((rz.startH + (e.clientY - rz.startY) / canvasState.zoom) / G) * G));
+      rz.node.style.width = w + 'px';
+      rz.node.style.height = h + 'px';
+      rz.node.style.minHeight = h + 'px';
+      rz.node.style.maxHeight = h + 'px';
+      rz.w = w; rz.h = h;
+      return;
+    }
     if (canvasState.edgeGrab) {
       const g = canvasState.edgeGrab;
       if (Math.abs(e.clientX - g.startX) < 4 && Math.abs(e.clientY - g.startY) < 4) return;
@@ -4563,6 +4600,22 @@ function initCanvasHandlers() {
   });
 
   document.addEventListener('mouseup', (e) => {
+    if (canvasState.resizing) {
+      const rz = canvasState.resizing;
+      canvasState.resizing = null;
+      const bb = data().blocks.find(x => x.id === rz.id);
+      if (bb && rz.w && rz.h) {
+        bb.w = rz.w;
+        bb.h = rz.h;
+        // sizes changed → stale manual waypoints on touching edges would look wrong
+        (data().blocks || []).forEach(x => (x.branches || []).forEach(br => {
+          if (br.waypoints && (x.id === rz.id || br.next === rz.id)) br.waypoints = undefined;
+        }));
+        canvasRender();
+        saveToStorage();
+      }
+      return;
+    }
     if (canvasState.edgeGrab) {
       const g = canvasState.edgeGrab;
       canvasState.edgeGrab = null;
