@@ -513,16 +513,37 @@ function confirmNewProfile() {
 }
 
 function renameProfile() {
-  const n = prompt('Новое название:', activeProfile);
-  if (!n || n === activeProfile || profiles[n]) return;
-  snapshot('Переименование профиля');
-  profiles[n] = profiles[activeProfile]; profiles[n].name = n;
-  delete profiles[activeProfile]; activeProfile = n;
-  saveToStorage(); // persist immediately — otherwise a later cloud pull restores the
-                   // stale copy (which can lack x/y) and the canvas gets re-laid-out
-  renderProfiles(); renderBlocks();
-  if (typeof canvasRender === 'function' && document.getElementById('canvas-stage')) canvasRender();
-  toast('Профиль переименован');
+  const cur = profiles[activeProfile];
+  if (!cur) { toast('Профиль не найден', 'error'); return; }
+  if (cur._readOnly) { toast('Это общий профиль коллеги — переименовать нельзя', 'error'); return; }
+  const raw = prompt('Новое название:', activeProfile);
+  if (raw === null) return;                 // Cancel
+  const n = String(raw).trim();
+  if (!n) { toast('Название не может быть пустым', 'error'); return; }
+  if (n === activeProfile) return;          // nothing to do
+  if (profiles[n]) { toast(`Профиль «${n}» уже существует`, 'error'); return; }
+  try {
+    snapshot('Переименование профиля');
+    const old = activeProfile;
+    profiles[n] = cur;
+    profiles[n].name = n;
+    delete profiles[old];
+    activeProfile = n;
+    saveToStorage(); // persist now: a later cloud pull must not restore the stale copy
+    renderProfiles();
+    renderBlocks();
+    renderStats();
+    // Refresh the canvas only when it is actually on screen — a hidden/uninitialised
+    // stage used to throw here and silently abort the whole rename.
+    try {
+      const stage = document.getElementById('canvas-stage');
+      if (stage && stage.offsetParent !== null && typeof canvasRender === 'function') canvasRender();
+    } catch (e) { console.warn('canvasRender after rename skipped:', e); }
+    toast('Профиль переименован');
+  } catch (err) {
+    console.error('Rename failed:', err);
+    toast('Не удалось переименовать: ' + err.message, 'error');
+  }
 }
 
 function deleteProfile() {
@@ -2684,13 +2705,14 @@ function detectBlockType(text, styleStr, incomingCount, outgoingCount) {
   // ── Text-based hints ──
   if (/^(старт|начало|start|boshlash)/i.test(t)) return 'start';
   if (/(конец|завершение|end|tugatish|tamomlash|завершение звонка)$/i.test(t)) return 'end';
-  // A question that routes to several answers → decision
-  if (/[?？]\s*$/.test(t) && outgoingCount >= 2) return 'decision';
 
-  // ── Edge-based fallback ──
+  // ── Edge-based fallback (start/end only) ──
+  // NOTE: we deliberately do NOT infer 'decision' from the number of outgoing edges.
+  // Real call-centre scripts branch from ordinary reply blocks all the time, so those
+  // rules turned almost every imported block into a rhombus. A block is a decision
+  // only when the source diagram actually draws it as one (handled above by shape).
   if (incomingCount === 0 && outgoingCount > 0) return 'start';
   if (outgoingCount === 0 && incomingCount > 0) return 'end';
-  if (outgoingCount >= 3) return 'decision';
 
   // Plain rectangle = process (bot line / action)
   return 'process';
