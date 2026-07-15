@@ -3684,12 +3684,15 @@ function canvasRender() {
   const viewport = document.getElementById('canvas-viewport');
   if (!stage || !viewport) return;
 
-  // Ensure all blocks have coords
-  if (!canvasState.autoLaidOut.has(activeProfile)) {
+  // Ensure all blocks have coords. Decide by the ACTUAL coordinates, not by whether
+  // we've seen this profile NAME before — otherwise renaming a profile (new name)
+  // looked 'unseen' and triggered a full auto-layout that wiped the hand-made layout.
+  const anyPlaced = d.blocks.some(b => typeof b.x === 'number' && typeof b.y === 'number');
+  if (!anyPlaced && d.blocks.length) {
     canvasApplyAutoLayout();
     canvasState.autoLaidOut.add(activeProfile);
   } else {
-    ensureBlockCoords();
+    ensureBlockCoords(); // only positions blocks that are individually missing coords
   }
 
   // Grid toggle
@@ -7184,9 +7187,11 @@ ${JSON.stringify(textMap, null, 1)}`;
             ru: t.ru !== undefined ? t.ru : (b.ru || ''),
             uz: t.uz !== undefined ? t.uz : (b.uz || ''),
             color: b.color || '',
-            x: b.x,  // keep exact coordinates
-            y: b.y,
+            x: b.x,  // keep the reference's exact layout so the new script
+            y: b.y,  // inherits the same clean arrangement (not a fresh auto-layout)
             w: b.w,
+            h: b.h,
+            hManual: b.hManual,
             branches: (b.branches || []).map(br => ({
               id: branchId(),
               label: br.label || '',
