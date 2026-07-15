@@ -589,10 +589,22 @@
             <label class="field-label">Цель разговора</label>
             <select id="gs-goal" class="input">
               <option value="напоминание о платеже">Напоминание о платеже</option>
-              <option value="взыскание задолженности">Взыскание задолженности</option>
+              <option value="взыскание задолженности (soft collection)">Взыскание — soft (ранняя просрочка)</option>
+              <option value="взыскание задолженности (hard collection)">Взыскание — hard (глубокая просрочка)</option>
+              <option value="реструктуризация долга">Реструктуризация долга</option>
               <option value="продажа продукта">Продажа продукта</option>
+              <option value="продажа кредита / рассрочки">Продажа кредита / рассрочки</option>
+              <option value="продажа карты">Продажа карты (кредитной/дебетовой)</option>
+              <option value="продажа депозита / вклада">Продажа депозита / вклада</option>
+              <option value="продажа страхового продукта">Продажа страховки</option>
+              <option value="кросс-продажа / допродажа">Кросс-продажа / допродажа</option>
+              <option value="активация карты / продукта">Активация карты / продукта</option>
+              <option value="удержание клиента (anti-churn)">Удержание клиента (anti-churn)</option>
+              <option value="реактивация спящего клиента">Реактивация спящего клиента</option>
               <option value="верификация / KYC">Верификация / KYC</option>
-              <option value="опрос удовлетворённости">Опрос удовлетворённости</option>
+              <option value="подтверждение транзакции / антифрод">Подтверждение транзакции / антифрод</option>
+              <option value="онбординг нового клиента">Онбординг нового клиента</option>
+              <option value="опрос удовлетворённости (NPS)">Опрос удовлетворённости (NPS)</option>
               <option value="запись на встречу">Запись на встречу</option>
               <option value="информирование">Информирование</option>
             </select>
@@ -624,6 +636,8 @@
               <option value="small">Маленький (~10-15 блоков)</option>
               <option value="medium" selected>Средний (~25-35 блоков)</option>
               <option value="large">Большой (~50-70 блоков)</option>
+              <option value="xlarge">Очень большой (~90-120 блоков)</option>
+              <option value="huge">Максимальный (~150-200 блоков)</option>
             </select>
           </div>
         </div>
