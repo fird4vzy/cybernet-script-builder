@@ -4290,11 +4290,8 @@ body.canvas-fullscreen-active .side-rail {
 
 
 /* ═══ GENERATION LOADER OVERLAY ═══ */
-.gen-loader-overlay { position: absolute; inset: 0; background: color-mix(in srgb, var(--bg-surface) 82%, transparent); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 20; border-radius: inherit; }
+.gen-loader-overlay { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg-base, #0a0a12) 78%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 10060; }
 .gen-loader-box { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 20px; }
 .gen-loader-box .ai-gif { width: 130px; max-width: 70%; height: auto; border-radius: 12px; }
 .gen-loader-text { font-size: 15px; font-weight: 700; color: var(--tx-primary); }
 .gen-loader-sub { font-size: 12.5px; color: var(--accent); font-weight: 600; }
-
-/* generation loader overlay is anchored to the inner .modal card */
-#gen-script-modal .modal { position: relative; }
