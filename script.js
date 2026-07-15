@@ -7039,7 +7039,7 @@ function showGenLoader(text) {
   hideGenLoader();
   // anchor to the inner card (.modal) so the overlay covers only the dialog and
   // doesn't rely on the backdrop, whose fixed-centering must stay intact.
-  const host = document.querySelector('#gen-script-modal .modal') || document.getElementById('gen-script-modal') || document.body;
+  const host = document.getElementById('gen-script-modal') || document.body;
   const ov = document.createElement('div');
   ov.id = 'gen-loader-overlay';
   ov.className = 'gen-loader-overlay';
