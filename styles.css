@@ -4287,3 +4287,14 @@ body.canvas-fullscreen-active .side-rail {
 .ai-loading { display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important; gap: 8px !important; padding: 16px 14px !important; text-align: center; }
 .ai-gif { width: 108px; max-width: 60%; height: auto; border-radius: 10px; display: block; margin: 0 !important; }
 .ai-loading span { font-size: 13px; font-weight: 600; color: var(--accent); letter-spacing: .2px; }
+
+
+/* ═══ GENERATION LOADER OVERLAY ═══ */
+.gen-loader-overlay { position: absolute; inset: 0; background: color-mix(in srgb, var(--bg-surface) 82%, transparent); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 20; border-radius: inherit; }
+.gen-loader-box { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 20px; }
+.gen-loader-box .ai-gif { width: 130px; max-width: 70%; height: auto; border-radius: 12px; }
+.gen-loader-text { font-size: 15px; font-weight: 700; color: var(--tx-primary); }
+.gen-loader-sub { font-size: 12.5px; color: var(--accent); font-weight: 600; }
+
+/* anchor the generation loader overlay to the modal */
+#gen-script-modal { position: relative; }
