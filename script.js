@@ -6309,11 +6309,14 @@ async function openaiGenerate(systemPrompt, userPrompt, opts = {}) {
   const messages = [];
   if (sys) messages.push({ role: 'system', content: sys });
   messages.push({ role: 'user', content: userPrompt });
+  // Many OpenAI models cap completion tokens well below what our big generations ask
+  // for (e.g. 16k). Requesting above the model ceiling can 400 or return empty, so clamp.
+  const modelCap = /gpt-4o|gpt-4\.1|gpt-5|o[0-9]/.test(model) ? 16384 : 4096;
   const body = {
     model,
     messages,
     temperature: opts.temperature ?? 0.7,
-    max_tokens: opts.maxTokens ?? 4096
+    max_tokens: Math.min(opts.maxTokens ?? 4096, modelCap)
   };
   if (opts.json) body.response_format = { type: 'json_object' };
 
@@ -6335,7 +6338,11 @@ async function openaiGenerate(systemPrompt, userPrompt, opts = {}) {
   const text = data?.choices?.[0]?.message?.content || '';
   if (!text) {
     const reason = data?.choices?.[0]?.finish_reason;
-    throw new Error(reason === 'content_filter' ? 'Модель заблокировала ответ по content-фильтрам. Переформулируйте запрос.' : 'Пустой ответ от OpenAI');
+    if (reason === 'content_filter') throw new Error('Модель заблокировала ответ по content-фильтрам. Переформулируйте запрос.');
+    if (reason === 'length') throw new Error('Ответ не поместился в лимит модели. Выберите «Средний» размер скрипта или модель с большим контекстом (gpt-4o).');
+    // Some models put the JSON in a refusal-free but empty content when truncated —
+    // surface the finish_reason so the user knows what actually happened.
+    throw new Error('Пустой ответ от OpenAI' + (reason ? ' (' + reason + ')' : '') + '. Попробуйте ещё раз или уменьшите размер скрипта.');
   }
   return text.trim();
 }
