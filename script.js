@@ -6996,6 +6996,28 @@ function buildBriefSection() {
   return `\n\n═══ БРИФ КЛИЕНТА (заполненный опросник) ═══\n\nНиже — ответы клиента на опросник. Это ПЕРВОИСТОЧНИК фактов о продукте, условиях, аудитории и требованиях. При генерации скрипта:\n- Используй КОНКРЕТИКУ из брифа (название компании/продукта, условия, суммы, способы оплаты, контакты) вместо выдуманных значений.\n- Требования из брифа (стиль общения, перевод на оператора, обязательные фразы, SMS) — ОБЯЗАТЕЛЬНЫ к исполнению.\n- Если бриф противоречит полям формы (ниша/тон) — приоритет у брифа.\n- Не выдумывай факты, которых нет ни в брифе, ни в форме: для неизвестного используй переменные в фигурных скобках.\n\n${listed}\n\n═══ КОНЕЦ БРИФА ═══`;
 }
 
+function showGenLoader(text) {
+  hideGenLoader();
+  const host = document.getElementById('gen-script-modal') || document.body;
+  const ov = document.createElement('div');
+  ov.id = 'gen-loader-overlay';
+  ov.className = 'gen-loader-overlay';
+  ov.innerHTML = `<div class="gen-loader-box">`
+    + `<img class="ai-gif" src="https://media1.tenor.com/m/674UwwY25I8AAAAC/study-focus.gif" alt="" onerror="this.style.display='none';var f=this.nextElementSibling;if(f)f.style.display='inline-block';">`
+    + `<div class="ai-spinner" style="display:none;"></div>`
+    + `<div class="gen-loader-text">${esc(text || 'AI работает…')}</div>`
+    + `<div class="gen-loader-sub" id="gen-loader-sub">Собираю структуру…</div>`
+    + `</div>`;
+  host.appendChild(ov);
+  const msgs = ['Собираю структуру…', 'Пишу реплики…', 'Перевожу на узбекский…', 'Расставляю ветки…', 'Почти готово…'];
+  let i = 0;
+  ov._timer = setInterval(() => { i = (i + 1) % msgs.length; const sub = document.getElementById('gen-loader-sub'); if (sub) sub.textContent = msgs[i]; }, 2200);
+}
+function hideGenLoader() {
+  const ov = document.getElementById('gen-loader-overlay');
+  if (ov) { if (ov._timer) clearInterval(ov._timer); ov.remove(); }
+}
+
 async function generateScript() {
   const niche = document.getElementById('gs-niche').value.trim();
   const goal = document.getElementById('gs-goal').value;
@@ -7010,6 +7032,7 @@ async function generateScript() {
   const origText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Генерирую скрипт... (30-60 сек)';
+  showGenLoader('AI создаёт скрипт…');
 
   const sizeMap = { small: '10-15', medium: '25-35', large: '50-70' };
   const blockCount = sizeMap[size] || '25-35';
@@ -7112,14 +7135,27 @@ ${JSON.stringify(textMap, null, 1)}`;
       const raw = await aiGenerate(structPrompt, 'Перепиши все тексты под новую сферу и верни JSON-массив.', {
         json: true, temperature: 0.7, maxTokens: 16000
       });
-      let rewritten;
-      try { rewritten = JSON.parse(raw); } catch {
-        const m = raw.match(/\[[\s\S]*\]/);
+      let parsed;
+      try { parsed = JSON.parse(raw); } catch {
+        const m = raw.match(/\[[\s\S]*\]/) || raw.match(/\{[\s\S]*\}/);
         if (!m) throw new Error('Не могу распарсить ответ AI');
-        rewritten = JSON.parse(m[0]);
+        try { parsed = JSON.parse(m[0]); } catch { parsed = parseAIJson(raw); }
+      }
+      // The model sometimes wraps the array in an object ({blocks:[...]}, {items:[...]},
+      // {texts:[...]}) instead of returning a bare array — normalise all of those.
+      let rewritten = Array.isArray(parsed) ? parsed
+        : (parsed && (parsed.blocks || parsed.items || parsed.texts || parsed.result || parsed.data));
+      if (!Array.isArray(rewritten)) {
+        // last resort: an object keyed by block id → turn into an array
+        if (parsed && typeof parsed === 'object') {
+          rewritten = Object.entries(parsed).map(([id, v]) => (v && typeof v === 'object') ? { id, ...v } : null).filter(Boolean);
+        }
+      }
+      if (!Array.isArray(rewritten) || !rewritten.length) {
+        throw new Error('AI вернул неожиданный формат (не список блоков). Попробуйте ещё раз.');
       }
       const textById = {};
-      rewritten.forEach(r => { if (r.id) textById[r.id] = r; });
+      rewritten.forEach(r => { if (r && r.id) textById[r.id] = r; });
 
       // Build new profile by DEEP-COPYING the reference structure, swapping texts
       const profileName = `${niche} (по эталону ${ref.name})`;
@@ -7231,6 +7267,7 @@ ${JSON.stringify(textMap, null, 1)}`;
   } catch (err) {
     toast('Ошибка генерации: ' + err.message, 'error');
   } finally {
+    hideGenLoader();
     btn.disabled = false;
     btn.textContent = origText;
   }
