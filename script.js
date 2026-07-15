@@ -6819,6 +6819,7 @@ function applyAISuggestion(blockId, newRu, newUz) {
 // ═══════════════════════════════════════════════════════════════
 function openGenScriptModal() {
   clearBrief();
+  clearGenVars();
   if (!llmSettings.apiKey) { openLLMSettings(); toast('Сначала настройте API ключ', 'error'); return; }
   document.getElementById('gen-script-modal').style.display = 'flex';
   renderGsRefsPicker();
@@ -6983,6 +6984,34 @@ function handleBriefUpload(ev) {
   ev.target.value = ''; // allow re-uploading the same file
 }
 
+// ── Custom variables in the generation modal ──
+function addGenVarRow(name = '', value = '') {
+  const list = document.getElementById('gs-vars-list');
+  if (!list) return;
+  const row = document.createElement('div');
+  row.className = 'gs-var-row';
+  row.style.cssText = 'display:flex; gap:6px; align-items:center;';
+  row.innerHTML = `
+    <input class="input gs-var-name" placeholder="BANK_NAME" value="${esc(name)}" style="flex:0 0 42%; text-transform:uppercase;">
+    <span style="color:var(--tx-tertiary);">=</span>
+    <input class="input gs-var-value" placeholder="RoboHub" value="${esc(value)}" style="flex:1;">
+    <button type="button" class="btn btn-sm btn-ghost" title="Убрать" onclick="this.closest('.gs-var-row').remove()">✕</button>`;
+  list.appendChild(row);
+}
+function collectGenVars() {
+  const out = {};
+  document.querySelectorAll('#gs-vars-list .gs-var-row').forEach(row => {
+    let name = (row.querySelector('.gs-var-name')?.value || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+    const value = (row.querySelector('.gs-var-value')?.value || '').trim();
+    if (name && value) out[name] = value;
+  });
+  return out;
+}
+function clearGenVars() {
+  const list = document.getElementById('gs-vars-list');
+  if (list) list.innerHTML = '';
+}
+
 function clearBrief() {
   genBrief = null;
   const st = document.getElementById('gs-brief-status');
@@ -7037,6 +7066,7 @@ async function generateScript() {
   const tone = document.getElementById('gs-tone').value;
   const size = document.getElementById('gs-size').value;
   const extras = document.getElementById('gs-extras').value.trim();
+  const genVars = collectGenVars(); // { NAME: value, ... } from the variables block
 
   if (!niche) { toast('Укажите нишу / сферу', 'error'); return; }
 
@@ -7046,7 +7076,7 @@ async function generateScript() {
   btn.textContent = 'Генерирую скрипт... (30-60 сек)';
   showGenLoader('AI создаёт скрипт…');
 
-  const sizeMap = { small: '10-15', medium: '25-35', large: '50-70' };
+  const sizeMap = { small: '10-15', medium: '25-35', large: '50-70', xlarge: '90-120', huge: '150-200' };
   const blockCount = sizeMap[size] || '25-35';
 
   // Determine generation mode (exact copy vs blend)
@@ -7100,7 +7130,12 @@ async function generateScript() {
   }
 
   const briefSection = buildBriefSection();
-  const systemPrompt = aiPrompts.generate_system + referencesSection + briefSection;
+  const varsSection = Object.keys(genVars).length
+    ? '\n\n=== ПЕРЕМЕННЫЕ (подставляй их как {ИМЯ} в тексты, НЕ выдумывай вместо них конкретику) ===\n'
+      + Object.entries(genVars).map(([k, v]) => `{${k}} = ${v}`).join('\n')
+      + '\nВ репликах используй фигурные скобки: {' + Object.keys(genVars)[0] + '} и т.д. Значения выше — это то, что реально подставится.'
+    : '';
+  const systemPrompt = aiPrompts.generate_system + referencesSection + briefSection + varsSection;
   const userPrompt = fillTemplate(aiPrompts.generate_user, {
     niche, goal, channel, tone, blockCount,
     extras: extras || '(нет)'
@@ -7132,7 +7167,7 @@ async function generateScript() {
 ТОН: ${tone}
 ДОП. ТРЕБОВАНИЯ: ${extras || '(нет)'}
 
-${briefSection ? briefSection + '\n\n' : ''}ПРАВИЛА:
+${briefSection ? briefSection + '\n\n' : ''}${varsSection ? varsSection + '\n\n' : ''}ПРАВИЛА:
 - Для каждого блока перепиши title (краткое название), ru (русский текст реплики), uz (узбекский перевод) под новую сферу
 - Узбекский (uz) — ТОЛЬКО ЛАТИНИЦА (o', g', sh, ch), кириллица запрещена
 - Если есть БРИФ КЛИЕНТА выше — конкретика (названия, условия, суммы, контакты) берётся строго из него
@@ -7174,7 +7209,7 @@ ${JSON.stringify(textMap, null, 1)}`;
       const uniqueName = profiles[profileName] ? `${profileName} ${Date.now().toString().slice(-4)}` : profileName;
       const newProfile = {
         name: uniqueName,
-        vars: JSON.parse(JSON.stringify(refProfile?.vars || { BANK_NAME: '', PHONE: '', AGENT_NAME: '' })),
+        vars: { ...JSON.parse(JSON.stringify(refProfile?.vars || { BANK_NAME: '', PHONE: '', AGENT_NAME: '' })), ...genVars },
         sections: JSON.parse(JSON.stringify(refProfile?.sections || [{ id: 's1', label: 'Основной раздел' }])),
         blocks: refBlocks.map(b => {
           const t = textById[b.id] || {};
@@ -7246,7 +7281,7 @@ ${JSON.stringify(textMap, null, 1)}`;
 
     const profile = {
       name: uniqueName,
-      vars: parsed.vars || { BANK_NAME: '', PHONE: '', AGENT_NAME: '' },
+      vars: { ...(parsed.vars || { BANK_NAME: '', PHONE: '', AGENT_NAME: '' }), ...genVars },
       sections: parsed.sections?.length ? parsed.sections : [{ id: 's1', label: 'Основной раздел' }],
       blocks: parsed.blocks.map(b => ({
         id: b.id,
