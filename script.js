@@ -727,8 +727,10 @@ function saveBlock(id) {
   if (g('fi')) b.intent = g('fi').value;
   if (g('fty')) b.type = g('fty').value;
   if (g('flane')) b.lane = g('flane').value;
+  const _prevRu = b.ru, _prevUz = b.uz;
   if (g('fr')) b.ru = g('fr').value;
   if (g('fu')) b.uz = g('fu').value;
+  captureEditForLearning(b, _prevRu, _prevUz);
   if (g('fs')) b.sec = g('fs').value;
   // Read branches from block's editor rows
   const rows = document.querySelectorAll(`#br-list-${CSS.escape(id)} .cs-branch-row`);
@@ -7059,6 +7061,46 @@ function hideGenLoader() {
   if (ov) { if (ov._timer) clearInterval(ov._timer); ov.remove(); }
 }
 
+// ═══ LEARNING FROM EDITS (было → стало) ═══
+// When the user rewrites text that AI generated, store the pair so future generations
+// can imitate the user's phrasing. The model isn't retrained — we feed examples back.
+function captureEditForLearning(b, prevRu, prevUz) {
+  try {
+    if (typeof cloudSaveEdit !== 'function' || !getCurrentUserId || !getCurrentUserId()) return;
+    // Only meaningful when we know what AI originally produced and the user changed it.
+    const aiRu = b.aiRu, aiUz = b.aiUz;
+    if (aiRu === undefined && aiUz === undefined) return;
+    const ruChanged = aiRu !== undefined && (b.ru || '') !== (aiRu || '') && (b.ru || '').trim().length > 2;
+    const uzChanged = aiUz !== undefined && (b.uz || '') !== (aiUz || '') && (b.uz || '').trim().length > 2;
+    if (!ruChanged && !uzChanged) return;
+    cloudSaveEdit({
+      title: b.title || '', intent: b.intent || '',
+      aiRu: aiRu || '', aiUz: aiUz || '',
+      finalRu: b.ru || '', finalUz: b.uz || '',
+      niche: (data().meta && data().meta.niche) || '', goal: (data().meta && data().meta.goal) || ''
+    });
+    // once captured, treat the new text as the baseline so we don't log it again
+    b.aiRu = b.ru; b.aiUz = b.uz;
+  } catch (e) { console.warn('captureEditForLearning skipped:', e); }
+}
+
+// Build a short 'here is how this user prefers to phrase things' block from past edits.
+async function buildLearningSection() {
+  try {
+    if (typeof cloudLoadEdits !== 'function' || !getCurrentUserId || !getCurrentUserId()) return '';
+    const edits = await cloudLoadEdits(30);
+    if (!edits || !edits.length) return '';
+    // Pick the most informative recent pairs (RU differs), cap to keep tokens sane.
+    const pairs = edits
+      .filter(e => e.final_ru && e.ai_ru && e.final_ru !== e.ai_ru)
+      .slice(0, 8)
+      .map(e => `Было (AI): ${e.ai_ru}\nСтало (правка пользователя): ${e.final_ru}`)
+      .join('\n\n');
+    if (!pairs) return '';
+    return '\n\n=== КАК ЭТОТ ПОЛЬЗОВАТЕЛЬ ПРАВИТ ТЕКСТЫ (учись на его правках, повторяй его манеру: длину, тон, лексику) ===\n' + pairs;
+  } catch (e) { console.warn('buildLearningSection skipped:', e); return ''; }
+}
+
 async function generateScript() {
   const niche = document.getElementById('gs-niche').value.trim();
   const goal = document.getElementById('gs-goal').value;
@@ -7135,7 +7177,8 @@ async function generateScript() {
       + Object.entries(genVars).map(([k, v]) => `{${k}} = ${v}`).join('\n')
       + '\nВ репликах используй фигурные скобки: {' + Object.keys(genVars)[0] + '} и т.д. Значения выше — это то, что реально подставится.'
     : '';
-  const systemPrompt = aiPrompts.generate_system + referencesSection + briefSection + varsSection;
+  const learningSection = await buildLearningSection();
+  const systemPrompt = aiPrompts.generate_system + referencesSection + briefSection + varsSection + learningSection;
   const userPrompt = fillTemplate(aiPrompts.generate_user, {
     niche, goal, channel, tone, blockCount,
     extras: extras || '(нет)'
@@ -7167,7 +7210,7 @@ async function generateScript() {
 ТОН: ${tone}
 ДОП. ТРЕБОВАНИЯ: ${extras || '(нет)'}
 
-${briefSection ? briefSection + '\n\n' : ''}${varsSection ? varsSection + '\n\n' : ''}ПРАВИЛА:
+${briefSection ? briefSection + '\n\n' : ''}${varsSection ? varsSection + '\n\n' : ''}${learningSection ? learningSection + '\n\n' : ''}ПРАВИЛА:
 - Для каждого блока перепиши title (краткое название), ru (русский текст реплики), uz (узбекский перевод) под новую сферу
 - Узбекский (uz) — ТОЛЬКО ЛАТИНИЦА (o', g', sh, ch), кириллица запрещена
 - Если есть БРИФ КЛИЕНТА выше — конкретика (названия, условия, суммы, контакты) берётся строго из него
@@ -7221,6 +7264,8 @@ ${JSON.stringify(textMap, null, 1)}`;
             type: b.type || 'normal',
             ru: t.ru !== undefined ? t.ru : (b.ru || ''),
             uz: t.uz !== undefined ? t.uz : (b.uz || ''),
+            aiRu: t.ru !== undefined ? t.ru : (b.ru || ''),  // remember what AI generated,
+            aiUz: t.uz !== undefined ? t.uz : (b.uz || ''),  // so a later manual edit = a training pair
             color: b.color || '',
             x: b.x,  // keep the reference's exact layout so the new script
             y: b.y,  // inherits the same clean arrangement (not a fresh auto-layout)
@@ -7291,6 +7336,8 @@ ${JSON.stringify(textMap, null, 1)}`;
         type: b.type || 'normal',
         ru: b.ru || '',
         uz: b.uz || '',
+        aiRu: b.ru || '',  // baseline for learning-from-edits
+        aiUz: b.uz || '',
         branches: (b.branches || []).map(br => ({
           id: branchId(),
           label: br.label || '',
