@@ -196,6 +196,45 @@ async function cloudDeleteReference(id) {
   }
 }
 
+// ─── ОБУЧЕНИЕ НА ПРАВКАХ (было → стало) ───
+// Requires a Supabase table `cs_edits`:
+//   id uuid pk default gen_random_uuid(), owner_id uuid, created_at timestamptz default now(),
+//   block_title text, intent text, ai_ru text, ai_uz text, final_ru text, final_uz text,
+//   niche text, goal text
+// + RLS: owner_id = auth.uid() for select/insert/delete.
+async function cloudSaveEdit(edit) {
+  if (!sb || !currentUser) return null;
+  try {
+    const { data, error } = await sb.from('cs_edits').insert({
+      owner_id: currentUser.id,
+      block_title: edit.title || '',
+      intent: edit.intent || '',
+      ai_ru: edit.aiRu || '',
+      ai_uz: edit.aiUz || '',
+      final_ru: edit.finalRu || '',
+      final_uz: edit.finalUz || '',
+      niche: edit.niche || '',
+      goal: edit.goal || ''
+    }).select().single();
+    if (error) throw error;
+    return data;
+  } catch (e) { console.error('cloudSaveEdit:', e); return null; }
+}
+
+async function cloudLoadEdits(limit = 40) {
+  if (!sb || !currentUser) return [];
+  try {
+    const { data, error } = await sb
+      .from('cs_edits')
+      .select('*')
+      .eq('owner_id', currentUser.id)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return data || [];
+  } catch (e) { console.error('cloudLoadEdits:', e); return []; }
+}
+
 // ─── НАСТРОЙКИ ───
 
 async function cloudLoadSettings() {
