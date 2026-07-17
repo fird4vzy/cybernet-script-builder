@@ -6194,6 +6194,7 @@ const llmSettings = {
   geminiModel: 'gemini-3.5-flash',
   openaiApiKey: '',
   openaiModel: 'gpt-4o-mini',
+  learnFromEdits: false,   // consent for capturing edit pairs into cs_edits (default OFF)
   loaded: false
 };
 function csSyncActiveLLM() {
@@ -6225,6 +6226,7 @@ function loadLLMSettings() {
         llmSettings.geminiModel = migrations[s.geminiModel] || s.geminiModel || 'gemini-3.5-flash';
         llmSettings.openaiApiKey = s.openaiApiKey || '';
         llmSettings.openaiModel = s.openaiModel || 'gpt-4o-mini';
+        llmSettings.learnFromEdits = !!s.learnFromEdits;
       } else {
         // Legacy single-provider (Gemini-only) shape — migrate in place
         llmSettings.provider = 'gemini';
@@ -6245,7 +6247,8 @@ function saveLLMSettings() {
       geminiApiKey: llmSettings.geminiApiKey,
       geminiModel: llmSettings.geminiModel,
       openaiApiKey: llmSettings.openaiApiKey,
-      openaiModel: llmSettings.openaiModel
+      openaiModel: llmSettings.openaiModel,
+      learnFromEdits: llmSettings.learnFromEdits
     }));
   } catch (err) { console.error('LLM settings save failed:', err); }
 }
@@ -6379,6 +6382,7 @@ function setLLMProviderTab(provider) {
 
 function openLLMSettings() {
   const modal = document.getElementById('llm-settings-modal');
+  const lt = document.getElementById('llm-learn-toggle'); if (lt) lt.checked = !!llmSettings.learnFromEdits;
   if (!modal) { toast('Окно настроек AI не найдено — обновите страницу (Ctrl+Shift+R)', 'error'); return; }
   // Null-safe: OpenAI fields exist only in the newer index.html. If the page's HTML
   // is older/cached, still open the modal with the Gemini tab instead of crashing.
@@ -6403,6 +6407,7 @@ function closeLLMSettings() {
 }
 
 function saveLLMSettingsFromModal() {
+  const lt = document.getElementById('llm-learn-toggle'); if (lt) llmSettings.learnFromEdits = lt.checked;
   // Save BOTH providers' fields (whichever tab isn't active keeps its value, just hidden)
   llmSettings.geminiApiKey = (document.getElementById('llm-key-input')?.value || '').trim();
   llmSettings.geminiModel = document.getElementById('llm-model-select')?.value || llmSettings.geminiModel;
@@ -7068,6 +7073,7 @@ function hideGenLoader() {
 // can imitate the user's phrasing. The model isn't retrained — we feed examples back.
 function captureEditForLearning(b, prevRu, prevUz) {
   try {
+    if (!llmSettings.learnFromEdits) return; // user hasn't opted in
     if (typeof cloudSaveEdit !== 'function' || !getCurrentUserId || !getCurrentUserId()) return;
     // Only meaningful when we know what AI originally produced and the user changed it.
     const aiRu = b.aiRu, aiUz = b.aiUz;
@@ -7089,6 +7095,7 @@ function captureEditForLearning(b, prevRu, prevUz) {
 // Build a short 'here is how this user prefers to phrase things' block from past edits.
 async function buildLearningSection() {
   try {
+    if (!llmSettings.learnFromEdits) return '';
     if (typeof cloudLoadEdits !== 'function' || !getCurrentUserId || !getCurrentUserId()) return '';
     const edits = await cloudLoadEdits(30);
     if (!edits || !edits.length) return '';
