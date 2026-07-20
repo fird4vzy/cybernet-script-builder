@@ -602,9 +602,9 @@ function renderBlocks() {
       <div class="section-header">
         <span class="section-title">${esc(sec.label)}</span>
         <span class="section-count">${blocks.length}</span>
-        <button class="icon-btn" onclick="addBlock('${sec.id}')" title="+ блок">+</button>
-        <button class="icon-btn" onclick="renameSection('${sec.id}')" title="Переименовать">${csIcon('pen',12)}</button>
-        <button class="icon-btn" onclick="deleteSection('${sec.id}')" title="Удалить">×</button>
+        <button class="icon-btn" onclick="addBlock('${esc(sec.id)}')" title="+ блок">+</button>
+        <button class="icon-btn" onclick="renameSection('${esc(sec.id)}')" title="Переименовать">${csIcon('pen',12)}</button>
+        <button class="icon-btn" onclick="deleteSection('${esc(sec.id)}')" title="Удалить">×</button>
       </div>`;
 
     blocks.forEach(b => {
@@ -615,7 +615,7 @@ function renderBlocks() {
       const type = b.type || 'normal';
 
       html += `<div class="block ${isOpen ? 'open' : ''}">
-        <div class="block-head" onclick="toggleBlock('${b.id}')">
+        <div class="block-head" onclick="toggleBlock('${esc(b.id)}')">
           <div class="type-dot dot-${type}"></div>
           <span class="block-title">${hl(b.title, q)}</span>
           <span class="block-id">${esc(b.id)}</span>
@@ -660,7 +660,7 @@ function renderBlocks() {
           <div class="connections">
             <div class="connections-title">
               Ветки (связи со следующими блоками)
-              <button class="cs-add-branch" style="float:right;" onclick="addBranchInList('${b.id}')" title="Добавить ветку">+ ветка</button>
+              <button class="cs-add-branch" style="float:right;" onclick="addBranchInList('${esc(b.id)}')" title="Добавить ветку">+ ветка</button>
             </div>
             <div id="br-list-${b.id}">
               ${((b.branches && b.branches.length) ? b.branches : []).map((br, idx) => `
@@ -674,7 +674,7 @@ function renderBlocks() {
                       return `<option value="${id}" ${br.next===id?'selected':''}>${esc(id)} — ${esc(blk?blk.title:'')}</option>`;
                     }).join('')}
                   </select>
-                  <button class="cs-branch-del" onclick="removeBranchInList('${b.id}', ${idx})" title="Удалить">×</button>
+                  <button class="cs-branch-del" onclick="removeBranchInList('${esc(b.id)}', ${idx})" title="Удалить">×</button>
                 </div>
               `).join('') || '<div class="cs-branches-empty">Нет веток. Нажмите «+ ветка» чтобы добавить связь.</div>'}
             </div>
@@ -703,8 +703,8 @@ function renderBlocks() {
             <select class="select" id="fs-${b.id}" style="font-size: 12px;">
               ${d.sections.map(s => `<option value="${s.id}" ${s.id===b.sec?'selected':''}>→ ${esc(s.label)}</option>`).join('')}
             </select>
-            <button class="btn btn-sm btn-danger" onclick="deleteBlock('${b.id}')">Удалить</button>
-            <button class="btn btn-sm btn-primary" onclick="saveBlock('${b.id}')">Сохранить</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteBlock('${esc(b.id)}')">Удалить</button>
+            <button class="btn btn-sm btn-primary" onclick="saveBlock('${esc(b.id)}')">Сохранить</button>
           </div>
         </div>`;
       } // end if(isOpen)
@@ -2614,6 +2614,7 @@ function importJSON(e) {
     try {
       const p = JSON.parse(ev.target.result);
       if (!p.name || !p.sections || !p.blocks) throw new Error('Неверная структура файла');
+      sanitizeProfileIds(p); // untrusted file — force ids into a safe charset
       snapshot('Импорт JSON');
       profiles[p.name] = p;
       activeProfile = p.name;
@@ -2676,6 +2677,48 @@ function cleanCellText(value) {
 }
 
 // Transliterate cyrillic to latin for IDs
+// Hard guarantee: block/section ids may only contain safe characters. Untrusted ids
+// (AI output, imported JSON, old cloud rows) are rewritten and every reference to them
+// is updated, so a crafted id can never break out of an inline handler.
+const SAFE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+function safeIdFrom(raw, used) {
+  let id = String(raw == null ? '' : raw).replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^[_-]+|[_-]+$/g, '').slice(0, 64);
+  if (!id) id = 'block';
+  let unique = id, i = 2;
+  while (used.has(unique)) unique = id + '_' + (i++);
+  used.add(unique);
+  return unique;
+}
+function sanitizeProfileIds(profile) {
+  if (!profile || typeof profile !== 'object') return profile;
+  const blocks = Array.isArray(profile.blocks) ? profile.blocks : [];
+  const sections = Array.isArray(profile.sections) ? profile.sections : [];
+  const usedB = new Set(), usedS = new Set(), mapB = new Map(), mapS = new Map();
+
+  sections.forEach(sec => {
+    const old = String(sec.id == null ? '' : sec.id);
+    const safe = SAFE_ID_RE.test(old) && !usedS.has(old) ? (usedS.add(old), old) : safeIdFrom(old || 's', usedS);
+    if (safe !== old) mapS.set(old, safe);
+    sec.id = safe;
+  });
+  blocks.forEach(b => {
+    const old = String(b.id == null ? '' : b.id);
+    const safe = SAFE_ID_RE.test(old) && !usedB.has(old) ? (usedB.add(old), old) : safeIdFrom(old || 'block', usedB);
+    if (safe !== old) mapB.set(old, safe);
+    b.id = safe;
+  });
+  if (!mapB.size && !mapS.size) return profile;
+
+  const fixB = (v) => (v != null && mapB.has(String(v))) ? mapB.get(String(v)) : v;
+  blocks.forEach(b => {
+    if (mapS.has(String(b.sec))) b.sec = mapS.get(String(b.sec));
+    ['next_default', 'next_yes', 'next_no'].forEach(k => { if (b[k]) b[k] = fixB(b[k]); });
+    (b.branches || []).forEach(br => { if (br && br.next) br.next = fixB(br.next); });
+  });
+  console.warn(`sanitizeProfileIds: переименовано небезопасных id — блоков ${mapB.size}, разделов ${mapS.size}`);
+  return profile;
+}
+
 function makeIdFromTitle(title, used) {
   const tr = { 'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z','и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'h','ц':'c','ч':'ch','ш':'sh','щ':'sch','ы':'y','э':'e','ю':'yu','я':'ya','ъ':'','ь':'' };
   let lower = (title || 'block').toLowerCase().slice(0, 50);
@@ -5900,7 +5943,7 @@ async function cloudPullProfiles() {
   const myId = getCurrentUserId();
   const newProfiles = {};
   rows.forEach(row => {
-    const p = row.data || {};
+    const p = sanitizeProfileIds(row.data || {});
     p._cloudId = row.id;
     p._isShared = row.is_shared;
     p._ownerId = row.owner_id;
@@ -7397,6 +7440,7 @@ ${JSON.stringify(textMap, null, 1)}`;
         next_default: '', next_yes: '', next_no: ''
       }))
     };
+    sanitizeProfileIds(profile); // model output is untrusted too
     profile.blocks.forEach(b => syncLegacyNext(b));
 
     snapshot('Генерация скрипта AI');
