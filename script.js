@@ -689,6 +689,10 @@ function renderBlocks() {
               <textarea class="textarea" id="fu-${b.id}">${esc(b.uz)}</textarea>
             </div>` : ''}
           </div>
+          ${b.en ? `<div class="field" style="margin-top:10px;">
+            <label class="field-label">English</label>
+            <textarea class="textarea" id="fe-${b.id}">${esc(b.en)}</textarea>
+          </div>` : ''}
           <div class="vars-hint">Переменные: ${Object.keys(d.vars).map(v => `<span class="var-chip">{${v}}</span>`).join('')}</div>
           <div class="ai-block-group" style="margin: 12px 0;">
             <div class="ai-block-title">
@@ -730,6 +734,7 @@ function saveBlock(id) {
   const _prevRu = b.ru, _prevUz = b.uz;
   if (g('fr')) b.ru = g('fr').value;
   if (g('fu')) b.uz = g('fu').value;
+  if (g('fe')) b.en = g('fe').value;
   captureEditForLearning(b, _prevRu, _prevUz);
   if (g('fs')) b.sec = g('fs').value;
   // Read branches from block's editor rows
@@ -5334,6 +5339,11 @@ function renderCanvasSidebar(id) {
       <textarea class="textarea" id="cs-uz">${esc(b.uz || '')}</textarea>
     </div>
 
+    ${(b.en || b.enTitle) ? `<div class="cs-field">
+      <label class="field-label">English${b.enTitle ? ` · название: <input class="input" id="cs-entitle" value="${esc(b.enTitle)}" style="display:inline-block;width:auto;min-width:120px;padding:2px 6px;font-size:11px;margin-left:4px;">` : ''}</label>
+      <textarea class="textarea" id="cs-en">${esc(b.en || '')}</textarea>
+    </div>` : ''}
+
     <div class="ai-block-group">
       <div class="ai-block-title">
         <span>${csIcon('robot',13)} AI-помощник</span>
@@ -5484,6 +5494,8 @@ function canvasSaveBlock(id) {
   if (v('type') !== undefined) b.type = v('type');
   if (v('ru') !== undefined) b.ru = v('ru');
   if (v('uz') !== undefined) b.uz = v('uz');
+  if (v('en') !== undefined) b.en = v('en');
+  if (v('entitle') !== undefined) b.enTitle = v('entitle');
   // Color: '#ffffff' or empty = no override
   const color = v('color');
   b.color = (color && color.toLowerCase() !== '#ffffff') ? color : '';
