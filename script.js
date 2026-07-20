@@ -7211,15 +7211,25 @@ async function translateProfileToEN() {
     for (let i = 0; i < src.length; i += CHUNK) {
       const part = src.slice(i, i + CHUNK);
       const payload = part.map(b => ({ id: b.id, title: b.title || '', ru: b.ru || '', uz: b.uz || '' }));
-      const sys = 'Ты профессиональный переводчик скриптов колл-центра. Переводишь реплики на естественный разговорный английский, пригодный для произнесения по телефону. Сохраняй смысл, тон и длину. Плейсхолдеры в фигурных скобках ({BANK_NAME}, {AGENT_NAME} и т.п.) НЕ переводи и не меняй. Возвращаешь СТРОГО JSON-массив: [{"id":"...","en":"перевод"}] — без markdown-обёртки.';
-      const usr = 'Переведи на английский поле ru (если пусто — uz) для каждого блока. Верни JSON-массив с id и en.\n\n' + JSON.stringify(payload, null, 2);
+      const sys = 'Ты профессиональный переводчик скриптов колл-центра. Переводишь реплики на естественный разговорный английский, пригодный для произнесения по телефону. Сохраняй смысл, тон и длину. Плейсхолдеры в фигурных скобках ({BANK_NAME}, {AGENT_NAME} и т.п.) НЕ переводи и не меняй. Возвращаешь СТРОГО JSON-объект вида {"items":[{"id":"...","en":"перевод"}]} — ключ items обязателен, без markdown-обёртки.';
+      const usr = 'Переведи на английский поле ru (если пусто — uz) для каждого блока. Верни JSON-объект {"items":[{"id":"...","en":"..."}]}.\n\n' + JSON.stringify(payload, null, 2);
       const raw = await aiGenerate(sys, usr, { json: true, temperature: 0.3, maxTokens: 8000 });
       const parsed = parseAIJson(raw);
-      let arr = Array.isArray(parsed) ? parsed : (parsed && (parsed.blocks || parsed.items || parsed.result || parsed.data));
-      if (!Array.isArray(arr) && parsed && typeof parsed === 'object') {
-        arr = Object.entries(parsed).map(([id, v]) => (v && typeof v === 'object') ? { id, ...v } : { id, en: String(v) });
+      let arr = Array.isArray(parsed) ? parsed : null;
+      if (!arr && parsed && typeof parsed === 'object') {
+        // Strict-JSON modes (OpenAI) cannot return a bare array, so the model wraps it
+        // under some key — take the first array-valued property, whatever it's called.
+        const firstArray = Object.values(parsed).find(v => Array.isArray(v));
+        if (firstArray) arr = firstArray;
+        else {
+          // or it may be an object keyed by block id: { "blk1": {en}, "blk2": "text" }
+          arr = Object.entries(parsed)
+            .filter(([, v]) => v && (typeof v === 'string' || typeof v === 'object'))
+            .map(([id, v]) => (typeof v === 'string') ? { id, en: v } : { id, ...v });
+        }
       }
-      if (!Array.isArray(arr)) throw new Error('AI вернул неожиданный формат перевода');
+      if (!Array.isArray(arr)) arr = [];
+      console.log('EN-перевод: получено элементов', arr.length, 'для порции', part.length);
       const byId = new Map(arr.filter(x => x && x.id).map(x => [String(x.id), x]));
       let matched = 0;
       part.forEach(b => {
