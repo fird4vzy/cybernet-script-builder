@@ -3801,7 +3801,7 @@ function canvasRender() {
     const x = typeof b.x === 'number' ? b.x : 40;
     const y = typeof b.y === 'number' ? b.y : 40;
     const type = b.type || 'normal';
-    const text = showText ? interpolate(b[lang] || '', d.vars) : '';
+    const text = showText ? interpolate(b[lang] || b.ru || b.uz || '', d.vars) : '';
     const hasWarn = warnedIds.has(b.id);
 
     const node = document.createElement('div');
@@ -7192,6 +7192,47 @@ async function buildLearningSection() {
     if (!pairs) return '';
     return '\n\n=== КАК ЭТОТ ПОЛЬЗОВАТЕЛЬ ПРАВИТ ТЕКСТЫ (учись на его правках, повторяй его манеру: длину, тон, лексику) ===\n' + pairs;
   } catch (e) { console.warn('buildLearningSection skipped:', e); return ''; }
+}
+
+// ─── Перевод всего профиля на английский (поле b.en) ───
+async function translateProfileToEN() {
+  if (!llmSettings.apiKey && !llmSettings.useServerKey) { openLLMSettings(); toast('Сначала настройте API ключ', 'error'); return; }
+  const d = data();
+  if (!d.blocks.length) { toast('В профиле нет блоков', 'error'); return; }
+  const src = d.blocks.filter(b => (b.ru || b.uz || "").trim());
+  if (!src.length) { toast('Нечего переводить — тексты пустые', 'error'); return; }
+  const btn = document.getElementById('btn-translate-en');
+  const orig = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Перевожу…'; }
+  showGenLoader('AI переводит на английский…');
+  try {
+    const CHUNK = 25; // не упираемся в лимит ответа модели
+    let done = 0;
+    for (let i = 0; i < src.length; i += CHUNK) {
+      const part = src.slice(i, i + CHUNK);
+      const payload = part.map(b => ({ id: b.id, title: b.title || '', ru: b.ru || '', uz: b.uz || '' }));
+      const sys = 'Ты профессиональный переводчик скриптов колл-центра. Переводишь реплики на естественный разговорный английский, пригодный для произнесения по телефону. Сохраняй смысл, тон и длину. Плейсхолдеры в фигурных скобках ({BANK_NAME}, {AGENT_NAME} и т.п.) НЕ переводи и не меняй. Возвращаешь СТРОГО JSON-массив: [{"id":"...","en":"перевод"}] — без markdown-обёртки.';
+      const usr = 'Переведи на английский поле ru (если пусто — uz) для каждого блока. Верни JSON-массив с id и en.\n\n' + JSON.stringify(payload, null, 2);
+      const raw = await aiGenerate(sys, usr, { json: true, temperature: 0.3, maxTokens: 8000 });
+      const parsed = parseAIJson(raw);
+      let arr = Array.isArray(parsed) ? parsed : (parsed && (parsed.blocks || parsed.items || parsed.result || parsed.data));
+      if (!Array.isArray(arr) && parsed && typeof parsed === 'object') {
+        arr = Object.entries(parsed).map(([id, v]) => (v && typeof v === 'object') ? { id, ...v } : { id, en: String(v) });
+      }
+      if (!Array.isArray(arr)) throw new Error('AI вернул неожиданный формат перевода');
+      const byId = new Map(arr.filter(x => x && x.id).map(x => [String(x.id), x]));
+      part.forEach(b => { const t = byId.get(String(b.id)); if (t && t.en) { b.en = String(t.en); done++; } });
+    }
+    saveToStorage();
+    const sel = document.getElementById('canvas-lang'); if (sel) sel.value = 'en';
+    canvasRender();
+    toast(`Переведено блоков: ${done}`);
+  } catch (err) {
+    toast('Ошибка перевода: ' + err.message, 'error');
+  } finally {
+    hideGenLoader();
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
 }
 
 async function generateScript() {
