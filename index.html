@@ -562,12 +562,12 @@
             <button class="btn btn-sm" onclick="openPromptsEditor()" title="Редактировать системные промпты"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M4 20l4-1L20 7l-3-3L5 16l-1 4z"/><path d="M14 6l3 3"/></svg> Редактор промптов</button>
           </div>
       </div>
-        <div class="field" style="margin-top:6px;padding-top:14px;border-top:1px solid var(--bd-default);">
-          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
-            <input type="checkbox" id="llm-learn-toggle" style="width:16px;height:16px;margin-top:2px;flex-shrink:0;accent-color:var(--accent);">
-            <span>
-              <span style="font-weight:600;">Улучшать AI на моих правках</span>
-              <span style="display:block;font-size:11px;color:var(--tx-tertiary);margin-top:3px;">Когда вы переписываете текст, созданный AI, пара «было → стало» сохраняется в вашем аккаунте и подмешивается в будущие генерации, чтобы AI звучал в вашем стиле. Хранится только у вас (Supabase, ваши строки). Выключено по умолчанию.</span>
+        <div class="settings-consent">
+          <label class="consent-row">
+            <input type="checkbox" id="llm-learn-toggle" class="consent-check">
+            <span class="consent-text">
+              <span class="consent-title">Улучшать AI на моих правках</span>
+              <span class="consent-desc">Ваши правки текстов AI сохраняются в вашем аккаунте и помогают AI писать в вашем стиле.</span>
             </span>
           </label>
         </div>
