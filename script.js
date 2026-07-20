@@ -1388,7 +1388,7 @@ function buildCybernetSVG(lang, scale, opts = {}) {
     }
 
     // ── Text ──
-    const title = b.title || '';
+    const title = (lang === 'en' && b.enTitle) ? b.enTitle : (b.title || '');
     const bodyText = interpolate(b[lang] || '', d.vars);
 
     if (type === 'decision') {
@@ -1492,6 +1492,7 @@ function buildStaticCanvasSVG(lang, scale, theme) {
     const innerW = bx.w - (accent + 10) - 20;
     const ruL = wrapText(interpolate(b.ru || '', d.vars), innerW, 11, 400).length;
     const uzL = wrapText(interpolate(b.uz || '', d.vars), innerW, 11, 400).length;
+    const enL = wrapText(interpolate(b.en || '', d.vars), innerW, 11, 400).length;
     let bodyLines = 0;
     if (showBoth) {
       bodyLines = ruL + uzL + 3; // + captions/gap between the two languages
@@ -1499,7 +1500,7 @@ function buildStaticCanvasSVG(lang, scale, theme) {
       // Size by the LONGER language even when only one is shown: the RU and UZ
       // pages must share identical block sizes, otherwise the longer (usually UZ)
       // text grows its blocks and they collide with the ones below.
-      bodyLines = Math.max(ruL, uzL);
+      bodyLines = Math.max(ruL, uzL, enL);
     }
     // Invert bodyMaxLines = floor((h - HEAD_H - 14) / 14)  =>  h >= HEAD_H + 14 + lines*14
     const needed = bodyLines ? HEAD_H + 14 + bodyLines * LINE_H + 8 : HEAD_H + 16;
@@ -1564,11 +1565,11 @@ function buildStaticCanvasSVG(lang, scale, theme) {
     const g = geomOf(b);
     const x = g.x, y = g.y, h = g.h, NW = g.w; // real per-block size (matches canvas)
     const type = b.type || 'normal';
-    const title = b.title || '';
+    const title = (lang === 'en' && b.enTitle) ? b.enTitle : (b.title || '');
     if (showBoth) {
       svg += renderStaticNodeBoth(b, x, y, NW, h, type, title, interpolate(b.ru || '', d.vars), interpolate(b.uz || '', d.vars), T);
     } else {
-      const text = interpolate(b[lang] || '', d.vars);
+      const text = interpolate(b[lang] || b.ru || b.uz || '', d.vars);
       svg += renderStaticNode(b, x, y, NW, h, type, title, text, T);
     }
   });
@@ -1985,7 +1986,7 @@ function ensureJsPDF() {
 function exportFlowchartPDF() {
   if (!data().blocks.length) { toast('Нет блоков для экспорта', 'error'); return; }
   const { lang, theme } = getExportOptions();
-  const langPages = lang === 'both' ? ['ru', 'uz'] : [lang];
+  const langPages = lang === 'both' ? ['ru', 'uz'] : (lang === 'all3' ? ['ru', 'uz', 'en'] : [lang]);
   const bg = theme === 'dark' ? '#0A0A12' : '#ffffff';
   const labelColor = theme === 'dark' ? '#818CF8' : '#4F46E5';
 
@@ -2017,7 +2018,7 @@ function exportFlowchartPDF() {
     @media screen { body { background: #52525E; } .pg { max-width: 1400px; margin: 16px auto; box-shadow: 0 6px 28px rgba(0,0,0,0.35); } }
   </style></head><body>`;
   pagesSvg.forEach((p) => {
-    const lbl = p.L === 'uz' ? "UZ · O'ZBEK" : 'RU · РУССКИЙ';
+    const lbl = p.L === 'uz' ? "UZ · O'ZBEK" : (p.L === 'en' ? 'EN · ENGLISH' : 'RU · РУССКИЙ');
     html += `<div class="pg">${langPages.length > 1 ? `<div class="lang-label">${lbl}</div>` : ''}${p.svgStr}</div>`;
   });
   html += `<script>window.onload = () => setTimeout(() => window.print(), 400);<\/script></body></html>`;
@@ -2039,7 +2040,7 @@ function exportFlowchartPDFRaster() {
   const { lang, theme } = getExportOptions();
   const bgColor = theme === 'dark' ? '#0A0A12' : '#ffffff';
   // If "both" — render two separate single-language pages (RU page, then UZ page)
-  const langPages = lang === 'both' ? ['ru', 'uz'] : [lang];
+  const langPages = lang === 'both' ? ['ru', 'uz'] : (lang === 'all3' ? ['ru', 'uz', 'en'] : [lang]);
 
   toast('Генерирую PDF...', 'info');
 
@@ -2105,7 +2106,7 @@ function exportFlowchartPDFRaster() {
           pdf.rect(0, 0, pageW, pageH, 'F');
         }
         // Language label at top corner
-        const labelTxt = page.lang === 'uz' ? 'UZ · O\'ZBEK' : 'RU · РУССКИЙ';
+        const labelTxt = page.lang === 'uz' ? 'UZ · O\'ZBEK' : (page.lang === 'en' ? 'EN · ENGLISH' : 'RU · РУССКИЙ');
         pdf.setFontSize(11);
         pdf.setTextColor(theme === 'dark' ? 129 : 79, theme === 'dark' ? 140 : 70, theme === 'dark' ? 248 : 229);
         pdf.text(labelTxt, 24, 28);
@@ -2125,7 +2126,7 @@ function exportFlowchartPDFRaster() {
       });
 
       pdf.save(activeProfile.replace(/[^\w.-]/g, '_') + '_flowchart.pdf');
-      toast(`✓ PDF скачан${langPages.length > 1 ? ' (RU + UZ, 2 страницы)' : ''}`);
+      toast(`✓ PDF скачан${langPages.length > 1 ? ` (${langPages.map(l => l.toUpperCase()).join(' + ')}, ${langPages.length} стр.)` : ''}`);
     } catch (e) {
       console.error(e);
       toast('Не удалось создать PDF (' + (e && e.message ? e.message : e) + ') — скачиваю PNG', 'error');
