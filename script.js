@@ -7221,12 +7221,29 @@ async function translateProfileToEN() {
       }
       if (!Array.isArray(arr)) throw new Error('AI вернул неожиданный формат перевода');
       const byId = new Map(arr.filter(x => x && x.id).map(x => [String(x.id), x]));
-      part.forEach(b => { const t = byId.get(String(b.id)); if (t && t.en) { b.en = String(t.en); done++; } });
+      let matched = 0;
+      part.forEach(b => {
+        const t = byId.get(String(b.id));
+        if (t && t.en) { b.en = String(t.en); done++; matched++; }
+      });
+      // Some models echo their own ids or drop them entirely — fall back to order,
+      // but only when the counts line up, so we never mix texts up.
+      if (!matched && arr.length === part.length) {
+        part.forEach((b, k) => {
+          const t = arr[k];
+          const en = t && (t.en || t.text || t.translation);
+          if (en) { b.en = String(en); done++; }
+        });
+      }
     }
     saveToStorage();
     const sel = document.getElementById('canvas-lang'); if (sel) sel.value = 'en';
     canvasRender();
-    toast(`Переведено блоков: ${done}`);
+    if (!done) {
+      toast('AI не вернул перевод в ожидаемом формате. Попробуйте ещё раз или смените модель.', 'error');
+    } else {
+      toast(`Переведено блоков: ${done}`);
+    }
   } catch (err) {
     toast('Ошибка перевода: ' + err.message, 'error');
   } finally {
@@ -8021,8 +8038,14 @@ function parseAIJson(raw) {
   if (!raw) return null;
   let t = String(raw).trim().replace(/^```(?:json)?/i, '').replace(/```$/,'').trim();
   try { return JSON.parse(t); } catch {}
-  const start = t.indexOf('{');
-  if (start === -1) return null;
+  // The payload may be an OBJECT or an ARRAY — start from whichever comes first,
+  // otherwise a JSON array gets sliced at its first '{' and falls apart.
+  const iObj = t.indexOf('{'), iArr = t.indexOf('[');
+  let start;
+  if (iObj === -1 && iArr === -1) return null;
+  else if (iObj === -1) start = iArr;
+  else if (iArr === -1) start = iObj;
+  else start = Math.min(iObj, iArr);
   t = t.slice(start);
   try { return JSON.parse(t); } catch {}
   // Repair truncated output: close dangling string, then balance ] and }
