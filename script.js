@@ -6195,6 +6195,7 @@ const llmSettings = {
   openaiApiKey: '',
   openaiModel: 'gpt-4o-mini',
   learnFromEdits: false,   // consent for capturing edit pairs into cs_edits (default OFF)
+  useServerKey: false,     // route AI calls through /api/ai so the key never touches the browser
   loaded: false
 };
 function csSyncActiveLLM() {
@@ -6227,6 +6228,7 @@ function loadLLMSettings() {
         llmSettings.openaiApiKey = s.openaiApiKey || '';
         llmSettings.openaiModel = s.openaiModel || 'gpt-4o-mini';
         llmSettings.learnFromEdits = !!s.learnFromEdits;
+        llmSettings.useServerKey = !!s.useServerKey;
       } else {
         // Legacy single-provider (Gemini-only) shape — migrate in place
         llmSettings.provider = 'gemini';
@@ -6248,7 +6250,8 @@ function saveLLMSettings() {
       geminiModel: llmSettings.geminiModel,
       openaiApiKey: llmSettings.openaiApiKey,
       openaiModel: llmSettings.openaiModel,
-      learnFromEdits: llmSettings.learnFromEdits
+      learnFromEdits: llmSettings.learnFromEdits,
+      useServerKey: llmSettings.useServerKey
     }));
   } catch (err) { console.error('LLM settings save failed:', err); }
 }
@@ -6356,7 +6359,43 @@ async function openaiGenerate(systemPrompt, userPrompt, opts = {}) {
 }
 
 // ─── Provider router — every AI feature in the app calls THIS, never the two above directly ───
+// Ask the server to talk to the LLM. The API key lives in Vercel env vars,
+// so it never reaches the browser, localStorage or the database.
+async function proxyGenerate(systemPrompt, userPrompt, opts = {}) {
+  const provider = opts.provider || llmSettings.provider || 'gemini';
+  const model = opts.model || (provider === 'openai' ? llmSettings.openaiModel : llmSettings.geminiModel);
+  let resp;
+  try {
+    resp = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider, model,
+        system: systemPrompt || '',
+        user: userPrompt || '',
+        temperature: opts.temperature ?? 0.7,
+        maxTokens: opts.maxTokens ?? 4096,
+        json: !!opts.json
+      })
+    });
+  } catch (e) {
+    throw new Error('Сервер AI недоступен. Проверьте, что проект задеплоен на Vercel.');
+  }
+  let data = null;
+  try { data = await resp.json(); } catch {}
+  if (!resp.ok) {
+    if (resp.status === 404) throw new Error('Серверный ключ включён, но /api/ai не найден — задеплойте папку api/ на Vercel.');
+    throw new Error((data && data.error) || `Ошибка сервера AI (${resp.status})`);
+  }
+  if (!data || !data.text) throw new Error((data && data.error) || 'Пустой ответ от сервера AI');
+  return data.text;
+}
+
 async function aiGenerate(systemPrompt, userPrompt, opts = {}) {
+  // Server-side key mode: the browser never sees or stores an API key.
+  if (llmSettings.useServerKey && !opts.apiKey) {
+    return proxyGenerate(systemPrompt, userPrompt, opts);
+  }
   const provider = opts.provider || llmSettings.provider || 'gemini';
   return provider === 'openai'
     ? openaiGenerate(systemPrompt, userPrompt, opts)
@@ -6383,6 +6422,7 @@ function setLLMProviderTab(provider) {
 function openLLMSettings() {
   const modal = document.getElementById('llm-settings-modal');
   const lt = document.getElementById('llm-learn-toggle'); if (lt) lt.checked = !!llmSettings.learnFromEdits;
+  const st = document.getElementById('llm-serverkey-toggle'); if (st) st.checked = !!llmSettings.useServerKey;
   if (!modal) { toast('Окно настроек AI не найдено — обновите страницу (Ctrl+Shift+R)', 'error'); return; }
   // Null-safe: OpenAI fields exist only in the newer index.html. If the page's HTML
   // is older/cached, still open the modal with the Gemini tab instead of crashing.
@@ -6408,6 +6448,7 @@ function closeLLMSettings() {
 
 function saveLLMSettingsFromModal() {
   const lt = document.getElementById('llm-learn-toggle'); if (lt) llmSettings.learnFromEdits = lt.checked;
+  const st = document.getElementById('llm-serverkey-toggle'); if (st) llmSettings.useServerKey = st.checked;
   // Save BOTH providers' fields (whichever tab isn't active keeps its value, just hidden)
   llmSettings.geminiApiKey = (document.getElementById('llm-key-input')?.value || '').trim();
   llmSettings.geminiModel = document.getElementById('llm-model-select')?.value || llmSettings.geminiModel;
@@ -6681,7 +6722,7 @@ async function improveBlockText(blockId, mode) {
   const d = data();
   const b = d.blocks.find(x => x.id === blockId);
   if (!b) return;
-  if (!llmSettings.apiKey) { openLLMSettings(); toast('Сначала настройте API ключ', 'error'); return; }
+  if (!llmSettings.apiKey && !llmSettings.useServerKey) { openLLMSettings(); toast('Сначала настройте API ключ', 'error'); return; }
 
   const sidebar = document.getElementById('canvas-sidebar');
   const loadingEl = sidebar.querySelector('#ai-loading');
@@ -6708,7 +6749,7 @@ async function improveBlockTextInList(blockId, mode) {
   const d = data();
   const b = d.blocks.find(x => x.id === blockId);
   if (!b) return;
-  if (!llmSettings.apiKey) { openLLMSettings(); toast('Сначала настройте API ключ', 'error'); return; }
+  if (!llmSettings.apiKey && !llmSettings.useServerKey) { openLLMSettings(); toast('Сначала настройте API ключ', 'error'); return; }
 
   const currentRu = document.getElementById('fr-' + blockId)?.value ?? b.ru ?? '';
   const currentUz = document.getElementById('fu-' + blockId)?.value ?? b.uz ?? '';
@@ -6827,7 +6868,7 @@ function applyAISuggestion(blockId, newRu, newUz) {
 function openGenScriptModal() {
   clearBrief();
   clearGenVars();
-  if (!llmSettings.apiKey) { openLLMSettings(); toast('Сначала настройте API ключ', 'error'); return; }
+  if (!llmSettings.apiKey && !llmSettings.useServerKey) { openLLMSettings(); toast('Сначала настройте API ключ', 'error'); return; }
   document.getElementById('gen-script-modal').style.display = 'flex';
   renderGsRefsPicker();
   setTimeout(() => document.getElementById('gs-niche').focus(), 50);
@@ -7385,7 +7426,7 @@ async function generateObjectionResponses(blockId) {
   const d = data();
   const b = d.blocks.find(x => x.id === blockId);
   if (!b) return;
-  if (!llmSettings.apiKey) { openLLMSettings(); toast('Сначала настройте API ключ', 'error'); return; }
+  if (!llmSettings.apiKey && !llmSettings.useServerKey) { openLLMSettings(); toast('Сначала настройте API ключ', 'error'); return; }
 
   const objection = prompt('Какое возражение клиента нужно обработать?\nНапример: "дорого", "я подумаю", "уже есть у другого банка"', b.title || '');
   if (!objection) return;
@@ -7791,7 +7832,7 @@ async function runAIReview() {
   if (!aspects.length && lastReviewParams) { aspects = lastReviewParams.aspects; custom = lastReviewParams.custom; }
   if (!aspects.length) aspects = REVIEW_ASPECT_DEFAULT.slice();
   lastReviewParams = { aspects, custom };
-  if (!llmSettings.apiKey) {
+  if (!llmSettings.apiKey && !llmSettings.useServerKey) {
     openLLMSettings();
     toast('Сначала настройте API ключ', 'error');
     return;
