@@ -3852,7 +3852,7 @@ function canvasRender() {
     node.innerHTML = `
       ${hasWarn ? '<div class="cv-node-warn" title="Есть проблема — откройте вкладку «Валидация»">!</div>' : ''}
       <div class="cv-node-head" title="${esc(b.id)}">
-        <div class="cv-node-title">${esc(b.title || '')}</div>
+        <div class="cv-node-title">${esc(lang === 'en' && b.enTitle ? b.enTitle : (b.title || ''))}</div>
       </div>
       ${showText && text ? `<div class="cv-node-body">${esc(text)}</div>` : ''}
       <div class="cv-resize" title="Потяните, чтобы изменить размер блока"></div>
@@ -7211,8 +7211,8 @@ async function translateProfileToEN() {
     for (let i = 0; i < src.length; i += CHUNK) {
       const part = src.slice(i, i + CHUNK);
       const payload = part.map(b => ({ id: b.id, title: b.title || '', ru: b.ru || '', uz: b.uz || '' }));
-      const sys = 'Ты профессиональный переводчик скриптов колл-центра. Переводишь реплики на естественный разговорный английский, пригодный для произнесения по телефону. Сохраняй смысл, тон и длину. Плейсхолдеры в фигурных скобках ({BANK_NAME}, {AGENT_NAME} и т.п.) НЕ переводи и не меняй. Возвращаешь СТРОГО JSON-объект вида {"items":[{"id":"...","en":"перевод"}]} — ключ items обязателен, без markdown-обёртки.';
-      const usr = 'Переведи на английский поле ru (если пусто — uz) для каждого блока. Верни JSON-объект {"items":[{"id":"...","en":"..."}]}.\n\n' + JSON.stringify(payload, null, 2);
+      const sys = 'Ты профессиональный переводчик скриптов колл-центра. Переводишь реплики на естественный разговорный английский, пригодный для произнесения по телефону. Сохраняй смысл, тон и длину. Плейсхолдеры в фигурных скобках ({BANK_NAME}, {AGENT_NAME} и т.п.) НЕ переводи и не меняй. Возвращаешь СТРОГО JSON-объект вида {"items":[{"id":"...","en":"перевод реплики","title_en":"перевод названия блока"}]} — ключ items обязателен, без markdown-обёртки. Названия блоков (title) — это короткие служебные подписи (напр. «Молчание», «Ошиблись номером»); переводи их так же коротко.';
+      const usr = 'Для каждого блока переведи на английский: поле ru (если пусто — uz) → en, и поле title → title_en. Верни JSON-объект {"items":[{"id":"...","en":"...","title_en":"..."}]}.\n\n' + JSON.stringify(payload, null, 2);
       const raw = await aiGenerate(sys, usr, { json: true, temperature: 0.3, maxTokens: 8000 });
       const parsed = parseAIJson(raw);
       let arr = Array.isArray(parsed) ? parsed : null;
@@ -7235,6 +7235,7 @@ async function translateProfileToEN() {
       part.forEach(b => {
         const t = byId.get(String(b.id));
         if (t && t.en) { b.en = String(t.en); done++; matched++; }
+        if (t && (t.title_en || t.titleEn)) b.enTitle = String(t.title_en || t.titleEn);
       });
       // Some models echo their own ids or drop them entirely — fall back to order,
       // but only when the counts line up, so we never mix texts up.
@@ -7243,6 +7244,7 @@ async function translateProfileToEN() {
           const t = arr[k];
           const en = t && (t.en || t.text || t.translation);
           if (en) { b.en = String(en); done++; }
+          if (t && (t.title_en || t.titleEn)) b.enTitle = String(t.title_en || t.titleEn);
         });
       }
     }
