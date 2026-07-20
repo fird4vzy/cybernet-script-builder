@@ -564,6 +564,15 @@
       </div>
         <div class="settings-consent">
           <label class="consent-row">
+            <input type="checkbox" id="llm-serverkey-toggle" class="consent-check">
+            <span class="consent-text">
+              <span class="consent-title">Использовать серверный ключ (безопаснее)</span>
+              <span class="consent-desc">Запросы к AI идут через сервер, ключ хранится в настройках Vercel и никогда не попадает в браузер. Поле «API ключ» выше становится не нужным.</span>
+            </span>
+          </label>
+        </div>
+        <div class="settings-consent">
+          <label class="consent-row">
             <input type="checkbox" id="llm-learn-toggle" class="consent-check">
             <span class="consent-text">
               <span class="consent-title">Улучшать AI на моих правках</span>
