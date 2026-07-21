@@ -538,6 +538,14 @@ function renameProfile() {
     profiles[n] = cur;
     profiles[n].name = n;
     delete profiles[old];
+    // Carry the "already laid out" mark to the new name, so nothing downstream
+    // can mistake the renamed profile for a fresh one that needs auto-layout.
+    try {
+      if (typeof canvasState !== 'undefined' && canvasState.autoLaidOut && canvasState.autoLaidOut.has(old)) {
+        canvasState.autoLaidOut.delete(old);
+        canvasState.autoLaidOut.add(n);
+      }
+    } catch (e) { /* canvas not initialised yet — nothing to carry */ }
     activeProfile = n;
     saveToStorage(); // persist now: a later cloud pull must not restore the stale copy
     renderProfiles();
@@ -2824,6 +2832,22 @@ function makeIdFromTitle(title, used) {
   return unique;
 }
 
+// A technical id line inside a block's text — "robot1", "whoIsIt2",
+// "fromTheCard", "*no". Latin only, short, no cyrillic: these are the same on
+// the RU and the UZ page, which makes them a reliable cross-page key.
+function csIdToken(title) {
+  const lines = String(title || '').split('\n').map(l => l.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i];
+    if (l.length > 30 || /[\u0400-\u04FF]/.test(l)) continue;
+    if (/^\*?[A-Za-z][A-Za-z0-9_ ]{1,28}$/.test(l)) {
+      const t = l.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (t.length >= 3) return t;
+    }
+  }
+  return '';
+}
+
 // Detect block type by combining: shape style, text content, edge counts
 function detectBlockType(text, styleStr, incomingCount, outgoingCount, exactGeom) {
   const t = (text || '').toLowerCase().trim();
@@ -3167,10 +3191,34 @@ function parseDrawioXML(xmlString, exactGeom) {
       const uzB = normBounds(otherPage);
       const ruList = [], uzList = [];
       mainPage.vertices.forEach((v, id) => {
-        ruList.push({ id, nx: v.x - ruB.minX, ny: v.y - ruB.minY, w: v.w || 1, h: v.h || 1 });
+        ruList.push({ id, nx: v.x - ruB.minX, ny: v.y - ruB.minY, w: v.w || 1, h: v.h || 1, title: v.title });
       });
       otherPage.vertices.forEach((v, id) => {
         if (v.title) uzList.push({ id, nx: v.x - uzB.minX, ny: v.y - uzB.minY, w: v.w || 1, h: v.h || 1, title: v.title });
+      });
+
+      // ── Strongest signal first: technical ids ──
+      // Both language pages carry the SAME latin identifiers (robot1, whoIsIt2,
+      // fromTheCard, *no). Where one is present on both sides it identifies the
+      // block outright — no geometry involved, so a differently arranged UZ page
+      // no longer shifts the whole mapping.
+      const uzTokenIndex = new Map();
+      const ambiguous = new Set();
+      uzList.forEach(u => {
+        const t = csIdToken(u.title);
+        if (!t) return;
+        if (uzTokenIndex.has(t)) { ambiguous.add(t); return; }
+        uzTokenIndex.set(t, u);
+      });
+      ambiguous.forEach(t => uzTokenIndex.delete(t));   // repeated id proves nothing
+      const byToken = new Map();
+      const tokenTaken = new Set();
+      ruList.forEach(r => {
+        const t = csIdToken(r.title);
+        if (!t || !uzTokenIndex.has(t)) return;
+        const u = uzTokenIndex.get(t);
+        byToken.set(r.id, u.title);
+        tokenTaken.add(u.id);
       });
 
       // Score every plausible pair, then assign BEST-FIRST across the whole
@@ -3179,7 +3227,9 @@ function parseDrawioXML(xmlString, exactGeom) {
       const MAX_D = 140;
       const pairs = [];
       ruList.forEach(r => {
+        if (byToken.has(r.id)) return;              // already settled by its id
         uzList.forEach(u => {
+          if (tokenTaken.has(u.id)) return;
           const d = Math.hypot(u.nx - r.nx, u.ny - r.ny);
           if (d > MAX_D) return;
           // A translated page keeps its block sizes. A box of a wildly
@@ -3200,6 +3250,8 @@ function parseDrawioXML(xmlString, exactGeom) {
         uzMatch.set(p.rid, p.title);
         uzTaken.add(p.uid);
       });
+      byToken.forEach((title, rid) => uzMatch.set(rid, title));   // ids win
+      console.log(`Draw.io UZ: по id ${byToken.size}, по координатам ${uzMatch.size - byToken.size}, без пары ${ruList.length - uzMatch.size}`);
       // No match is better than the wrong one — an empty UZ field is visible and
       // fixable, a plausible-looking wrong translation is not.
       uzByPosition = (ruV) => uzMatch.get(ruV.mxId) || '';
@@ -4061,11 +4113,13 @@ function canvasRender() {
       }
     }
     if (b.dioSize && !b.hManual) {
-      // Draw.io height is a MINIMUM. Lifting the .cv-node max-height:280px cap
-      // lets a long block show all of its text instead of clipping it; the
-      // arrows stay anchored to the original height either way.
-      node.style.minHeight = (typeof b.h === 'number' && b.h > 0 ? b.h : 60) + 'px';
-      node.style.maxHeight = 'none';
+      // Draw.io height is a MINIMUM — the block may grow to show its text. But
+      // an UNBOUNDED grow turns a small shape carrying a long text into a
+      // 1500px column that buries its neighbours, so cap the growth and let the
+      // remainder scroll inside. Arrows anchor to the original height regardless.
+      const baseH = (typeof b.h === 'number' && b.h > 0) ? b.h : 60;
+      node.style.minHeight = baseH + 'px';
+      node.style.maxHeight = Math.max(baseH + 160, 300) + 'px';
     }
     if (b.color) {
       node.style.background = b.color;
