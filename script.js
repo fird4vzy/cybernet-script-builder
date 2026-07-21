@@ -2391,17 +2391,26 @@ function exportDrawio() {
 
   d.blocks.forEach(b => {
     const from = idMap[b.id]; if (!from) return;
-    const addEdge = (toId, label, color) => {
+    const addEdge = (toId, label, color, br) => {
       const to = idMap[toId]; if (!to) return;
-      cells += `<mxCell id="${cellId}" value="${svgText(label || '')}" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=${color};fontSize=10;fontStyle=1;" edge="1" parent="1" source="${from}" target="${to}"><mxGeometry relative="1" as="geometry"/></mxCell>`;
+      // Carry the routing back out so import → edit → export is loss-free.
+      let anchors = '';
+      if (br && br.exitX != null && br.exitY != null) anchors += `exitX=${br.exitX};exitY=${br.exitY};exitDx=${br.exitDx || 0};exitDy=${br.exitDy || 0};`;
+      if (br && br.entryX != null && br.entryY != null) anchors += `entryX=${br.entryX};entryY=${br.entryY};entryDx=${br.entryDx || 0};entryDy=${br.entryDy || 0};`;
+      if (br && br.dashed) anchors += 'dashed=1;';
+      const rnd = (br && br.rounded) ? 1 : 0;
+      const pts = (br && br.waypoints && br.waypoints.length)
+        ? `<Array as="points">${br.waypoints.map(p => `<mxPoint x="${Math.round(p.x)}" y="${Math.round(p.y)}"/>`).join('')}</Array>`
+        : '';
+      cells += `<mxCell id="${cellId}" value="${svgText(label || '')}" style="edgeStyle=orthogonalEdgeStyle;rounded=${rnd};html=1;${anchors}strokeColor=${color};fontSize=10;fontStyle=1;" edge="1" parent="1" source="${from}" target="${to}"><mxGeometry relative="1" as="geometry">${pts}</mxGeometry></mxCell>`;
       cellId++;
     };
     // Prefer modern branches[]; fall back to legacy next_* fields
     if (Array.isArray(b.branches) && b.branches.length) {
       b.branches.forEach(br => {
-        if (!br.target) return;
+        if (!br.next) return;
         const color = br.color && br.color !== BRANCH_COLOR_DEFAULT ? br.color : '#333333';
-        addEdge(br.target, br.label || '', color);
+        addEdge(br.next, br.label || '', color, br);
       });
     } else {
       addEdge(b.next_default, '', '#333333');
@@ -2764,7 +2773,7 @@ function makeIdFromTitle(title, used) {
 }
 
 // Detect block type by combining: shape style, text content, edge counts
-function detectBlockType(text, styleStr, incomingCount, outgoingCount) {
+function detectBlockType(text, styleStr, incomingCount, outgoingCount, exactGeom) {
   const t = (text || '').toLowerCase().trim();
   const st = (styleStr || '').toLowerCase();
 
@@ -2782,6 +2791,11 @@ function detectBlockType(text, styleStr, incomingCount, outgoingCount) {
   // ── Text-based hints ──
   if (/^(старт|начало|start|boshlash)/i.test(t)) return 'start';
   if (/(конец|завершение|end|tugatish|tamomlash|завершение звонка)$/i.test(t)) return 'end';
+
+  // In exact mode the shape comes from the diagram alone: a plain rectangle that
+  // merely happens to have no incoming edge is NOT a start terminator, and
+  // redrawing it as a stadium changes the box the arrows anchor to.
+  if (exactGeom) return 'process';
 
   // ── Edge-based fallback (start/end only) ──
   // NOTE: we deliberately do NOT infer 'decision' from the number of outgoing edges.
@@ -2897,10 +2911,13 @@ function parseDrawioPage(rootEl) {
     }
     const pos = absPos(id);
     const text = cleanCellText(n.labelHtml || n.value || '');
+    const vst = parseDrawioStyle(n.style);
+    const fill = (vst.fillColor && /^#[0-9a-f]{3,8}$/i.test(vst.fillColor)) ? vst.fillColor : '';
     vertices.set(id, {
       mxId: id, title: text, styleStr: n.style,
       x: pos.x, y: pos.y,
       w: n.w || 120, h: n.h || 60,
+      fill,
       isUserObject: !!n.labelHtml
     });
   });
@@ -2916,33 +2933,73 @@ function parseDrawioPage(rootEl) {
   });
 
   // ── Edges ──
+  // Waypoints of an edge that lives inside a group are RELATIVE to that group,
+  // exactly like vertex coordinates. Convert them to absolute or the routing
+  // lands hundreds of px away from where Draw.io draws it.
+  const parentOffset = (n) => (isLayerId(n.parent) ? { x: 0, y: 0 } : absPos(n.parent));
+  const numOrU = (v) => {
+    if (v === undefined || v === null || v === '') return undefined;
+    const f = parseFloat(v);
+    return isNaN(f) ? undefined : f;
+  };
+
   byId.forEach((n, id) => {
     if (!n.isEdge) return;
     const source = n.source, target = n.target;
     if (!source || !target) return;
     let label = cleanCellText(n.value || n.labelHtml || '');
-    // edge label may live in a child edgeLabel cell
-    if (!label) {
-      byId.forEach((c) => {
-        if (!label && c.parent === id && isEdgeLabel(c.style)) label = cleanCellText(c.value || c.labelHtml || '');
-      });
-    }
-    let waypoints = [];
+    let lblGeom = null;   // where Draw.io puts the caption: t along edge + perpendicular offset
+    // edge label may live in a child edgeLabel cell — take its TEXT and its POSITION
+    byId.forEach((c) => {
+      if (c.parent !== id || !isEdgeLabel(c.style)) return;
+      const txt = cleanCellText(c.value || c.labelHtml || '');
+      if (!label && txt) label = txt;
+      if (lblGeom) return;
+      const cg = c.cellEl && c.cellEl.querySelector('mxGeometry');
+      if (!cg) return;
+      const offPt = cg.querySelector('mxPoint[as="offset"]');
+      const cst = parseDrawioStyle(c.style);
+      lblGeom = {
+        t: numOrU(cg.getAttribute('x')) || 0,          // -1 … 1 along the edge (0 = middle)
+        off: numOrU(cg.getAttribute('y')) || 0,        // perpendicular offset, px
+        dx: offPt ? (numOrU(offPt.getAttribute('x')) || 0) : 0,
+        dy: offPt ? (numOrU(offPt.getAttribute('y')) || 0) : 0,
+        fontColor: cst.fontColor || '',
+        bg: cst.labelBackgroundColor || ''
+      };
+    });
+
+    const po = parentOffset(n);
+    const waypoints = [];
+    let srcPoint = null, tgtPoint = null;
     const egeom = n.cellEl.querySelector('mxGeometry');
     if (egeom) {
       const ptsArray = egeom.querySelector('Array[as="points"]');
       if (ptsArray) ptsArray.querySelectorAll('mxPoint').forEach(pt => {
         const px = parseFloat(pt.getAttribute('x')), py = parseFloat(pt.getAttribute('y'));
-        if (!isNaN(px) && !isNaN(py)) waypoints.push({ x: px, y: py });
+        if (!isNaN(px) && !isNaN(py)) waypoints.push({ x: px + po.x, y: py + po.y });
       });
+      const sp = egeom.querySelector('mxPoint[as="sourcePoint"]');
+      const tp = egeom.querySelector('mxPoint[as="targetPoint"]');
+      if (sp) srcPoint = { x: (numOrU(sp.getAttribute('x')) || 0) + po.x, y: (numOrU(sp.getAttribute('y')) || 0) + po.y };
+      if (tp) tgtPoint = { x: (numOrU(tp.getAttribute('x')) || 0) + po.x, y: (numOrU(tp.getAttribute('y')) || 0) + po.y };
     }
+
     const est = parseDrawioStyle(n.style);
     edges.push({
-      source, target, label, waypoints,
-      exitX: est.exitX !== undefined ? parseFloat(est.exitX) : undefined,
-      exitY: est.exitY !== undefined ? parseFloat(est.exitY) : undefined,
-      entryX: est.entryX !== undefined ? parseFloat(est.entryX) : undefined,
-      entryY: est.entryY !== undefined ? parseFloat(est.entryY) : undefined
+      source, target, label, waypoints, lblGeom, srcPoint, tgtPoint,
+      exitX: numOrU(est.exitX), exitY: numOrU(est.exitY),
+      exitDx: numOrU(est.exitDx) || 0, exitDy: numOrU(est.exitDy) || 0,
+      entryX: numOrU(est.entryX), entryY: numOrU(est.entryY),
+      entryDx: numOrU(est.entryDx) || 0, entryDy: numOrU(est.entryDy) || 0,
+      stroke: (est.strokeColor && est.strokeColor !== 'none' && /^#|^rgb/i.test(est.strokeColor)) ? est.strokeColor : '',
+      strokeWidth: numOrU(est.strokeWidth),
+      dashed: est.dashed === '1',
+      dashPattern: est.dashPattern || '',
+      rounded: est.rounded === '1',
+      edgeStyle: est.edgeStyle || '',
+      endArrow: est.endArrow || '',
+      startArrow: est.startArrow || ''
     });
   });
 
@@ -2955,7 +3012,7 @@ function parseDrawioPage(rootEl) {
   return { vertices, edges };
 }
 
-function parseDrawioXML(xmlString) {
+function parseDrawioXML(xmlString, exactGeom) {
   const xmlContent = decodeDrawioContent(xmlString);
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlContent, 'application/xml');
@@ -3067,7 +3124,7 @@ function parseDrawioXML(xmlString) {
   mainPage.vertices.forEach((v, mxId) => {
     const title = v.title || '(без текста)';
     const id = makeIdFromTitle(title, usedIds);
-    const type = detectBlockType(title, v.styleStr, incoming.get(mxId) || 0, outgoing.get(mxId) || 0);
+    const type = detectBlockType(title, v.styleStr, incoming.get(mxId) || 0, outgoing.get(mxId) || 0, exactGeom);
     const ruText = v.title;
     const uzText = uzByMxId.get(mxId) || (uzByPosition ? uzByPosition(v) : '') || '';
     // If RU text contains "Здравствуйте" and UZ identical, try to extract slash-separated translation
@@ -3097,6 +3154,11 @@ function parseDrawioXML(xmlString) {
       y: v.y,
       w: v.w,
       h: v.h,
+      // Exact mode: pin the box to the Draw.io size. Anchors are FRACTIONS of the
+      // box, so a block that grows to fit its text drags every arrow with it.
+      wManual: exactGeom || undefined,
+      hManual: exactGeom || undefined,
+      color: (exactGeom && v.fill) ? v.fill : undefined,
       next_default: '', next_yes: '', next_no: ''
     });
   });
@@ -3109,11 +3171,19 @@ function parseDrawioXML(xmlString) {
     fromBlock.branches.push({
       id: branchId(),
       label: e.label || '',
-      color: BRANCH_COLOR_DEFAULT,
+      color: e.stroke || BRANCH_COLOR_DEFAULT,
       next: toBlock.id,
-      // Preserve Draw.io routing geometry (waypoints) — used by edge renderer
+      // ── Draw.io routing geometry — the renderer reproduces this 1:1 instead of
+      //    re-routing the arrow itself. `_dio` is the flag that turns that on. ──
+      _dio: 1,
       waypoints: (e.waypoints && e.waypoints.length) ? e.waypoints.map(p => ({ x: p.x, y: p.y })) : undefined,
-      exitX: e.exitX, exitY: e.exitY, entryX: e.entryX, entryY: e.entryY
+      exitX: e.exitX, exitY: e.exitY, exitDx: e.exitDx || 0, exitDy: e.exitDy || 0,
+      entryX: e.entryX, entryY: e.entryY, entryDx: e.entryDx || 0, entryDy: e.entryDy || 0,
+      dashed: e.dashed || undefined,
+      dashPattern: e.dashPattern || undefined,
+      rounded: e.rounded || undefined,
+      strokeWidth: e.strokeWidth,
+      lblGeom: e.lblGeom || undefined
     });
   });
 
@@ -3159,7 +3229,8 @@ function importDrawio(e) {
   const r = new FileReader();
   r.onload = (ev) => {
     try {
-      const result = parseDrawioXML(ev.target.result);
+      const exactGeom = document.getElementById('import-drawio-exact')?.checked !== false;
+      const result = parseDrawioXML(ev.target.result, exactGeom);
       if (!result.blocks.length) throw new Error('Не нашёл блоков');
 
       const baseName = file.name.replace(/\.(drawio|xml|vsdx)$/i, '');
@@ -3177,8 +3248,10 @@ function importDrawio(e) {
       renderProfiles(); renderBlocks(); renderVars(); renderStats();
       canvasState.autoLaidOut.add(profileName);
 
-      // Auto-apply edge labels as block titles (silent — no confirm dialog)
-      const renamedCount = autoApplyEdgeLabelsAsTitles();
+      // Auto-apply edge labels as block titles (silent — no confirm dialog).
+      // NOT in exact mode: it moves the caption off the arrow and onto the block,
+      // which is precisely the difference from the source diagram.
+      const renamedCount = exactGeom ? 0 : autoApplyEdgeLabelsAsTitles();
 
       const langInfo = result.stats.hasUz
         ? ' RU+UZ слиты.'
@@ -3863,14 +3936,18 @@ function canvasRender() {
     // A diamond loses ~28px to its slanted sides + padding, so a narrow imported
     // width strangles the text. Guarantee enough room for it to stay readable.
     if (type === 'decision') nodeW = Math.max(nodeW, 200);
+    // Exact Draw.io geometry: no clamping at all, or the edge anchors (which are
+    // fractions of this box) drift away from the source diagram.
+    if (b.wManual && typeof b.w === 'number' && b.w > 0) nodeW = b.w;
     node.style.width = nodeW + 'px';
     // Height: only a MANUAL resize (b.hManual) pins the box. An imported Draw.io
     // height is treated as a MINIMUM, as before — otherwise every imported block
     // would be squashed to its original (often tiny) size and clip its text.
     if (typeof b.h === 'number' && b.h > 40) {
-      const hh = Math.min(Math.max(b.h, 40), 600);
+      const hh = b.hManual ? b.h : Math.min(Math.max(b.h, 40), 600);
       node.style.minHeight = hh + 'px';
       if (b.hManual) {
+        // Overrides the .cv-node max-height:280px cap — a pinned box is the box.
         node.style.height = hh + 'px';
         node.style.maxHeight = hh + 'px';
       }
@@ -4069,10 +4146,178 @@ function csBlockBox(b) {
   // A measured size always wins: it is what the user actually sees on screen.
   if (typeof b._mw === 'number' && b._mw > 20) w = b._mw;
   if (typeof b._mh === 'number' && b._mh > 20) h = b._mh;
+  // Pinned Draw.io geometry wins over every heuristic AND over the measured DOM
+  // size: the import promised these exact numbers and the anchors are fractions
+  // of them.
+  if (b.wManual && typeof b.w === 'number' && b.w > 0) w = b.w;
+  if (b.hManual && typeof b.h === 'number' && b.h > 0) h = b.h;
   const x = b.x || 0, y = b.y || 0;
   return { x, y, w, h, cx: x + w / 2, cy: y + h / 2, type: b.type };
 }
+
+// ═══════════════════════════════════════════════════════════════
+// DRAW.IO-FAITHFUL EDGE ROUTING
+// Reproduces the source diagram's arrow instead of inventing a new route:
+// honours exitX/exitY + entryX/entryY anchors, absolute waypoints and the
+// orthogonal corner ORDER (Draw.io turns along the exit direction first —
+// the old router always went vertical-first, which is why arrows cut back
+// across their own block).
+// ═══════════════════════════════════════════════════════════════
+const CS_DIO_JUT = 20;   // Draw.io's default jetty/stub before the first turn
+
+// Which side of the box a perimeter point sits on. Normalising by half-size
+// keeps a wide box from always reporting E/W.
+function csDioSide(box, p) {
+  const nx = (p.x - box.cx) / ((box.w / 2) || 1);
+  const ny = (p.y - box.cy) / ((box.h / 2) || 1);
+  return Math.abs(nx) >= Math.abs(ny) ? (nx >= 0 ? 'E' : 'W') : (ny >= 0 ? 'S' : 'N');
+}
+function csDioStep(p, side, len) {
+  if (side === 'N') return { x: p.x, y: p.y - len };
+  if (side === 'S') return { x: p.x, y: p.y + len };
+  if (side === 'W') return { x: p.x - len, y: p.y };
+  if (side === 'E') return { x: p.x + len, y: p.y };
+  return { x: p.x, y: p.y };
+}
+// Floating connection: Draw.io drops the endpoint on the perimeter facing the
+// next routing point (diamond faces for a decision, rectangle otherwise).
+function csDioFloat(box, toward) {
+  const dx = toward.x - box.cx, dy = toward.y - box.cy;
+  if (dx === 0 && dy === 0) return { x: box.cx, y: box.y + box.h };
+  if (box.type === 'decision') {
+    const k = 1 / (Math.abs(dx) / (box.w / 2) + Math.abs(dy) / (box.h / 2));
+    return { x: box.cx + dx * k, y: box.cy + dy * k };
+  }
+  const sx = dx === 0 ? Infinity : (box.w / 2) / Math.abs(dx);
+  const sy = dy === 0 ? Infinity : (box.h / 2) / Math.abs(dy);
+  const k = Math.min(sx, sy);
+  return { x: box.cx + dx * k, y: box.cy + dy * k };
+}
+
+function csDioRoute(from, to, br) {
+  const s = csBlockBox(from), t = csBlockBox(to);
+  const wps = (br && br.waypoints) ? br.waypoints : [];
+  const boxPt = (bx, fx, fy, dx, dy) => ({ x: bx.x + bx.w * fx + (dx || 0), y: bx.y + bx.h * fy + (dy || 0) });
+
+  const hasExit = br && br.exitX != null && br.exitY != null;
+  const hasEntry = br && br.entryX != null && br.entryY != null;
+
+  const towardEnd = wps.length ? wps[0]
+    : (hasEntry ? boxPt(t, br.entryX, br.entryY, br.entryDx, br.entryDy) : { x: t.cx, y: t.cy });
+  const towardStart = wps.length ? wps[wps.length - 1]
+    : (hasExit ? boxPt(s, br.exitX, br.exitY, br.exitDx, br.exitDy) : { x: s.cx, y: s.cy });
+
+  const start = hasExit ? boxPt(s, br.exitX, br.exitY, br.exitDx, br.exitDy) : csDioFloat(s, towardEnd);
+  const end = hasEntry ? boxPt(t, br.entryX, br.entryY, br.entryDx, br.entryDy) : csDioFloat(t, towardStart);
+
+  const sSide = csDioSide(s, start);
+  const eSide = csDioSide(t, end);
+
+  const poly = [start];
+  let cur = csDioStep(start, sSide, CS_DIO_JUT);
+  poly.push(cur);
+
+  const endStub = csDioStep(end, eSide, CS_DIO_JUT);
+  let chain = wps.concat([endStub]);
+
+  // A free orthogonal edge between two opposite sides turns HALFWAY between the
+  // blocks in Draw.io. Without this the corner lands 20px before the target and
+  // the whole picture reads differently.
+  if (!wps.length) {
+    const horizPair = (sSide === 'E' && eSide === 'W') || (sSide === 'W' && eSide === 'E');
+    const vertPair = (sSide === 'S' && eSide === 'N') || (sSide === 'N' && eSide === 'S');
+    if (horizPair) {
+      const forward = (sSide === 'E') ? (endStub.x > cur.x) : (endStub.x < cur.x);
+      if (forward) {
+        const mid = (cur.x + endStub.x) / 2;
+        chain = [{ x: mid, y: cur.y }, { x: mid, y: endStub.y }, endStub];
+      }
+    } else if (vertPair) {
+      const forward = (sSide === 'S') ? (endStub.y > cur.y) : (endStub.y < cur.y);
+      if (forward) {
+        const mid = (cur.y + endStub.y) / 2;
+        chain = [{ x: cur.x, y: mid }, { x: endStub.x, y: mid }, endStub];
+      }
+    }
+  }
+  // First leg continues in the exit direction, then corners alternate.
+  let horizFirst = (sSide === 'E' || sSide === 'W');
+
+  chain.forEach((p, i) => {
+    // Approach the last stub so the arrow enters along eSide.
+    if (i === chain.length - 1) horizFirst = (eSide === 'E' || eSide === 'W');
+    const dx = Math.abs(p.x - cur.x), dy = Math.abs(p.y - cur.y);
+    if (dx > 1 && dy > 1) {
+      poly.push(horizFirst ? { x: p.x, y: cur.y } : { x: cur.x, y: p.y });
+      horizFirst = !horizFirst;
+    } else if (dx > 1) horizFirst = false;
+    else if (dy > 1) horizFirst = true;
+    poly.push(p);
+    cur = p;
+  });
+  poly.push(end);
+
+  // Drop duplicate and collinear points so corner rounding behaves.
+  const out = [];
+  poly.forEach(p => {
+    const l = out[out.length - 1];
+    if (!l || Math.abs(l.x - p.x) > 0.5 || Math.abs(l.y - p.y) > 0.5) out.push(p);
+  });
+  for (let i = 1; i < out.length - 1;) {
+    const a = out[i - 1], b = out[i], c = out[i + 1];
+    const collinear = (Math.abs(a.x - b.x) < 0.5 && Math.abs(b.x - c.x) < 0.5) ||
+                      (Math.abs(a.y - b.y) < 0.5 && Math.abs(b.y - c.y) < 0.5);
+    if (collinear) out.splice(i, 1); else i++;
+  }
+  return { start, end, poly: out, sSide, eSide };
+}
+
+function csDioPath(pts, rounded) {
+  if (!pts || pts.length < 2) return '';
+  if (!rounded) return 'M' + pts.map(p => p.x + ',' + p.y).join(' L');
+  const R = 10;
+  let d = 'M' + pts[0].x + ',' + pts[0].y;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p = pts[i], a = pts[i - 1], c = pts[i + 1];
+    const l1 = Math.hypot(p.x - a.x, p.y - a.y), l2 = Math.hypot(c.x - p.x, c.y - p.y);
+    const r = Math.min(R, l1 / 2, l2 / 2);
+    if (r < 1) { d += ' L' + p.x + ',' + p.y; continue; }
+    d += ' L' + (p.x + (a.x - p.x) / l1 * r) + ',' + (p.y + (a.y - p.y) / l1 * r);
+    d += ' Q' + p.x + ',' + p.y + ' ' + (p.x + (c.x - p.x) / l2 * r) + ',' + (p.y + (c.y - p.y) / l2 * r);
+  }
+  const last = pts[pts.length - 1];
+  return d + ' L' + last.x + ',' + last.y;
+}
+
+// Point at a fraction of the polyline length + its normal — used to place the
+// caption where Draw.io places it (t along the edge, y = perpendicular offset).
+function csPolyAt(pts, frac) {
+  const segs = [];
+  let total = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const L = Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+    segs.push(L); total += L;
+  }
+  if (!total) return { x: pts[0].x, y: pts[0].y, nx: 0, ny: -1 };
+  let want = Math.max(0, Math.min(1, frac)) * total;
+  for (let i = 0; i < segs.length; i++) {
+    if (want <= segs[i] || i === segs.length - 1) {
+      const a = pts[i], b = pts[i + 1], L = segs[i] || 1;
+      const k = segs[i] ? want / segs[i] : 0;
+      return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, nx: -(b.y - a.y) / L, ny: (b.x - a.x) / L };
+    }
+    want -= segs[i];
+  }
+  return { x: pts[0].x, y: pts[0].y, nx: 0, ny: -1 };
+}
+
 function csEdgeGeom(from, to, branch) {
+  // Imported edges keep their Draw.io geometry, so bend-editing and hit-testing
+  // work against the SAME polyline the user sees.
+  if (branch && branch._dio) {
+    const r = csDioRoute(from, to, branch);
+    return { start: r.start, end: r.end, poly: r.poly };
+  }
   const s = csBlockBox(from), t = csBlockBox(to);
   const wps = (branch && branch.waypoints) || [];
   const boxPoint = (bx, fx, fy) => ({ x: bx.x + bx.w * fx, y: bx.y + bx.h * fy });
@@ -4111,6 +4356,7 @@ function csOrthoD(points) {
   return d;
 }
 function csEdgeD(from, to, branch) {
+  if (branch && branch._dio) return csDioPath(csDioRoute(from, to, branch).poly, branch.rounded);
   return csOrthoD(csEdgeGeom(from, to, branch).poly);
 }
 function csNearestSeg(poly, P) {
@@ -4152,7 +4398,13 @@ function csUpdateEdgeLive(ef, et) {
 function csStraightenEdge() {
   if (!canvasState.selEdge) return;
   const br = csGetBranch(canvasState.selEdge.from, canvasState.selEdge.to);
-  if (br && br.waypoints) { snapshot('Выпрямление стрелки'); br.waypoints = undefined; canvasRender(); saveToStorage(); renderCanvasSidebar(null); }
+  if (br && (br.waypoints || br._dio)) {
+    snapshot('Выпрямление стрелки');
+    br.waypoints = undefined; br._dio = undefined;
+    br.exitX = br.exitY = br.entryX = br.entryY = undefined;
+    br.lblGeom = undefined;
+    canvasRender(); saveToStorage(); renderCanvasSidebar(null);
+  }
 }
 
 function buildCanvasEdges(blocks, opts = {}) {
@@ -4172,28 +4424,9 @@ function buildCanvasEdges(blocks, opts = {}) {
     return 200;
   };
 
-  const boxOf = (b) => {
-    let w;
-    if (typeof b.w === 'number' && b.w > 40) {
-      w = Math.min(Math.max(b.w, 120), 600);
-    } else {
-      const titleLen = (b.title || '').length;
-      const bodyLen = (b.ru || b.uz || '').length;
-      const contentLen = Math.max(titleLen * 1.5, bodyLen);
-      if (contentLen > 260) w = 300;
-      else if (contentLen > 160) w = 270;
-      else if (contentLen > 90) w = 240;
-      else if (contentLen > 40) w = 210;
-      else w = 180;
-      if (b.type === 'decision') w = Math.min(w, 300);
-      if (b.type === 'start' || b.type === 'end') w = Math.min(w, 200);
-    }
-    let h;
-    if (typeof b.h === 'number' && b.h > 40) h = Math.min(Math.max(b.h, 40), 600);
-    else h = approxH(b);
-    const x = b.x || 0, y = b.y || 0;
-    return { x, y, w, h, cx: x + w / 2, cy: y + h / 2, type: b.type };
-  };
+  // Single source of truth for block geometry — csBlockBox already accounts for
+  // the measured DOM size and for pinned Draw.io dimensions.
+  const boxOf = (b) => csBlockBox(b);
   const boxPoint = (box, fx, fy) => ({ x: box.x + box.w * fx, y: box.y + box.h * fy });
   const anchorToward = (box, target) => {
     const dx = target.x - box.cx, dy = target.y - box.cy;
@@ -4295,11 +4528,50 @@ function buildCanvasEdges(blocks, opts = {}) {
 
   const drawEdge = (from, to, label, color, sourceIdx, sourceTotal, targetIdx, targetTotal, branch) => {
     if (!from || !to) return;
-    const fh = approxH(from);
 
-    // ── Selected edge OR edge with manual waypoints -> editable polyline ──
     const isSelEdge = canvasState.selEdge && canvasState.selEdge.from === from.id && canvasState.selEdge.to === to.id;
     const hasWps = branch && branch.waypoints && branch.waypoints.length;
+
+    // ── Imported Draw.io edge -> reproduce the source geometry exactly ──
+    if (branch && branch._dio) {
+      const r = csDioRoute(from, to, branch);
+      const dp = csDioPath(r.poly, branch.rounded);
+      const mk = colorToMarkerId[color] || colorToMarkerId[BRANCH_COLOR_DEFAULT];
+      const sw = (typeof branch.strokeWidth === 'number' && branch.strokeWidth > 0) ? branch.strokeWidth : 1.8;
+      const dash = branch.dashed
+        ? ' stroke-dasharray="' + (branch.dashPattern ? branch.dashPattern.replace(/\s+/g, ' ') : '6 4') + '"'
+        : '';
+      svg += `<path d="${dp}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit" data-ef="${from.id}" data-et="${to.id}" style="pointer-events:stroke;cursor:pointer;"/>`;
+      svg += `<path d="${dp}" data-from="${from.id}" data-to="${to.id}" data-ef="${from.id}" data-et="${to.id}" stroke="${isSelEdge ? '#2563eb' : color}" stroke-width="${isSelEdge ? Math.max(sw, 2.6) : sw}"${dash} fill="none" marker-end="url(#${mk})" opacity="${isSelEdge ? 1 : 0.9}"/>`;
+      if (isSelEdge) {
+        (branch.waypoints || []).forEach((pt, i) => {
+          svg += `<circle cx="${pt.x}" cy="${pt.y}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" class="edge-wp" data-ef="${from.id}" data-et="${to.id}" data-idx="${i}" style="pointer-events:all;cursor:move;"/>`;
+        });
+      }
+      if (label && showEdgeLabels) {
+        // Draw.io stores the caption as t along the edge (-1…1) plus a
+        // perpendicular offset — place it there, not at the path midpoint.
+        const lg = branch.lblGeom || {};
+        const at = csPolyAt(r.poly, ((typeof lg.t === 'number' ? lg.t : 0) + 1) / 2);
+        const off = (typeof lg.off === 'number' ? lg.off : 0);
+        const lx = at.x + at.nx * off + (lg.dx || 0);
+        const ly = at.y + at.ny * off + (lg.dy || 0);
+        const txtColor = lg.fontColor || color;
+        const lines = String(label).split('\n').map(l => l.trim()).filter(Boolean).slice(0, 4);
+        const lineH = 13;
+        const longest = Math.max(...lines.map(l => l.length), 1);
+        const bw = longest * 6.2 + 10, bh = lines.length * lineH + 6;
+        // Draw.io draws bare text; a soft plate keeps it readable over the canvas.
+        svg += `<rect x="${lx - bw / 2}" y="${ly - bh / 2}" width="${bw}" height="${bh}" rx="3" fill="${lg.bg || pillFill}" opacity="0.9"/>`;
+        lines.forEach((line, i) => {
+          const ty = ly - bh / 2 + 3 + (i + 1) * lineH - 4;
+          svg += `<text x="${lx}" y="${ty}" text-anchor="middle" font-size="10.5" font-weight="600" fill="${txtColor}">${esc(line)}</text>`;
+        });
+      }
+      return;
+    }
+
+    // ── Selected edge OR edge with manual waypoints -> editable polyline ──
     if (isSelEdge || hasWps) {
       const geom = csEdgeGeom(from, to, branch);
       const dpath = csOrthoD(geom.poly);
@@ -4436,7 +4708,7 @@ function buildCanvasEdges(blocks, opts = {}) {
     branches.forEach((br, idx) => {
       const targetBlock = byId[br.next];
       let label = br.label || '';
-      if (label && targetBlock) {
+      if (label && targetBlock && !br._dio) {
         const labelN = norm(label);
         const titleN = norm(targetBlock.title);
         if (labelN && titleN && (labelN === titleN || titleN.includes(labelN) || labelN.includes(titleN))) {
@@ -4648,6 +4920,12 @@ function initCanvasHandlers() {
       const from = csFindBlock(g.ef), to = csFindBlock(g.et);
       if (br && from && to) {
         snapshot('Изгиб стрелки');
+        if (br._dio && (!br.waypoints || !br.waypoints.length)) {
+          // Freeze the computed Draw.io route into real waypoints, so the
+          // segment index the user grabbed lines up with the array below.
+          const frozen = csDioRoute(from, to, br).poly;
+          br.waypoints = frozen.slice(1, -1).map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }));
+        }
         if (!br.waypoints) br.waypoints = [];
         const pt = csStagePoint(e);
         const seg = csNearestSeg(csEdgeGeom(from, to, br).poly, pt);
@@ -4915,7 +5193,14 @@ function resetAllRouting() {
   const d = data();
   snapshot('Перерисовка связей');
   let n = 0;
-  (d.blocks || []).forEach(b => (b.branches || []).forEach(br => { if (br.waypoints) { br.waypoints = undefined; n++; } }));
+  (d.blocks || []).forEach(b => (b.branches || []).forEach(br => {
+    if (br.waypoints || br._dio) {
+      br.waypoints = undefined; br._dio = undefined;
+      br.exitX = br.exitY = br.entryX = br.entryY = undefined;
+      br.lblGeom = undefined;
+      n++;
+    }
+  }));
   canvasRender(); // canvasRender now uses obstacle-aware channel routing
   saveToStorage();
   toast(n ? `Связи перестроены (сброшено изгибов: ${n})` : 'Связи перестроены');
@@ -5224,13 +5509,13 @@ function renderCanvasSidebar(id) {
         <div style="font-weight:700;font-size:15px;margin-bottom:10px;color:var(--tx-primary);">Стрелка выбрана</div>
         <div style="font-size:13px;color:var(--tx-secondary);line-height:1.7;">
           ${esc((fromB && (fromB.title || (fromB.ru || fromB.uz || '').replace(/\n/g, ' ').slice(0, 22))) || '?')} → ${esc((toB && (toB.title || (toB.ru || toB.uz || '').replace(/\n/g, ' ').slice(0, 22))) || '?')}<br><br>
-          Точек изгиба: <b>${nWp}</b><br><br>
+          Точек изгиба: <b>${nWp}</b>${br && br._dio ? ' · геометрия из Draw.io' : ''}<br><br>
           • Тяни <b style="color:#2563eb;">синие</b> точки — гнёшь стрелку.<br>
           • Тяни белую точку на линии — добавляешь изгиб.<br>
           • Двойной клик по синей точке — удалить.<br>
           • Esc — снять выделение.
         </div>
-        <button class="btn btn-sm btn-ghost" style="margin-top:14px;" onclick="csStraightenEdge()">Выпрямить (убрать изгибы)</button>
+        <button class="btn btn-sm btn-ghost" style="margin-top:14px;" onclick="csStraightenEdge()">${br && br._dio ? 'Пересчитать маршрут (снять геометрию Draw.io)' : 'Выпрямить (убрать изгибы)'}</button>
       </div>`;
     return;
   }
