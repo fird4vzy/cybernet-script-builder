@@ -106,7 +106,17 @@ function syncLegacyNext(b) {
 // Migrate ALL blocks in a profile; also sync legacy on save
 function ensureProfileBranches(profile) {
   if (!profile || !profile.blocks) return;
-  profile.blocks.forEach(ensureBranches);
+  profile.blocks.forEach(b => {
+    ensureBranches(b);
+    // Migration: an earlier Draw.io import pinned sizes with wManual+hManual and
+    // clipped the text. Those are SOFT sizes — the arrows use them, the node may
+    // grow past them. A hand resize sets hManual alone, so it is left untouched.
+    if (b.wManual) {
+      b.dioSize = true;
+      b.wManual = undefined;
+      b.hManual = undefined;
+    }
+  });
 }
 
 // Migrate every profile at startup
@@ -3154,10 +3164,11 @@ function parseDrawioXML(xmlString, exactGeom) {
       y: v.y,
       w: v.w,
       h: v.h,
-      // Exact mode: pin the box to the Draw.io size. Anchors are FRACTIONS of the
-      // box, so a block that grows to fit its text drags every arrow with it.
-      wManual: exactGeom || undefined,
-      hManual: exactGeom || undefined,
+      // Exact mode: the ARROWS are anchored to these exact numbers (anchors are
+      // fractions of the box). The rendered node may grow taller than h to fit
+      // its text — the arrow geometry deliberately ignores that growth, so the
+      // routing still matches the source diagram.
+      dioSize: exactGeom || undefined,
       color: (exactGeom && v.fill) ? v.fill : undefined,
       next_default: '', next_yes: '', next_no: ''
     });
@@ -3938,7 +3949,7 @@ function canvasRender() {
     if (type === 'decision') nodeW = Math.max(nodeW, 200);
     // Exact Draw.io geometry: no clamping at all, or the edge anchors (which are
     // fractions of this box) drift away from the source diagram.
-    if (b.wManual && typeof b.w === 'number' && b.w > 0) nodeW = b.w;
+    if ((b.wManual || b.dioSize) && typeof b.w === 'number' && b.w > 0) nodeW = b.w;
     node.style.width = nodeW + 'px';
     // Height: only a MANUAL resize (b.hManual) pins the box. An imported Draw.io
     // height is treated as a MINIMUM, as before — otherwise every imported block
@@ -3947,10 +3958,17 @@ function canvasRender() {
       const hh = b.hManual ? b.h : Math.min(Math.max(b.h, 40), 600);
       node.style.minHeight = hh + 'px';
       if (b.hManual) {
-        // Overrides the .cv-node max-height:280px cap — a pinned box is the box.
+        // An explicit manual resize really does clamp the box shut.
         node.style.height = hh + 'px';
         node.style.maxHeight = hh + 'px';
       }
+    }
+    if (b.dioSize && !b.hManual) {
+      // Draw.io height is a MINIMUM. Lifting the .cv-node max-height:280px cap
+      // lets a long block show all of its text instead of clipping it; the
+      // arrows stay anchored to the original height either way.
+      node.style.minHeight = (typeof b.h === 'number' && b.h > 0 ? b.h : 60) + 'px';
+      node.style.maxHeight = 'none';
     }
     if (b.color) {
       node.style.background = b.color;
@@ -3958,12 +3976,34 @@ function canvasRender() {
       const isDark = isColorDark(b.color);
       if (isDark) node.classList.add('cv-node-dark');
     }
+    // The head already shows the first line — repeating it in the body wastes a
+    // line in every imported block (and reads as "robot1 / robot1").
+    const headText = (lang === 'en' && b.enTitle ? b.enTitle : (b.title || ''));
+    let bodyText = text || '';
+    const ht = headText.trim();
+    if (ht && bodyText && !/[…]$/.test(ht)) {
+      const bt = bodyText.trim();
+      if (bt === ht) bodyText = '';
+      else if (bt.startsWith(ht)) bodyText = bt.slice(ht.length).replace(/^[\s:—–-]+/, '');
+    }
+    // Imported boxes are sized for Draw.io's small text and have no separate
+    // header strip, so scale type/padding to the box and let the title wrap
+    // fully instead of being clamped to two lines.
+    let headStyle = '', titleStyle = '', bodyStyle = '';
+    if (b.dioSize) {
+      const tf = nodeW < 140 ? 10 : nodeW < 200 ? 11 : 12;
+      const bf = nodeW < 140 ? 9.5 : nodeW < 200 ? 10 : 11;
+      const pv = nodeW < 140 ? 4 : 6, ph = nodeW < 140 ? 6 : 8;
+      headStyle = ` style="padding:${pv}px ${ph}px;min-height:0;"`;
+      titleStyle = ` style="font-size:${tf}px;-webkit-line-clamp:unset;display:block;overflow:visible;"`;
+      bodyStyle = ` style="padding:${pv}px ${ph}px;font-size:${bf}px;line-height:1.35;overflow:visible;"`;
+    }
     node.innerHTML = `
       ${hasWarn ? '<div class="cv-node-warn" title="Есть проблема — откройте вкладку «Валидация»">!</div>' : ''}
-      <div class="cv-node-head" title="${esc(b.id)}">
-        <div class="cv-node-title">${esc(lang === 'en' && b.enTitle ? b.enTitle : (b.title || ''))}</div>
+      <div class="cv-node-head"${headStyle} title="${esc(b.id)}">
+        <div class="cv-node-title"${titleStyle}>${esc(headText)}</div>
       </div>
-      ${showText && text ? `<div class="cv-node-body">${esc(text)}</div>` : ''}
+      ${showText && bodyText ? `<div class="cv-node-body"${bodyStyle}>${esc(bodyText)}</div>` : ''}
       <div class="cv-resize" title="Потяните, чтобы изменить размер блока"></div>
     `;
     stage.appendChild(node);
@@ -4149,8 +4189,8 @@ function csBlockBox(b) {
   // Pinned Draw.io geometry wins over every heuristic AND over the measured DOM
   // size: the import promised these exact numbers and the anchors are fractions
   // of them.
-  if (b.wManual && typeof b.w === 'number' && b.w > 0) w = b.w;
-  if (b.hManual && typeof b.h === 'number' && b.h > 0) h = b.h;
+  if ((b.wManual || b.dioSize) && typeof b.w === 'number' && b.w > 0) w = b.w;
+  if ((b.hManual || b.dioSize) && typeof b.h === 'number' && b.h > 0) h = b.h;
   const x = b.x || 0, y = b.y || 0;
   return { x, y, w, h, cx: x + w / 2, cy: y + h / 2, type: b.type };
 }
@@ -7777,6 +7817,7 @@ ${JSON.stringify(textMap, null, 1)}`;
             w: b.w,
             h: b.h,
             hManual: b.hManual,
+            dioSize: b.dioSize,
             branches: (b.branches || []).map(br => ({
               id: branchId(),
               label: br.label || '',
