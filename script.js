@@ -3772,9 +3772,9 @@ function canvasRender() {
   // Clear and render
   stage.innerHTML = '';
 
-  // Edges SVG layer
-  const edgesSvg = buildCanvasEdges(d.blocks, { obstacleAware: true });
-  stage.insertAdjacentHTML('beforeend', edgesSvg);
+  // NOTE: edges are drawn AFTER the nodes exist, so they can be anchored to the
+  // blocks' REAL rendered sizes instead of estimates (a type change resizes a node,
+  // and estimate-based arrows used to miss until the next redraw).
 
   // ─── Title header card on canvas (if meta filled) ───
   const meta = d.meta || {};
@@ -3866,6 +3866,15 @@ function canvasRender() {
     stage.appendChild(node);
     attachNodeHandlers(node, b.id);
   });
+
+  // Measure what was actually rendered, then draw the edges from those numbers.
+  // offsetWidth/Height are layout pixels (zoom is a CSS transform on a parent),
+  // so they match the coordinate space the edges are computed in.
+  d.blocks.forEach(b => {
+    const el = stage.querySelector(`.cv-node[data-id="${cssEscapeId(b.id)}"]`);
+    if (el) { b._mw = el.offsetWidth; b._mh = el.offsetHeight; }
+  });
+  stage.insertAdjacentHTML('afterbegin', buildCanvasEdges(d.blocks, { obstacleAware: true }));
 
   // Apply zoom/pan
   applyCanvasTransform();
@@ -4005,6 +4014,11 @@ function clearPathHighlight(updateSelection = true) {
 // ═══════════════════════════════════════════════════════════════
 // MANUAL EDGE ROUTING — shared geometry + live editing helpers
 // ═══════════════════════════════════════════════════════════════
+// ids are sanitized to [A-Za-z0-9_-], but stay safe for querySelector anyway
+function cssEscapeId(id) {
+  const s = String(id == null ? '' : id);
+  return (window.CSS && CSS.escape) ? CSS.escape(s) : s.replace(/[^A-Za-z0-9_-]/g, '\\$&');
+}
 function csBlockBox(b) {
   let w;
   if (typeof b.w === 'number' && b.w > 40) {
@@ -4026,6 +4040,9 @@ function csBlockBox(b) {
   else if (b.type === 'start' || b.type === 'end') h = 60;
   else { const t = (b.ru || b.uz || '').length; h = t < 30 ? 80 : t < 80 ? 110 : t < 160 ? 150 : 200; }
   if (b.type === 'decision') w = Math.max(w, 200); // keep diamonds readable (matches canvasRender)
+  // A measured size always wins: it is what the user actually sees on screen.
+  if (typeof b._mw === 'number' && b._mw > 20) w = b._mw;
+  if (typeof b._mh === 'number' && b._mh > 20) h = b._mh;
   const x = b.x || 0, y = b.y || 0;
   return { x, y, w, h, cx: x + w / 2, cy: y + h / 2, type: b.type };
 }
@@ -5861,6 +5878,7 @@ function saveToStorage() {
     const cleaned = {};
     Object.entries(profiles).forEach(([name, p]) => {
       const { _migrated, ...rest } = p;
+      if (Array.isArray(rest.blocks)) rest.blocks = rest.blocks.map(({ _mw, _mh, ...b }) => b);
       cleaned[name] = rest;
     });
     const payload = {
