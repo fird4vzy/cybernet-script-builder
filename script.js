@@ -1507,10 +1507,36 @@ function buildStaticCanvasSVG(lang, scale, theme) {
     return { x: bx.x, y: bx.y, w: bx.w, h: Math.max(bx.h, needed) };
   };
 
+  // Blocks grow taller here than on canvas (a PDF cannot scroll), so a tall block
+  // can swallow the one below it. Push colliding blocks down just enough to clear,
+  // keeping the original order and columns intact.
+  const GAP = 24;
+  const geoms = new Map(blocks.map(b => [b.id, geomOf(b)]));
+  const order = blocks.slice().sort((a, b) => (geoms.get(a.id).y - geoms.get(b.id).y) || (geoms.get(a.id).x - geoms.get(b.id).x));
+  for (let pass = 0; pass < 4; pass++) {
+    let moved = false;
+    for (let i = 0; i < order.length; i++) {
+      const A = geoms.get(order[i].id);
+      for (let j = i + 1; j < order.length; j++) {
+        const B = geoms.get(order[j].id);
+        const overlapX = A.x < B.x + B.w && B.x < A.x + A.w;
+        if (!overlapX) continue;
+        const overlapY = A.y < B.y + B.h && B.y < A.y + A.h;
+        if (!overlapY) continue;
+        const shift = (A.y + A.h + GAP) - B.y;
+        if (shift > 0) { B.y += shift; moved = true; }
+      }
+    }
+    if (!moved) break;
+  }
+  const geomFinal = (b) => geoms.get(b.id) || geomOf(b);
+  // Edges must follow the adjusted layout, otherwise arrows point at old positions.
+  const layoutBlocks = blocks.map(b => { const g = geomFinal(b); return { ...b, x: g.x, y: g.y, w: g.w, h: g.h, _mw: g.w, _mh: g.h }; });
+
   // Compute bounds
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   blocks.forEach(b => {
-    const g = geomOf(b);
+    const g = geomFinal(b);
     minX = Math.min(minX, g.x);
     minY = Math.min(minY, g.y);
     maxX = Math.max(maxX, g.x + g.w);
@@ -1528,7 +1554,7 @@ function buildStaticCanvasSVG(lang, scale, theme) {
   const offX = -minX + PAD;
   const offY = -minY + PAD + headerH;
 
-  const edgesSvg = buildCanvasEdges(blocks, { obstacleAware: true });
+  const edgesSvg = buildCanvasEdges(layoutBlocks, { obstacleAware: true });
   const edgesInner = edgesSvg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
 
   const dispW = width * scale;
@@ -1562,7 +1588,7 @@ function buildStaticCanvasSVG(lang, scale, theme) {
   svg += edgesInner;
 
   blocks.forEach(b => {
-    const g = geomOf(b);
+    const g = geomFinal(b);
     const x = g.x, y = g.y, h = g.h, NW = g.w; // real per-block size (matches canvas)
     const type = b.type || 'normal';
     const title = (lang === 'en' && b.enTitle) ? b.enTitle : (b.title || '');
