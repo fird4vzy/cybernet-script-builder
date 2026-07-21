@@ -1494,6 +1494,11 @@ function buildStaticCanvasSVG(lang, scale, theme) {
   const geomOf = (b) => {
     const bx = csBlockBox(b);
     const type = b.type || 'normal';
+    // Imported Draw.io layout: mirror the canvas exactly — same width, and the
+    // height the node actually grew to on screen. What you see is what prints.
+    if (b.dioSize && typeof b._mh === 'number' && b._mh > 20) {
+      return { x: bx.x, y: bx.y, w: (typeof b._mw === 'number' && b._mw > 20) ? b._mw : bx.w, h: b._mh };
+    }
     if (type === 'start' || type === 'end') return { x: bx.x, y: bx.y, w: bx.w, h: bx.h };
     // Mirror renderStaticNode exactly: header strip is a FIXED 28px, accent bar is
     // 6px on question/warn nodes, and the body fits via floor((h-28-14)/14) lines.
@@ -1523,7 +1528,10 @@ function buildStaticCanvasSVG(lang, scale, theme) {
   const GAP = 24;
   const geoms = new Map(blocks.map(b => [b.id, geomOf(b)]));
   const order = blocks.slice().sort((a, b) => (geoms.get(a.id).y - geoms.get(b.id).y) || (geoms.get(a.id).x - geoms.get(b.id).x));
-  for (let pass = 0; pass < 4; pass++) {
+  // A pinned Draw.io layout is authoritative — shoving blocks down to clear an
+  // overlap would rewrite the very arrangement the import preserved.
+  const pinnedLayout = blocks.length > 0 && blocks.every(b => b.dioSize && typeof b._mh === 'number' && b._mh > 20);
+  for (let pass = 0; pass < (pinnedLayout ? 0 : 4); pass++) {
     let moved = false;
     for (let i = 0; i < order.length; i++) {
       const A = geoms.get(order[i].id);
@@ -1603,15 +1611,27 @@ function buildStaticCanvasSVG(lang, scale, theme) {
     const type = b.type || 'normal';
     const title = (lang === 'en' && b.enTitle) ? b.enTitle : (b.title || '');
     if (showBoth) {
-      svg += renderStaticNodeBoth(b, x, y, NW, h, type, title, interpolate(b.ru || '', d.vars), interpolate(b.uz || '', d.vars), T);
+      svg += renderStaticNodeBoth(b, x, y, NW, h, type, title, csDedupBody(title, interpolate(b.ru || '', d.vars)), csDedupBody(title, interpolate(b.uz || '', d.vars)), T);
     } else {
-      const text = interpolate(b[lang] || b.ru || b.uz || '', d.vars);
+      const text = csDedupBody(title, interpolate(b[lang] || b.ru || b.uz || '', d.vars));
       svg += renderStaticNode(b, x, y, NW, h, type, title, text, T);
     }
   });
 
   svg += '</g></svg>';
   return svg;
+}
+
+// The head already prints the first line; repeating it in the body wastes a
+// line in every imported block. Skipped when the title was truncated with '…',
+// because then the body would be cut mid-word.
+function csDedupBody(title, body) {
+  const ht = (title || '').trim();
+  if (!ht || !body || /…$/.test(ht)) return body;
+  const bt = String(body).trim();
+  if (bt === ht) return '';
+  if (bt.startsWith(ht)) return bt.slice(ht.length).replace(/^[\s:—–-]+/, '');
+  return body;
 }
 
 // Render one block as static SVG matching Canvas visual style
@@ -2057,7 +2077,19 @@ function exportFlowchartPDF() {
     const lbl = p.L === 'uz' ? "UZ · O'ZBEK" : (p.L === 'en' ? 'EN · ENGLISH' : 'RU · РУССКИЙ');
     html += `<div class="pg">${langPages.length > 1 ? `<div class="lang-label">${lbl}</div>` : ''}${p.svgStr}</div>`;
   });
-  html += `<script>window.onload = () => setTimeout(() => window.print(), 400);<\/script></body></html>`;
+  // Auto-printing a huge vector page is what leaves the browser stuck on
+  // "Сохранение…" with no way back. Past a threshold, hand control over.
+  const heavy = html.length > 2500000 || (pageW * pageH) > 40000000;
+  html += `<div class="toolbar"><button onclick="window.print()">Печать / Сохранить как PDF</button>`;
+  if (heavy) html += `<span class="hint">Схема большая — генерация PDF может занять до минуты. Если браузер зависнет, используйте растровый PDF.</span>`;
+  html += `</div><style>
+    .toolbar { position: fixed; top: 12px; right: 16px; display: flex; align-items: center; gap: 10px; font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; z-index: 9; }
+    .toolbar button { font: inherit; font-size: 13px; font-weight: 600; padding: 9px 16px; border-radius: 8px; border: 0; background: #4F46E5; color: #fff; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.3); }
+    .toolbar .hint { font-size: 12px; color: #fff; max-width: 260px; line-height: 1.4; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
+    @media print { .toolbar { display: none; } }
+  </style>`;
+  if (!heavy) html += `<script>window.onload = () => setTimeout(() => window.print(), 600);<\/script>`;
+  html += `</body></html>`;
 
   const win = window.open('', '_blank');
   if (!win) {
@@ -2065,9 +2097,19 @@ function exportFlowchartPDF() {
     exportFlowchartPDFRaster();
     return;
   }
-  win.document.write(html);
-  win.document.close();
-  toast('В окне печати: Принтер → «Сохранить как PDF». PDF будет векторным');
+  // document.write() parses a multi-megabyte string on the main thread and can
+  // freeze the tab outright. A Blob URL is streamed by the browser instead.
+  try {
+    const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+    win.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 120000);
+  } catch (err) {
+    win.document.write(html);
+    win.document.close();
+  }
+  toast(heavy
+    ? 'Схема большая — нажмите «Печать» в открывшемся окне, затем Принтер → «Сохранить как PDF»'
+    : 'В окне печати: Принтер → «Сохранить как PDF». PDF будет векторным');
 }
 
 function exportFlowchartPDFRaster() {
