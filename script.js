@@ -3106,6 +3106,41 @@ function parseDrawioXML(xmlString, exactGeom) {
   const mainPage = pageRu || pages[0];
   const otherPage = pageUz || (pages.length > 1 && pages[1] !== mainPage ? pages[1] : null);
 
+  // ──── Fold free-floating caption cells into the block they sit on ────
+  // Draw.io/Visio often drops an id caption on TOP of a shape instead of inside
+  // it. Those are not dialog steps: they carry no edges and they lie fully
+  // within another block's box.
+  const foldFreeCaptions = (page) => {
+    if (!page || !page.vertices) return;
+    const linked = new Set();
+    (page.edges || []).forEach(e => { linked.add(e.source); linked.add(e.target); });
+    const drop = [];
+    page.vertices.forEach((v, id) => {
+      if (linked.has(id)) return;
+      if (!(v.title || '').trim()) return;
+      const st = v.styleStr || '';
+      if (!(/(?:^|;)\s*text\s*;/.test(st) || st.startsWith('text;'))) return;
+      let host = null;
+      page.vertices.forEach((o, oid) => {
+        if (host || oid === id) return;
+        const area = (o.w || 0) * (o.h || 0), own = (v.w || 0) * (v.h || 0);
+        if (area <= own) return;   // the host must actually be the bigger shape
+        // FULL containment, not just the centre: a caption that merely overlaps
+        // a neighbour would otherwise be filed under the wrong block.
+        if (v.x >= o.x && v.y >= o.y &&
+            v.x + (v.w || 0) <= o.x + (o.w || 0) &&
+            v.y + (v.h || 0) <= o.y + (o.h || 0)) host = o;
+      });
+      if (host) {
+        host.title = host.title ? host.title + '\n' + v.title : v.title;
+        drop.push(id);
+      }
+    });
+    drop.forEach(id => page.vertices.delete(id));
+    return drop.length;
+  };
+  pages.forEach(foldFreeCaptions);
+
   // ──── Build lookup of UZ texts ───
   // Try by mxId first; if pages use different IDs (common in Visio→Drawio),
   // fall back to matching by relative position on the page.
@@ -3130,24 +3165,44 @@ function parseDrawioXML(xmlString, exactGeom) {
       };
       const ruB = normBounds(mainPage);
       const uzB = normBounds(otherPage);
-      // List of UZ blocks with normalized coords
-      const uzList = [];
-      otherPage.vertices.forEach((v, id) => {
-        uzList.push({ id, nx: v.x - uzB.minX, ny: v.y - uzB.minY, title: v.title, used: false });
+      const ruList = [], uzList = [];
+      mainPage.vertices.forEach((v, id) => {
+        ruList.push({ id, nx: v.x - ruB.minX, ny: v.y - ruB.minY, w: v.w || 1, h: v.h || 1 });
       });
-      uzByPosition = (ruV) => {
-        const rnx = ruV.x - ruB.minX;
-        const rny = ruV.y - ruB.minY;
-        let best = null, bestD = Infinity;
-        for (const u of uzList) {
-          if (u.used) continue;
-          const d = Math.hypot(u.nx - rnx, u.ny - rny);
-          if (d < bestD) { bestD = d; best = u; }
-        }
-        // Accept match only if reasonably close (within ~120px after normalization)
-        if (best && bestD < 120) { best.used = true; return best.title; }
-        return '';
-      };
+      otherPage.vertices.forEach((v, id) => {
+        if (v.title) uzList.push({ id, nx: v.x - uzB.minX, ny: v.y - uzB.minY, w: v.w || 1, h: v.h || 1, title: v.title });
+      });
+
+      // Score every plausible pair, then assign BEST-FIRST across the whole
+      // page. Confident pairs are locked in before the doubtful ones, so one
+      // bad guess can no longer cascade through the rest of the diagram.
+      const MAX_D = 140;
+      const pairs = [];
+      ruList.forEach(r => {
+        uzList.forEach(u => {
+          const d = Math.hypot(u.nx - r.nx, u.ny - r.ny);
+          if (d > MAX_D) return;
+          // A translated page keeps its block sizes. A box of a wildly
+          // different size is a different shape — typically a small id caption
+          // sitting near a full reply block, which is exactly the swap that
+          // put "RepeatQuestion4" inside a dialog block.
+          const wRatio = Math.max(r.w, u.w) / Math.max(1, Math.min(r.w, u.w));
+          const hRatio = Math.max(r.h, u.h) / Math.max(1, Math.min(r.h, u.h));
+          if (wRatio > 2 || hRatio > 2) return;
+          pairs.push({ rid: r.id, uid: u.id, title: u.title, score: d + (Math.abs(r.w - u.w) + Math.abs(r.h - u.h)) * 0.25 });
+        });
+      });
+      pairs.sort((a, b) => a.score - b.score);
+      const uzMatch = new Map();
+      const uzTaken = new Set();
+      pairs.forEach(p => {
+        if (uzMatch.has(p.rid) || uzTaken.has(p.uid)) return;
+        uzMatch.set(p.rid, p.title);
+        uzTaken.add(p.uid);
+      });
+      // No match is better than the wrong one — an empty UZ field is visible and
+      // fixable, a plausible-looking wrong translation is not.
+      uzByPosition = (ruV) => uzMatch.get(ruV.mxId) || '';
     }
   }
 
