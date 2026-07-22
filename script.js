@@ -7947,7 +7947,7 @@ async function generateScript() {
   showGenLoader('AI создаёт скрипт…');
 
   const sizeMap = { small: '10-15', medium: '25-35', large: '50-70', xlarge: '90-120', huge: '150-200' };
-  const blockCount = sizeMap[size] || '25-35';
+  let blockCount = sizeMap[size] || '25-35';
 
   // Determine generation mode (exact copy vs blend)
   const modeEl = document.querySelector('input[name="gs-mode"]:checked');
@@ -7966,11 +7966,13 @@ async function generateScript() {
         // USER's theme from the brief, not the reference's. scriptType (sales /
         // collection) is kept because it describes structure, not subject.
         styleNotes: r.notes || '',
-        // SKELETON ONLY. Reference TEXTS are deliberately withheld: when the
-        // model saw the эталон's ru/uz (all about "1С"), it copied that wording
-        // no matter how firmly the prompt forbade it — a hundred on-screen
-        // examples beat any instruction. Give it structure + a length hint, and
-        // there is simply nothing to copy, so it must write fresh for the theme.
+        // FULL STRUCTURE, NO TEXTS. The model must reproduce the reference's
+        // whole skeleton — every block, its position, its section, its links —
+        // and may only ADD to it, never drop blocks. Texts (ru/uz) stay withheld
+        // so the model can't copy the reference's theme (the "1С-in-credits"
+        // bug); it writes fresh speech for each block from its role + length.
+        blockCount: (getRefProfile(r)?.blocks || []).length,
+        sections: (getRefProfile(r)?.sections || []).map(sc => ({ id: sc.id, label: sc.label })),
         blocks: (getRefProfile(r)?.blocks || []).map(b => {
           const ruLen = (b.ru || '').trim().length;
           const lenHint = ruLen === 0 ? 'служебный/без речи'
@@ -7979,9 +7981,12 @@ async function generateScript() {
             : 'развёрнутая реплика';
           return {
             id: b.id,
+            sec: b.sec,          // which section — preserve the grouping
             title: b.title,      // short role label ("Молчание", "Мошенники") — a hint, not copyable speech
             intent: b.intent,
             type: b.type,
+            x: typeof b.x === 'number' ? Math.round(b.x) : undefined,   // keep layout
+            y: typeof b.y === 'number' ? Math.round(b.y) : undefined,
             textHint: lenHint,   // how long the NEW text should roughly be
             branches: (b.branches || []).map(br => ({ label: br.label, next: br.next }))
           };
@@ -7992,20 +7997,22 @@ async function generateScript() {
 
     let modeInstruction;
     if (activeRefs.length === 1 || genMode === 'exact') {
-      modeInstruction = `РЕЖИМ «СТРУКТУРА ЭТАЛОНА + СВОИ ТЕКСТЫ»:
-Ниже дан СКЕЛЕТ эталона — только структура блоков, БЕЗ текстов реплик. Тексты эталона намеренно скрыты, чтобы ты не копировал их: твоя задача — по этому каркасу написать ПОЛНОСТЬЮ НОВЫЕ реплики под тему из запроса пользователя (ниша/цель/тон).
+      modeInstruction = `РЕЖИМ «КОПИЯ СТРУКТУРЫ ЭТАЛОНА + СВОИ ТЕКСТЫ»:
+Ниже дан ПОЛНЫЙ СКЕЛЕТ эталона — все блоки, их разделы (sec), позиции (x,y), типы и связи (branches), НО без текстов реплик. Твоя задача из двух частей:
 
-ЧТО ДАЁТ СКЕЛЕТ:
-- id, title (короткая роль блока: «Молчание», «Мошенники», «Кто вы»), intent, type — что это за блок по смыслу
-- textHint — примерная длина новой реплики (короткая/средняя/развёрнутая/служебный)
-- branches (label + next) — логику ветвления и порядок блоков
-- набор интентов целиком: мошенничество, не слышно/молчание, робот?, родственник, «соедините с оператором», «кто вы/откуда», «я не давал согласие», ошиблись номером и т.п.
+1️⃣ СТРУКТУРУ повтори ПОЛНОСТЬЮ И ТОЧНО:
+- Воспроизведи ВСЕ {refBlockCount} блоков эталона. НЕ сокращай, НЕ упрощай, НЕ выкидывай блоки. Если в эталоне {refBlockCount} блоков — у тебя должно быть не меньше {refBlockCount}.
+- Сохрани те же id, sec, type, позиции x/y и связи branches (label + next) — расположение и логика путей должны совпадать с эталоном.
+- Сохрани ВСЕ интенты и все счётчики повторов (intent_2, intent_3) — это готовая проверенная логика.
+- Можешь УЛУЧШАТЬ: добавить недостающие блоки/ветки, если видишь пробел. Но только ДОБАВЛЯТЬ — не удалять существующее.
 
-ЧТО ПИШЕШЬ САМ:
-- КАЖДУЮ реплику (ru и uz) сочиняешь с нуля под тему пользователя. Ориентируйся на роль блока (title/intent) и нужную длину (textHint).
-- 🔴 Скелет может быть от эталона на ЛЮБУЮ тему (например 1С, облако, сервер). НО твой скрипт — строго про тему запроса пользователя. Ни одного слова из чужой темы: если тебе не дали тему 1С в запросе — слов «1С», «облако», «сервер», «тестовый период» быть НЕ должно.
-- Служебные блоки (textHint = «служебный/без речи») — это «Ответ клиента», «Начало», ромбы: у них нет своей речи, оставляй ru/uz как есть по смыслу роли.
-- Тон — из запроса пользователя («{tone}»).`;
+2️⃣ ТЕКСТЫ (ru и uz) напиши ПОЛНОСТЬЮ ЗАНОВО под тему пользователя:
+- Для каждого блока сочини живую реплику по его роли (title/intent) и длине (textHint).
+- 🔴 Скелет может быть от эталона на другую тему (1С, облако и т.п.). Твой скрипт — строго про тему запроса. Ни одного слова из чужой темы (никаких «1С», «облако», «сервер», «тестовый период»), если её нет в запросе пользователя.
+- Служебные блоки (textHint = «служебный/без речи»: «Ответ клиента», «Начало», ромбы) — оставь их роль как есть, без выдуманной речи.
+- Реплики — живые, продающие, в тоне «{tone}»: присоединение → аргумент по сути → мягкий возврат к цели. Без канцелярита и без повтора одной фразы в разных блоках.
+
+ИТОГ: тот же каркас, что у эталона (можно богаче), но все реплики новые и под нужную тему.`;
     } else {
       modeInstruction = `РЕЖИМ СМЕШИВАНИЯ СТРУКТУР:
 Изучи ВСЕ эталоны ниже как КАРКАСЫ. Возьми у них лучшую структуру — самый полный набор интентов, удачную логику обработки возражений со счётчиками повторов — и построй новый скелет. Тексты (ru и uz) пиши ПОЛНОСТЬЮ ЗАНОВО под тему запроса пользователя.
@@ -8014,9 +8021,16 @@ async function generateScript() {
 - Эталонные тексты — образец МАНЕРЫ и живости, не источник для копирования
 - Тон бери из запроса пользователя («{tone}»)`;
     }
-    modeInstruction = fillTemplate(modeInstruction, { tone });
+    // In exact/single mode the reference size wins over the user's dropdown —
+    // otherwise "reproduce all N blocks" fights "make 25-35 blocks".
+    const refBlockCount = activeRefs.reduce((m, r) => Math.max(m, (getRefProfile(r)?.blocks || []).length), 0);
+    modeInstruction = fillTemplate(modeInstruction, { tone, refBlockCount: String(refBlockCount || '') });
 
     referencesSection = `\n\n${modeInstruction}\n\n═══ ЭТАЛОННЫЕ СКРИПТЫ ═══\n\n${refsJson}\n\n═══ КОНЕЦ ЭТАЛОНОВ ═══`;
+    // Align the requested size to the reference so the two instructions agree.
+    if ((activeRefs.length === 1 || genMode === 'exact') && refBlockCount > 0) {
+      blockCount = String(refBlockCount);
+    }
   }
 
   const briefSection = buildBriefSection();
@@ -8042,15 +8056,21 @@ async function generateScript() {
       const refBlocks = refProfile?.blocks || [];
       if (!refBlocks.length) throw new Error('В эталоне нет блоков');
 
-      // Send AI a compact map of id→{title, ru, uz} and ask to rewrite texts only
-      const textMap = refBlocks.map(b => ({
-        id: b.id,
-        title: b.title || '',
-        ru: b.ru || '',
-        uz: b.uz || ''
-      }));
+      // Send AI a per-block ROLE map (NOT the reference texts). Sending the
+      // real ru/uz made the model rewrite-in-place and drag the reference's
+      // theme along (the "1С leaks into credits" bug): it saw a paragraph about
+      // 1С and lightly edited it instead of writing fresh. Giving only the role
+      // + a length target leaves nothing to copy, so it must compose new speech.
+      const textMap = refBlocks.map(b => {
+        const ruLen = (b.ru || '').trim().length;
+        const lenHint = ruLen === 0 ? 'служебный/без речи'
+          : ruLen < 60 ? 'короткая'
+          : ruLen < 160 ? 'средняя'
+          : 'развёрнутая';
+        return { id: b.id, role: b.title || '', intent: b.intent || '', type: b.type || 'normal', len: lenHint };
+      });
 
-      const structPrompt = `Ты — эксперт по скриптам колл-центра. У тебя есть ЭТАЛОННЫЙ скрипт. Твоя задача — переписать ТОЛЬКО ТЕКСТЫ блоков (title, ru, uz) под новую сферу, СОХРАНИВ СМЫСЛ И РОЛЬ каждого блока. НЕ добавляй и НЕ удаляй блоки. НЕ меняй id.
+      const structPrompt = `Ты — эксперт по скриптам колл-центра. У тебя есть КАРКАС эталонного скрипта: список блоков с их РОЛЯМИ (role/intent/type) и нужной длиной реплики (len). Тексты эталона намеренно НЕ показаны. Твоя задача — для КАЖДОГО блока написать НОВЫЕ живые реплики (title, ru, uz) под новую сферу, опираясь на роль блока. НЕ добавляй и НЕ удаляй блоки. НЕ меняй id.
 
 НОВАЯ СФЕРА: ${niche}
 ЦЕЛЬ: ${goal}
@@ -8059,19 +8079,19 @@ async function generateScript() {
 ДОП. ТРЕБОВАНИЯ: ${extras || '(нет)'}
 
 ${briefSection ? briefSection + '\n\n' : ''}${varsSection ? varsSection + '\n\n' : ''}${learningSection ? learningSection + '\n\n' : ''}ПРАВИЛА:
-- Для каждого блока перепиши title (краткое название), ru (русский текст реплики), uz (узбекский перевод) под новую сферу
-- Узбекский (uz) — ТОЛЬКО ЛАТИНИЦА (o', g', sh, ch), кириллица запрещена
-- Если есть БРИФ КЛИЕНТА выше — конкретика (названия, условия, суммы, контакты) берётся строго из него
-- Служебные блоки («Ответ клиента», «Завершение звонка», «Молчание», «Автоответчик» и т.п.) — сохрани их роль, текст можешь оставить похожим
-- Блоки-решения и вопросы — адаптируй под новую сферу
-- Сохрани тот же тон и манеру
-- Верни СТРОГО JSON-массив: [{"id":"...","title":"...","ru":"...","uz":"..."}, ...] для ВСЕХ ${textMap.length} блоков, ничего кроме JSON
+- Для каждого блока по его role/intent сочини title (краткое название) и живую реплику ru + перевод uz — ПОЛНОСТЬЮ НОВЫЕ, под новую сферу.
+- 🔴 Каркас может быть от эталона на другую тему. Твои тексты — строго про НОВУЮ СФЕРУ выше. Ни одного слова из посторонней темы (никаких «1С», «облако», «сервер», «тестовый период», если их нет в новой сфере/брифе).
+- Длина реплики ≈ поле len (короткая/средняя/развёрнутая). Служебные (len=«служебный/без речи»: «Ответ клиента», «Завершение», «Молчание», «Автоответчик») — оставь короткую служебную подпись, без выдуманной речи.
+- Реплики живые, продающие, в тоне «${tone}»: присоединение → аргумент по сути → мягкий возврат к цели. Без канцелярита. НЕ повторяй одну фразу в разных блоках — у каждого блока свой аргумент.
+- Узбекский (uz) — ТОЛЬКО ЛАТИНИЦА (o', g', sh, ch), кириллица запрещена.
+- Если есть БРИФ КЛИЕНТА выше — конкретика (названия, условия, суммы, контакты) строго из него.
+- Верни СТРОГО JSON-массив: [{"id":"...","title":"...","ru":"...","uz":"..."}, ...] для ВСЕХ ${textMap.length} блоков, ничего кроме JSON.
 
-ЭТАЛОННЫЕ ТЕКСТЫ (${textMap.length} блоков):
+КАРКАС (${textMap.length} блоков — роли, БЕЗ текстов):
 ${JSON.stringify(textMap, null, 1)}`;
 
-      const raw = await aiGenerate(structPrompt, 'Перепиши все тексты под новую сферу и верни JSON-массив.', {
-        json: true, temperature: 0.7, maxTokens: 16000
+      const raw = await aiGenerate(structPrompt, 'Напиши новые тексты для всех блоков каркаса и верни JSON-массив.', {
+        json: true, temperature: 0.7, maxTokens: 32000
       });
       let parsed;
       try { parsed = JSON.parse(raw); } catch {
@@ -8104,16 +8124,21 @@ ${JSON.stringify(textMap, null, 1)}`;
         sections: JSON.parse(JSON.stringify(refProfile?.sections || [{ id: 's1', label: 'Основной раздел' }])),
         blocks: refBlocks.map(b => {
           const t = textById[b.id] || {};
+          // If the model didn't return this block, leave its text BLANK rather
+          // than copying the reference's — the reference is on a different theme,
+          // so its text would be an off-topic leak. A blank block is obvious and
+          // easy to fill; a wrong-theme paragraph hides in plain sight.
+          const gotText = t.ru !== undefined || t.uz !== undefined;
           return {
             id: b.id,
             sec: b.sec || 's1',
             title: t.title || b.title || '',
             intent: b.intent || '',
             type: b.type || 'normal',
-            ru: t.ru !== undefined ? t.ru : (b.ru || ''),
-            uz: t.uz !== undefined ? t.uz : (b.uz || ''),
-            aiRu: t.ru !== undefined ? t.ru : (b.ru || ''),  // remember what AI generated,
-            aiUz: t.uz !== undefined ? t.uz : (b.uz || ''),  // so a later manual edit = a training pair
+            ru: t.ru !== undefined ? t.ru : '',
+            uz: t.uz !== undefined ? t.uz : '',
+            aiRu: t.ru !== undefined ? t.ru : '',  // remember what AI generated,
+            aiUz: t.uz !== undefined ? t.uz : '',  // so a later manual edit = a training pair
             color: b.color || '',
             x: b.x,  // keep the reference's exact layout so the new script
             y: b.y,  // inherits the same clean arrangement (not a fresh auto-layout)
