@@ -1,6 +1,8 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
+const CYBERNET_BUILD = '2026-07-22-structmode-v2';
+console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
   try {
@@ -8055,6 +8057,7 @@ async function generateScript() {
       const refProfile = getRefProfile(ref);
       const refBlocks = refProfile?.blocks || [];
       if (!refBlocks.length) throw new Error('В эталоне нет блоков');
+      console.log('[Cybernet] STRUCTURE MODE v2 (skeleton, no reference texts) — blocks:', refBlocks.length);
 
       // Send AI a per-block ROLE map (NOT the reference texts). Sending the
       // real ru/uz made the model rewrite-in-place and drag the reference's
