@@ -1004,6 +1004,16 @@ function svgText(s) {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// Draw.io stores an HTML label ENTITY-ESCAPED inside the value="" attribute:
+// value="&lt;b&gt;Text&lt;/b&gt;", never value="<b>Text</b>". Writing raw HTML
+// (with its own quotes and angle brackets) produces XML that draw.io silently
+// repairs on open but that any strict re-import rejects ("disallowed
+// character"). Build the label as normal HTML with RAW text, then run it
+// through this once for the attribute.
+function drawioLabel(html) {
+  return (html || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 // ─── Wrap text into multiple <tspan> lines ────────────────────
 function svgWrapText(x, baseY, text, maxChars, lineH, attrs) {
   const words = text.split(' ');
@@ -2408,15 +2418,15 @@ function exportDrawio() {
   // ─── Title header card (company + script meta) ───
   const meta = d.meta || {};
   const titleLines = [
-    `<b style="font-size:18px;">${svgText(d.name || 'Скрипт')}</b>`,
-    meta.version ? `<b>Версия:</b> ${svgText(meta.version)}` : '',
-    meta.author ? `<b>Автор:</b> ${svgText(meta.author)}` : '',
-    meta.description ? `<b>Описание:</b> ${svgText(meta.description)}` : '',
-    meta.goal ? `<b>Цель:</b> ${svgText(meta.goal)}` : '',
+    `<b style="font-size:18px;">${d.name || 'Скрипт'}</b>`,
+    meta.version ? `<b>Версия:</b> ${meta.version}` : '',
+    meta.author ? `<b>Автор:</b> ${meta.author}` : '',
+    meta.description ? `<b>Описание:</b> ${meta.description}` : '',
+    meta.goal ? `<b>Цель:</b> ${meta.goal}` : '',
     `<i style="color:#5b8cff;">Cybernet AI · Конструктор скриптов</i>`
   ].filter(Boolean).join('<br>');
   // Place above the diagram (negative Y so it sits on top)
-  cells += `<mxCell id="title_header" value="${titleLines}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1e3a8a;strokeWidth=2;align=left;verticalAlign=top;spacing=14;fontSize=12;fontColor=#1e3a8a;" vertex="1" parent="1"><mxGeometry x="${PAD}" y="${PAD - 220}" width="380" height="180" as="geometry"/></mxCell>`;
+  cells += `<mxCell id="title_header" value="${drawioLabel(titleLines)}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1e3a8a;strokeWidth=2;align=left;verticalAlign=top;spacing=14;fontSize=12;fontColor=#1e3a8a;" vertex="1" parent="1"><mxGeometry x="${PAD}" y="${PAD - 220}" width="380" height="180" as="geometry"/></mxCell>`;
 
   d.blocks.forEach(b => {
     if (!pos[b.id]) return;
@@ -2432,10 +2442,10 @@ function exportDrawio() {
     const ruPart = (b.ru || '').trim();
     const uzPart = (b.uz || '').trim();
     let bodyLines = [];
-    if (titlePart) bodyLines.push('<b>' + svgText(titlePart) + '</b>');
-    if (ruPart) bodyLines.push(svgText(ruPart));
-    if (uzPart) bodyLines.push('<i>' + svgText(uzPart) + '</i>');
-    const txt = bodyLines.join('<br>');
+    if (titlePart) bodyLines.push('<b>' + titlePart + '</b>');
+    if (ruPart) bodyLines.push(ruPart);
+    if (uzPart) bodyLines.push('<i>' + uzPart + '</i>');
+    const txt = drawioLabel(bodyLines.join('<br>'));
     // Auto-height by content length so text fits
     const totalLen = titlePart.length + ruPart.length + uzPart.length;
     let cellH = NH;
@@ -2462,7 +2472,7 @@ function exportDrawio() {
       const pts = (br && br.waypoints && br.waypoints.length)
         ? `<Array as="points">${br.waypoints.map(p => `<mxPoint x="${Math.round(p.x)}" y="${Math.round(p.y)}"/>`).join('')}</Array>`
         : '';
-      cells += `<mxCell id="${cellId}" value="${svgText(label || '')}" style="edgeStyle=orthogonalEdgeStyle;rounded=${rnd};html=1;${anchors}strokeColor=${color};fontSize=10;fontStyle=1;" edge="1" parent="1" source="${from}" target="${to}"><mxGeometry relative="1" as="geometry">${pts}</mxGeometry></mxCell>`;
+      cells += `<mxCell id="${cellId}" value="${drawioLabel(label || '')}" style="edgeStyle=orthogonalEdgeStyle;rounded=${rnd};html=1;${anchors}strokeColor=${color};fontSize=10;fontStyle=1;" edge="1" parent="1" source="${from}" target="${to}"><mxGeometry relative="1" as="geometry">${pts}</mxGeometry></mxCell>`;
       cellId++;
     };
     // Prefer modern branches[]; fall back to legacy next_* fields
@@ -7946,19 +7956,31 @@ async function generateScript() {
       const compact = {
         name: r.name,
         scriptType: REF_TYPE_LABELS[r.scriptType] || r.scriptType || '',
-        niche: r.niche || '',
-        goal: r.goal || '',
-        tone: r.tone || '',
+        // niche/goal/tone of the ЭТАЛОН are intentionally NOT sent: they name the
+        // reference's own theme (e.g. "1С"), and the new script must follow the
+        // USER's theme from the brief, not the reference's. scriptType (sales /
+        // collection) is kept because it describes structure, not subject.
         styleNotes: r.notes || '',
-        blocks: (getRefProfile(r)?.blocks || []).map(b => ({
-          id: b.id,
-          title: b.title,
-          intent: b.intent,
-          type: b.type,
-          ru: b.ru,
-          uz: b.uz,
-          branches: (b.branches || []).map(br => ({ label: br.label, next: br.next }))
-        }))
+        // SKELETON ONLY. Reference TEXTS are deliberately withheld: when the
+        // model saw the эталон's ru/uz (all about "1С"), it copied that wording
+        // no matter how firmly the prompt forbade it — a hundred on-screen
+        // examples beat any instruction. Give it structure + a length hint, and
+        // there is simply nothing to copy, so it must write fresh for the theme.
+        blocks: (getRefProfile(r)?.blocks || []).map(b => {
+          const ruLen = (b.ru || '').trim().length;
+          const lenHint = ruLen === 0 ? 'служебный/без речи'
+            : ruLen < 60 ? 'короткая реплика'
+            : ruLen < 160 ? 'средняя реплика'
+            : 'развёрнутая реплика';
+          return {
+            id: b.id,
+            title: b.title,      // short role label ("Молчание", "Мошенники") — a hint, not copyable speech
+            intent: b.intent,
+            type: b.type,
+            textHint: lenHint,   // how long the NEW text should roughly be
+            branches: (b.branches || []).map(br => ({ label: br.label, next: br.next }))
+          };
+        })
       };
       return JSON.stringify(compact, null, 2);
     }).join('\n\n═══ СЛЕДУЮЩИЙ ЭТАЛОН ═══\n\n');
@@ -7966,20 +7988,19 @@ async function generateScript() {
     let modeInstruction;
     if (activeRefs.length === 1 || genMode === 'exact') {
       modeInstruction = `РЕЖИМ «СТРУКТУРА ЭТАЛОНА + СВОИ ТЕКСТЫ»:
-Эталон ниже — это КАРКАС, а НЕ источник готовых фраз. Возьми у него СТРУКТУРУ и напиши ПОЛНОСТЬЮ НОВЫЕ тексты под тему из запроса пользователя (ниша/цель/тон).
+Ниже дан СКЕЛЕТ эталона — только структура блоков, БЕЗ текстов реплик. Тексты эталона намеренно скрыты, чтобы ты не копировал их: твоя задача — по этому каркасу написать ПОЛНОСТЬЮ НОВЫЕ реплики под тему из запроса пользователя (ниша/цель/тон).
 
-ЧТО БЕРЁШЬ ИЗ ЭТАЛОНА (скелет):
-- Набор блоков и их последовательность (какие интенты есть, в каком порядке идут)
-- Типы блоков (start/question/decision/end) и логику ветвления (branches: label + куда ведёт)
-- Структуру обработки возражений, включая счётчики повторов (intent_2, intent_3 — со всё более настойчивыми формулировками)
-- Полный список важных интентов: мошенничество, не слышно/молчание, робот?, родственник взял трубку, «соедините с оператором», «кто вы/откуда», «я не давал согласие», ошиблись номером и т.п.
+ЧТО ДАЁТ СКЕЛЕТ:
+- id, title (короткая роль блока: «Молчание», «Мошенники», «Кто вы»), intent, type — что это за блок по смыслу
+- textHint — примерная длина новой реплики (короткая/средняя/развёрнутая/служебный)
+- branches (label + next) — логику ветвления и порядок блоков
+- набор интентов целиком: мошенничество, не слышно/молчание, робот?, родственник, «соедините с оператором», «кто вы/откуда», «я не давал согласие», ошиблись номером и т.п.
 
-ЧТО ПИШЕШЬ ЗАНОВО (тексты ru и uz):
-- КАЖДУЮ реплику сочиняй с нуля под НОВУЮ тему. НЕ копируй фразы эталона и НЕ подставляй слова в его предложения.
-- 🔴 ГЛАВНОЕ: в готовом скрипте НЕ ДОЛЖНО остаться НИ СЛОВА из темы эталона. Если эталон был про «1С в облаке», а просят «кредиты для бизнеса» — упоминаний 1С, облака, серверов, тестового периода и т.п. быть НЕ ДОЛЖНО. Каждую реплику проверь: относится ли она к НОВОЙ теме? Если в ней остался предмет эталона — перепиши.
-- Эталонные тексты смотри ТОЛЬКО чтобы уловить МАНЕРУ (длина фраз, живость, как обрабатывается возражение) — а не чтобы взять слова.
-- Тон бери из запроса пользователя («{tone}»), а не из эталона.
-- Если эталон по взысканию, а просят продажу (или наоборот) — переложи подход, но тексты полностью под новую задачу.`;
+ЧТО ПИШЕШЬ САМ:
+- КАЖДУЮ реплику (ru и uz) сочиняешь с нуля под тему пользователя. Ориентируйся на роль блока (title/intent) и нужную длину (textHint).
+- 🔴 Скелет может быть от эталона на ЛЮБУЮ тему (например 1С, облако, сервер). НО твой скрипт — строго про тему запроса пользователя. Ни одного слова из чужой темы: если тебе не дали тему 1С в запросе — слов «1С», «облако», «сервер», «тестовый период» быть НЕ должно.
+- Служебные блоки (textHint = «служебный/без речи») — это «Ответ клиента», «Начало», ромбы: у них нет своей речи, оставляй ru/uz как есть по смыслу роли.
+- Тон — из запроса пользователя («{tone}»).`;
     } else {
       modeInstruction = `РЕЖИМ СМЕШИВАНИЯ СТРУКТУР:
 Изучи ВСЕ эталоны ниже как КАРКАСЫ. Возьми у них лучшую структуру — самый полный набор интентов, удачную логику обработки возражений со счётчиками повторов — и построй новый скелет. Тексты (ru и uz) пиши ПОЛНОСТЬЮ ЗАНОВО под тему запроса пользователя.
