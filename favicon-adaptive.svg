@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <style>
+    .mark { fill: #1e2058; }
+    @media (prefers-color-scheme: dark) { .mark { fill: #ffffff; } }
+  </style>
+  <g class="mark">
+    <ellipse cx="8.51" cy="32.00" rx="0.84" ry="4.77"/>
+    <ellipse cx="12.86" cy="32.00" rx="1.69" ry="12.23"/>
+    <ellipse cx="19.84" cy="32.00" rx="3.25" ry="20.87"/>
+    <ellipse cx="27.85" cy="32.00" rx="3.64" ry="23.77"/>
+    <ellipse cx="37.80" cy="32.00" rx="3.38" ry="23.42"/>
+    <ellipse cx="51.00" cy="32.00" rx="4.94" ry="11.68"/>
+  </g>
+</svg>
