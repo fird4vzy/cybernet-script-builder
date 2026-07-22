@@ -6846,6 +6846,30 @@ const DEFAULT_PROMPTS = {
 
 let aiPrompts = { ...DEFAULT_PROMPTS };
 
+// Replace outdated stored prompts with the current defaults. Runs after BOTH
+// localStorage load and cloud sync, because either source can carry a stale
+// copy — the cloud one silently overwrote the local upgrade before, which is
+// why prompt fixes never reached the user. Returns true if anything changed.
+function upgradeStalePrompts() {
+  let changed = false;
+  const rs = aiPrompts.review_system || '';
+  if (!/sections|to_next_score|ЧЁТКОЙ ШКАЛЕ/i.test(rs)) {
+    aiPrompts.review_system = DEFAULT_PROMPTS.review_system;
+    aiPrompts.review_user = DEFAULT_PROMPTS.review_user;
+    changed = true;
+    console.log('AI-review prompts auto-upgraded to latest schema');
+  }
+  const gs = aiPrompts.generate_system || '';
+  if (!/ЖИВОЙ ПРОДАЮЩИЙ ТОН/.test(gs)) {
+    aiPrompts.generate_system = DEFAULT_PROMPTS.generate_system;
+    aiPrompts.generate_user = DEFAULT_PROMPTS.generate_user;
+    changed = true;
+    console.log('AI-generation prompts auto-upgraded to latest version');
+  }
+  if (changed) { try { localStorage.setItem(PROMPTS_KEY, JSON.stringify(aiPrompts)); } catch {} }
+  return changed;
+}
+
 function loadPrompts() {
   try {
     const raw = localStorage.getItem(PROMPTS_KEY);
@@ -6853,26 +6877,7 @@ function loadPrompts() {
       const stored = JSON.parse(raw);
       // Merge with defaults so new prompts get added when we update the code
       aiPrompts = { ...DEFAULT_PROMPTS, ...stored };
-      // Auto-upgrade stale AI-review prompts: if the saved copy predates the
-      // section+score schema, silently replace it with the current default so the
-      // user doesn't have to press «По умолчанию» manually.
-      const rs = aiPrompts.review_system || '';
-      if (!/sections|to_next_score|ЧЁТКОЙ ШКАЛЕ/i.test(rs)) {
-        aiPrompts.review_system = DEFAULT_PROMPTS.review_system;
-        aiPrompts.review_user = DEFAULT_PROMPTS.review_user;
-        try { localStorage.setItem(PROMPTS_KEY, JSON.stringify(aiPrompts)); } catch {}
-        console.log('AI-review prompts auto-upgraded to latest schema');
-      }
-      // Same auto-upgrade for the generation prompt: a saved copy from before the
-      // "structure-not-text" rewrite makes the model copy reference wording (the
-      // 1С-mixed-into-credits bug). Detect the new marker and refresh if absent.
-      const gs = aiPrompts.generate_system || '';
-      if (!/ЖИВОЙ ПРОДАЮЩИЙ ТОН/.test(gs)) {
-        aiPrompts.generate_system = DEFAULT_PROMPTS.generate_system;
-        aiPrompts.generate_user = DEFAULT_PROMPTS.generate_user;
-        try { localStorage.setItem(PROMPTS_KEY, JSON.stringify(aiPrompts)); } catch {}
-        console.log('AI-generation prompts auto-upgraded to latest version');
-      }
+      upgradeStalePrompts();
     }
   } catch (err) { console.error('Prompts load failed:', err); }
 }
@@ -9043,6 +9048,14 @@ async function bootApp() {
           const { _customStyles, ...promptsOnly } = s.prompts;
           if (Object.keys(promptsOnly).length) {
             aiPrompts = { ...aiPrompts, ...promptsOnly };
+            // The cloud copy can be older than the code. Re-run the freshness
+            // check AFTER merging it, or a stale saved prompt from the account
+            // silently overwrites the up-to-date default (this is exactly what
+            // kept the prompt fixes from taking effect).
+            if (upgradeStalePrompts() && typeof cloudSaveSettings === 'function' && getCurrentUserId()) {
+              const curTheme = (() => { try { return localStorage.getItem(THEME_KEY) || 'dark'; } catch { return 'dark'; } })();
+              try { await cloudSaveSettings(llmSettings, { ...aiPrompts, _customStyles: customStyles }, curTheme); } catch (e) {}
+            }
           }
         }
       }
