@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-22-structmode-v2';
+const CYBERNET_BUILD = '2026-07-22-structmode-v3-chunked';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8057,7 +8057,7 @@ async function generateScript() {
       const refProfile = getRefProfile(ref);
       const refBlocks = refProfile?.blocks || [];
       if (!refBlocks.length) throw new Error('В эталоне нет блоков');
-      console.log('[Cybernet] STRUCTURE MODE v2 (skeleton, no reference texts) — blocks:', refBlocks.length);
+      console.log('[Cybernet] STRUCTURE MODE v3 (skeleton, chunked, no reference texts) — blocks:', refBlocks.length);
 
       // Send AI a per-block ROLE map (NOT the reference texts). Sending the
       // real ru/uz made the model rewrite-in-place and drag the reference's
@@ -8073,7 +8073,11 @@ async function generateScript() {
         return { id: b.id, role: b.title || '', intent: b.intent || '', type: b.type || 'normal', len: lenHint };
       });
 
-      const structPrompt = `Ты — эксперт по скриптам колл-центра. У тебя есть КАРКАС эталонного скрипта: список блоков с их РОЛЯМИ (role/intent/type) и нужной длиной реплики (len). Тексты эталона намеренно НЕ показаны. Твоя задача — для КАЖДОГО блока написать НОВЫЕ живые реплики (title, ru, uz) под новую сферу, опираясь на роль блока. НЕ добавляй и НЕ удаляй блоки. НЕ меняй id.
+      // ── Generate in CHUNKS ──────────────────────────────────────────
+      // 94 blocks × (title+ru+uz) overflow a single response and the JSON gets
+      // cut off — that was the "35 empty blocks" bug: the model only returned
+      // the first ~60. Batching keeps every response comfortably whole.
+      const buildPrompt = (mapChunk) => `Ты — эксперт по скриптам колл-центра. У тебя есть КАРКАС эталонного скрипта: список блоков с их РОЛЯМИ (role/intent/type) и нужной длиной реплики (len). Тексты эталона намеренно НЕ показаны. Твоя задача — для КАЖДОГО блока написать НОВЫЙ заголовок (title) и НОВЫЕ живые реплики (ru, uz) под новую сферу. НЕ добавляй и НЕ удаляй блоки. НЕ меняй id.
 
 НОВАЯ СФЕРА: ${niche}
 ЦЕЛЬ: ${goal}
@@ -8081,42 +8085,63 @@ async function generateScript() {
 ТОН: ${tone}
 ДОП. ТРЕБОВАНИЯ: ${extras || '(нет)'}
 
-${briefSection ? briefSection + '\n\n' : ''}${varsSection ? varsSection + '\n\n' : ''}${learningSection ? learningSection + '\n\n' : ''}ПРАВИЛА:
-- Для каждого блока по его role/intent сочини title (краткое название) и живую реплику ru + перевод uz — ПОЛНОСТЬЮ НОВЫЕ, под новую сферу.
-- 🔴 Каркас может быть от эталона на другую тему. Твои тексты — строго про НОВУЮ СФЕРУ выше. Ни одного слова из посторонней темы (никаких «1С», «облако», «сервер», «тестовый период», если их нет в новой сфере/брифе).
-- Длина реплики ≈ поле len (короткая/средняя/развёрнутая). Служебные (len=«служебный/без речи»: «Ответ клиента», «Завершение», «Молчание», «Автоответчик») — оставь короткую служебную подпись, без выдуманной речи.
-- Реплики живые, продающие, в тоне «${tone}»: присоединение → аргумент по сути → мягкий возврат к цели. Без канцелярита. НЕ повторяй одну фразу в разных блоках — у каждого блока свой аргумент.
+${briefSection ? briefSection + '\n\n' : ''}${varsSection ? varsSection + '\n\n' : ''}${learningSection ? learningSection + '\n\n' : ''}🔴 САМОЕ ВАЖНОЕ — про поле role:
+role описывает ФУНКЦИЮ блока в диалоге, но сформулирован он словами СТАРОЙ темы эталона (например «У нас уже есть 1С», «Что входит в тестовый период», «Соедините с оператором»). Ты должен понять, какое это ВОЗРАЖЕНИЕ или ШАГ по смыслу, и переложить его на НОВУЮ СФЕРУ:
+- «У нас уже есть 1С» → возражение «у нас уже есть решение/продукт» → для кредитов: «У нас уже есть кредит / нам не нужно финансирование»
+- «Что входит в тестовый период» → вопрос про условия → для кредитов: «Какие условия / какая ставка»
+- role — ПОДСКАЗКА О ФУНКЦИИ, не текст для копирования. Никогда не переноси слова старой темы («1С», «облако», «сервер», «тестовый период», «Uzcloud») ни в title, ни в ru, ни в uz.
+
+ПРАВИЛА:
+- Для каждого блока: (1) переосмысли role под новую сферу, (2) напиши новый краткий title на новой теме, (3) напиши живую реплику ru + перевод uz.
+- 🔴 В title, ru, uz НЕ должно быть НИ ОДНОГО слова старой темы.
+- Длина реплики ≈ поле len. Служебные (len=«служебный/без речи»: «Ответ клиента», «Завершение», «Молчание», «Автоответчик») — короткая служебная подпись, без выдуманной речи; title у них тоже нейтральный служебный.
+- Реплики живые, продающие, в тоне «${tone}»: присоединение → аргумент по сути → мягкий возврат к цели. Без канцелярита. НЕ повторяй одну фразу в разных блоках.
 - Узбекский (uz) — ТОЛЬКО ЛАТИНИЦА (o', g', sh, ch), кириллица запрещена.
-- Если есть БРИФ КЛИЕНТА выше — конкретика (названия, условия, суммы, контакты) строго из него.
-- Верни СТРОГО JSON-массив: [{"id":"...","title":"...","ru":"...","uz":"..."}, ...] для ВСЕХ ${textMap.length} блоков, ничего кроме JSON.
+- Если есть БРИФ КЛИЕНТА выше — конкретика строго из него.
+- Верни СТРОГО JSON-массив: [{"id":"...","title":"...","ru":"...","uz":"..."}, ...] для ВСЕХ ${mapChunk.length} блоков этой порции, ничего кроме JSON.
 
-КАРКАС (${textMap.length} блоков — роли, БЕЗ текстов):
-${JSON.stringify(textMap, null, 1)}`;
+КАРКАС (${mapChunk.length} блоков — РОЛИ на старой теме, переложи на новую):
+${JSON.stringify(mapChunk, null, 1)}`;
 
-      const raw = await aiGenerate(structPrompt, 'Напиши новые тексты для всех блоков каркаса и верни JSON-массив.', {
-        json: true, temperature: 0.7, maxTokens: 32000
-      });
-      let parsed;
-      try { parsed = JSON.parse(raw); } catch {
-        const m = raw.match(/\[[\s\S]*\]/) || raw.match(/\{[\s\S]*\}/);
-        if (!m) throw new Error('Не могу распарсить ответ AI');
-        try { parsed = JSON.parse(m[0]); } catch { parsed = parseAIJson(raw); }
-      }
-      // The model sometimes wraps the array in an object ({blocks:[...]}, {items:[...]},
-      // {texts:[...]}) instead of returning a bare array — normalise all of those.
-      let rewritten = Array.isArray(parsed) ? parsed
-        : (parsed && (parsed.blocks || parsed.items || parsed.texts || parsed.result || parsed.data));
-      if (!Array.isArray(rewritten)) {
-        // last resort: an object keyed by block id → turn into an array
-        if (parsed && typeof parsed === 'object') {
-          rewritten = Object.entries(parsed).map(([id, v]) => (v && typeof v === 'object') ? { id, ...v } : null).filter(Boolean);
+      const parseChunk = (raw) => {
+        let parsed;
+        try { parsed = JSON.parse(raw); } catch {
+          const m = raw.match(/\[[\s\S]*\]/) || raw.match(/\{[\s\S]*\}/);
+          if (!m) return [];
+          try { parsed = JSON.parse(m[0]); } catch { parsed = parseAIJson(raw); }
         }
+        let arr = Array.isArray(parsed) ? parsed
+          : (parsed && (parsed.blocks || parsed.items || parsed.texts || parsed.result || parsed.data));
+        if (!Array.isArray(arr) && parsed && typeof parsed === 'object') {
+          arr = Object.entries(parsed).map(([id, v]) => (v && typeof v === 'object') ? { id, ...v } : null).filter(Boolean);
+        }
+        return Array.isArray(arr) ? arr : [];
+      };
+
+      const CHUNK = 30;
+      const textById = {};
+      let totalGot = 0;
+      for (let i = 0; i < textMap.length; i += CHUNK) {
+        const part = textMap.slice(i, i + CHUNK);
+        showGenLoader(`AI пишет реплики… (${Math.min(i + CHUNK, textMap.length)}/${textMap.length})`);
+        const raw = await aiGenerate(buildPrompt(part), 'Напиши новые тексты для всех блоков этой порции и верни JSON-массив.', {
+          json: true, temperature: 0.7, maxTokens: 16000
+        });
+        const arr = parseChunk(raw);
+        // Match by id; if the model dropped ids but count matches, fall back to order.
+        let matched = 0;
+        arr.forEach(r => { if (r && r.id && part.some(p => p.id === r.id)) { textById[r.id] = r; matched++; } });
+        if (!matched && arr.length === part.length) {
+          part.forEach((p, k) => { if (arr[k]) textById[p.id] = { id: p.id, ...arr[k] }; });
+          matched = arr.length;
+        }
+        totalGot += matched;
+        console.log(`[Cybernet] chunk ${i / CHUNK + 1}: ${matched}/${part.length} блоков`);
       }
-      if (!Array.isArray(rewritten) || !rewritten.length) {
+      if (!totalGot) {
         throw new Error('AI вернул неожиданный формат (не список блоков). Попробуйте ещё раз.');
       }
-      const textById = {};
-      rewritten.forEach(r => { if (r && r.id) textById[r.id] = r; });
+      console.log(`[Cybernet] STRUCTURE MODE v2: получено ${totalGot}/${textMap.length} блоков`);
 
       // Build new profile by DEEP-COPYING the reference structure, swapping texts
       const profileName = `${niche} (по эталону ${ref.name})`;
@@ -8127,15 +8152,15 @@ ${JSON.stringify(textMap, null, 1)}`;
         sections: JSON.parse(JSON.stringify(refProfile?.sections || [{ id: 's1', label: 'Основной раздел' }])),
         blocks: refBlocks.map(b => {
           const t = textById[b.id] || {};
-          // If the model didn't return this block, leave its text BLANK rather
-          // than copying the reference's — the reference is on a different theme,
-          // so its text would be an off-topic leak. A blank block is obvious and
-          // easy to fill; a wrong-theme paragraph hides in plain sight.
-          const gotText = t.ru !== undefined || t.uz !== undefined;
+          // A block the model didn't return keeps NOTHING from the reference —
+          // not its text and not its title. The reference is on another theme
+          // ("У нас уже есть 1С"), so keeping b.title would leak that theme into
+          // the new script. Blank is visible and fixable; a stray 1С title is not.
+          const gotIt = t.title !== undefined || t.ru !== undefined || t.uz !== undefined;
           return {
             id: b.id,
             sec: b.sec || 's1',
-            title: t.title || b.title || '',
+            title: gotIt ? (t.title || '') : '',
             intent: b.intent || '',
             type: b.type || 'normal',
             ru: t.ru !== undefined ? t.ru : '',
