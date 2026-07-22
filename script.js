@@ -2832,22 +2832,6 @@ function makeIdFromTitle(title, used) {
   return unique;
 }
 
-// A technical id line inside a block's text — "robot1", "whoIsIt2",
-// "fromTheCard", "*no". Latin only, short, no cyrillic: these are the same on
-// the RU and the UZ page, which makes them a reliable cross-page key.
-function csIdToken(title) {
-  const lines = String(title || '').split('\n').map(l => l.trim()).filter(Boolean);
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const l = lines[i];
-    if (l.length > 30 || /[\u0400-\u04FF]/.test(l)) continue;
-    if (/^\*?[A-Za-z][A-Za-z0-9_ ]{1,28}$/.test(l)) {
-      const t = l.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (t.length >= 3) return t;
-    }
-  }
-  return '';
-}
-
 // Detect block type by combining: shape style, text content, edge counts
 function detectBlockType(text, styleStr, incomingCount, outgoingCount, exactGeom) {
   const t = (text || '').toLowerCase().trim();
@@ -3119,12 +3103,17 @@ function parseDrawioXML(xmlString, exactGeom) {
   }
 
   // ──── Identify language pages ─────────────────────
-  // A typical Visio bilingual file has pages "RU" and "UZ"
+  // Match by content, not just "RU"/"UZ": the real files name the page "Рус"
+  // (Cyrillic Р, which never starts with the Latin "RU"), and could equally say
+  // "Русский" or "Узбекский". Detect Uzbek positively (latin tag or the o'/g'
+  // letters) and treat the other page as Russian.
   let pageRu = null, pageUz = null;
   pages.forEach(p => {
-    const n = (p.name || '').toUpperCase();
-    if (n === 'RU' || n.startsWith('RU')) pageRu = p;
-    if (n === 'UZ' || n.startsWith('UZ')) pageUz = p;
+    const n = (p.name || '').trim().toLowerCase();
+    const isUz = /^uz/.test(n) || n.includes('узб') || n.includes("o'z") || n.includes('o‘z') || n.includes('ozbek');
+    const isRu = /^ru/.test(n) || n.includes('рус');
+    if (isUz && !pageUz) pageUz = p;
+    else if (isRu && !pageRu) pageRu = p;
   });
   // Default: first page = RU
   const mainPage = pageRu || pages[0];
@@ -3165,97 +3154,207 @@ function parseDrawioXML(xmlString, exactGeom) {
   };
   pages.forEach(foldFreeCaptions);
 
-  // ──── Build lookup of UZ texts ───
-  // Try by mxId first; if pages use different IDs (common in Visio→Drawio),
-  // fall back to matching by relative position on the page.
-  const uzByMxId = new Map();
-  let uzByPosition = null;
+  // ──── Match RU blocks to their UZ counterparts ────────────────
+  // Visio numbers every page from scratch, so an id that exists on BOTH pages
+  // normally points at two unrelated shapes (measured on a real export: 160
+  // shared ids, zero of them in the same place, median offset 1287px). Trusting
+  // that overlap is what scrambled every translation. Match on evidence:
+  //   1. identical text — untranslated lines and technical ids — as hard anchors
+  //   2. propagate outward from the anchors along the graph
+  //   3. position for the rest, corrected by the local drift between pages
+  let uzLookup = null;
   if (otherPage) {
-    otherPage.vertices.forEach((v, id) => {
-      if (v.title) uzByMxId.set(id, v.title);
-    });
+    const RUV = mainPage.vertices, UZV = otherPage.vertices;
+    const match = new Map();      // ru mxId → uz mxId
+    const taken = new Set();
+    const normText = (t) => String(t || '').replace(/\s+/g, ' ').trim();
+    const sizeOk = (a, b) => Math.abs((a.w || 0) - (b.w || 0)) < 6 && Math.abs((a.h || 0) - (b.h || 0)) < 6;
 
-    // Check how many IDs actually overlap between pages
-    let overlap = 0;
-    mainPage.vertices.forEach((_, id) => { if (uzByMxId.has(id)) overlap++; });
-
-    // If little/no ID overlap, build a position-based matcher
-    if (overlap < mainPage.vertices.size * 0.3) {
-      // Normalize both pages to their own min-corner, then match nearest blocks
-      const normBounds = (page) => {
-        let minX = Infinity, minY = Infinity;
-        page.vertices.forEach(v => { minX = Math.min(minX, v.x); minY = Math.min(minY, v.y); });
-        return { minX: isFinite(minX) ? minX : 0, minY: isFinite(minY) ? minY : 0 };
-      };
-      const ruB = normBounds(mainPage);
-      const uzB = normBounds(otherPage);
-      const ruList = [], uzList = [];
-      mainPage.vertices.forEach((v, id) => {
-        ruList.push({ id, nx: v.x - ruB.minX, ny: v.y - ruB.minY, w: v.w || 1, h: v.h || 1, title: v.title });
-      });
-      otherPage.vertices.forEach((v, id) => {
-        if (v.title) uzList.push({ id, nx: v.x - uzB.minX, ny: v.y - uzB.minY, w: v.w || 1, h: v.h || 1, title: v.title });
-      });
-
-      // ── Strongest signal first: technical ids ──
-      // Both language pages carry the SAME latin identifiers (robot1, whoIsIt2,
-      // fromTheCard, *no). Where one is present on both sides it identifies the
-      // block outright — no geometry involved, so a differently arranged UZ page
-      // no longer shifts the whole mapping.
-      const uzTokenIndex = new Map();
-      const ambiguous = new Set();
-      uzList.forEach(u => {
-        const t = csIdToken(u.title);
+    // ── 1. anchors: text identical AND unique on both pages ──
+    const textIndex = (V) => {
+      const m = new Map();
+      V.forEach((v, id) => {
+        const t = normText(v.title);
         if (!t) return;
-        if (uzTokenIndex.has(t)) { ambiguous.add(t); return; }
-        uzTokenIndex.set(t, u);
+        if (!m.has(t)) m.set(t, []);
+        m.get(t).push(id);
       });
-      ambiguous.forEach(t => uzTokenIndex.delete(t));   // repeated id proves nothing
-      const byToken = new Map();
-      const tokenTaken = new Set();
-      ruList.forEach(r => {
-        const t = csIdToken(r.title);
-        if (!t || !uzTokenIndex.has(t)) return;
-        const u = uzTokenIndex.get(t);
-        byToken.set(r.id, u.title);
-        tokenTaken.add(u.id);
-      });
+      return m;
+    };
+    const ruText = textIndex(RUV), uzTextIdx = textIndex(UZV);
+    ruText.forEach((rids, t) => {
+      const uids = uzTextIdx.get(t);
+      if (rids.length === 1 && uids && uids.length === 1) {
+        match.set(rids[0], uids[0]);
+        taken.add(uids[0]);
+      }
+    });
+    let anchorCount = match.size;
 
-      // Score every plausible pair, then assign BEST-FIRST across the whole
-      // page. Confident pairs are locked in before the doubtful ones, so one
-      // bad guess can no longer cascade through the rest of the diagram.
-      const MAX_D = 140;
-      const pairs = [];
-      ruList.forEach(r => {
-        if (byToken.has(r.id)) return;              // already settled by its id
-        uzList.forEach(u => {
-          if (tokenTaken.has(u.id)) return;
-          const d = Math.hypot(u.nx - r.nx, u.ny - r.ny);
-          if (d > MAX_D) return;
-          // A translated page keeps its block sizes. A box of a wildly
-          // different size is a different shape — typically a small id caption
-          // sitting near a full reply block, which is exactly the swap that
-          // put "RepeatQuestion4" inside a dialog block.
-          const wRatio = Math.max(r.w, u.w) / Math.max(1, Math.min(r.w, u.w));
-          const hRatio = Math.max(r.h, u.h) / Math.max(1, Math.min(r.h, u.h));
-          if (wRatio > 2 || hRatio > 2) return;
-          pairs.push({ rid: r.id, uid: u.id, title: u.title, score: d + (Math.abs(r.w - u.w) + Math.abs(r.h - u.h)) * 0.25 });
+    // Fallback when the two pages share almost no identical text (a fully
+    // translated file with distinct ids). Vote on the single global offset
+    // between pages from every same-size block pair, then seed a handful of
+    // anchors with it so the drift/position machinery below still has something
+    // to build on. Without this, a file with zero shared text matched nothing.
+    if (anchorCount < 4) {
+      const votes = new Map();
+      RUV.forEach(v => {
+        if (!normText(v.title)) return;
+        UZV.forEach(b => {
+          if (!normText(b.title) || !sizeOk(v, b)) return;
+          const key = Math.round((b.x - v.x) / 20) * 20 + ',' + Math.round((b.y - v.y) / 20) * 20;
+          votes.set(key, (votes.get(key) || 0) + 1);
         });
       });
-      pairs.sort((a, b) => a.score - b.score);
-      const uzMatch = new Map();
-      const uzTaken = new Set();
-      pairs.forEach(p => {
-        if (uzMatch.has(p.rid) || uzTaken.has(p.uid)) return;
-        uzMatch.set(p.rid, p.title);
-        uzTaken.add(p.uid);
-      });
-      byToken.forEach((title, rid) => uzMatch.set(rid, title));   // ids win
-      console.log(`Draw.io UZ: по id ${byToken.size}, по координатам ${uzMatch.size - byToken.size}, без пары ${ruList.length - uzMatch.size}`);
-      // No match is better than the wrong one — an empty UZ field is visible and
-      // fixable, a plausible-looking wrong translation is not.
-      uzByPosition = (ruV) => uzMatch.get(ruV.mxId) || '';
+      let bestKey = null, bestN = 0;
+      votes.forEach((n, k) => { if (n > bestN) { bestN = n; bestKey = k; } });
+      if (bestKey) {
+        const [ox, oy] = bestKey.split(',').map(Number);
+        RUV.forEach((v, r) => {
+          if (match.has(r) || !normText(v.title)) return;
+          let bU = null, bD = 1e9;
+          UZV.forEach((b, u) => {
+            if (taken.has(u) || !normText(b.title) || !sizeOk(v, b)) return;
+            const d = Math.hypot(v.x + ox - b.x, v.y + oy - b.y);
+            if (d < bD) { bD = d; bU = u; }
+          });
+          if (bU && bD < 40) { match.set(r, bU); taken.add(bU); }
+        });
+        anchorCount = match.size;
+      }
     }
+
+    // ── 2. walk the graph out from the anchors ──
+    const adjacency = (edges) => {
+      const out = new Map(), inn = new Map();
+      (edges || []).forEach(e => {
+        if (!out.has(e.source)) out.set(e.source, []);
+        out.get(e.source).push(e.target);
+        if (!inn.has(e.target)) inn.set(e.target, []);
+        inn.get(e.target).push(e.source);
+      });
+      return [out, inn];
+    };
+    const [ruOut, ruIn] = adjacency(mainPage.edges);
+    const [uzOut, uzIn] = adjacency(otherPage.edges);
+    const orderBy = (V) => (a, b) => ((V.get(a).y - V.get(b).y) || (V.get(a).x - V.get(b).x));
+    const propagateGraph = () => {
+      for (let round = 0; round < 12; round++) {
+        let changed = false;
+        Array.from(match.entries()).forEach(([r, u]) => {
+          [[ruOut, uzOut], [ruIn, uzIn]].forEach(([rSide, uSide]) => {
+            const rn = (rSide.get(r) || []).filter(x => RUV.has(x) && !match.has(x));
+            const un = (uSide.get(u) || []).filter(x => UZV.has(x) && !taken.has(x));
+            // Only pair up when the two sides agree on how many neighbours are
+            // left — otherwise the diagrams have genuinely diverged here and a
+            // guess would propagate further errors.
+            if (!rn.length || rn.length !== un.length) return;
+            const A = rn.slice().sort(orderBy(RUV)), B = un.slice().sort(orderBy(UZV));
+            A.forEach((a, k) => {
+              const b = B[k];
+              if (match.has(a) || taken.has(b)) return;
+              if (!sizeOk(RUV.get(a), UZV.get(b))) return;
+              match.set(a, b); taken.add(b); changed = true;
+            });
+          });
+        });
+        if (!changed) break;
+      }
+    };
+    propagateGraph();
+    const afterGraph = match.size;
+
+    // ── 3. position, corrected by local drift ──
+    // The pages are not a rigid copy of one another: a single global offset
+    // only explains a third of the blocks. Averaging the offset of the nearest
+    // anchors tracks the drift region by region instead.
+    const anchors = [];
+    match.forEach((u, r) => anchors.push([RUV.get(r), UZV.get(u)]));
+    const driftAt = (v) => {
+      if (!anchors.length) return [0, 0];
+      const near = anchors
+        .map(p => ({ d: (p[0].x - v.x) * (p[0].x - v.x) + (p[0].y - v.y) * (p[0].y - v.y), p }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 5);
+      let dx = 0, dy = 0;
+      near.forEach(n => { dx += n.p[1].x - n.p[0].x; dy += n.p[1].y - n.p[0].y; });
+      return [dx / near.length, dy / near.length];
+    };
+    const pairs = [];
+    RUV.forEach((v, r) => {
+      if (match.has(r) || !normText(v.title)) return;
+      const dr = driftAt(v);
+      UZV.forEach((b, u) => {
+        if (taken.has(u) || !normText(b.title)) return;
+        if (!sizeOk(v, b)) return;
+        const d = Math.hypot(v.x + dr[0] - b.x, v.y + dr[1] - b.y);
+        if (d < 200) pairs.push({ d, r, u });
+      });
+    });
+    pairs.sort((a, b) => a.d - b.d);
+
+    // Assignment, not greed. Two nearby RU blocks often both fall closest to the
+    // same UZ block; plain nearest-first lets the marginally-closer one steal it
+    // and strands its neighbour on a wrong twin (measured: "Позвоните по номеру"
+    // lost its match to "Как я уже сказал"). So before locking a pair, check the
+    // RU block has no closer still-free UZ option and the UZ block no closer
+    // still-free RU suitor — i.e. only commit mutual-best pairs first, then let
+    // whatever remains fall through greedily.
+    const bestFor = new Map();   // ru -> smallest distance seen
+    const bestSuitor = new Map(); // uz -> smallest distance seen
+    pairs.forEach(p => {
+      if (!bestFor.has(p.r) || p.d < bestFor.get(p.r)) bestFor.set(p.r, p.d);
+      if (!bestSuitor.has(p.u) || p.d < bestSuitor.get(p.u)) bestSuitor.set(p.u, p.d);
+    });
+    // pass A: mutual best
+    pairs.forEach(p => {
+      if (match.has(p.r) || taken.has(p.u)) return;
+      if (p.d <= bestFor.get(p.r) + 0.5 && p.d <= bestSuitor.get(p.u) + 0.5) {
+        match.set(p.r, p.u); taken.add(p.u);
+      }
+    });
+    // pass B: greedy for the leftovers
+    pairs.forEach(p => {
+      if (match.has(p.r) || taken.has(p.u)) return;
+      match.set(p.r, p.u); taken.add(p.u);
+    });
+
+    // pass C: augmenting paths. A block whose every candidate is already taken
+    // (e.g. "Позвоните по номеру", whose only good twin was grabbed by the
+    // adjacent "Как я уже сказал") gets a second chance: if the current holder
+    // of that twin has another free candidate of its own, hand it over and move
+    // the holder. Bounded to one hop, so it cannot loop or cascade wrongly.
+    const candsOf = new Map();      // ru -> [{u,d}] sorted
+    pairs.forEach(p => {
+      if (!candsOf.has(p.r)) candsOf.set(p.r, []);
+      candsOf.get(p.r).push({ u: p.u, d: p.d });
+    });
+    const uzToRu = new Map();
+    match.forEach((u, r) => uzToRu.set(u, r));
+    RUV.forEach((v, r) => {
+      if (match.has(r) || !candsOf.has(r)) return;
+      for (const c of candsOf.get(r)) {
+        const holder = uzToRu.get(c.u);
+        if (holder === undefined) continue;              // shouldn't happen
+        const alt = (candsOf.get(holder) || []).find(x => !taken.has(x.u));
+        if (!alt) continue;
+        // move holder to its free alternative, give c.u to r
+        match.set(holder, alt.u); taken.add(alt.u); uzToRu.set(alt.u, holder);
+        match.set(r, c.u); uzToRu.set(c.u, r);
+        break;
+      }
+    });
+    let withText = 0;
+    RUV.forEach(v => { if (normText(v.title)) withText++; });
+    console.log(`Draw.io UZ: якорей ${anchorCount}, по графу +${afterGraph - anchorCount}, по позиции +${match.size - afterGraph}; всего ${match.size} из ${withText} блоков с текстом`);
+
+    // An unmatched block keeps an EMPTY uz field. A blank is visible and
+    // fixable; a confident-looking wrong translation is not.
+    uzLookup = (ruV) => {
+      const u = match.get(ruV.mxId);
+      const uv = u ? UZV.get(u) : null;
+      return (uv && uv.title) || '';
+    };
   }
 
   // ──── Compute incoming/outgoing on main page ─────
@@ -3285,7 +3384,7 @@ function parseDrawioXML(xmlString, exactGeom) {
     const id = makeIdFromTitle(title, usedIds);
     const type = detectBlockType(title, v.styleStr, incoming.get(mxId) || 0, outgoing.get(mxId) || 0, exactGeom);
     const ruText = v.title;
-    const uzText = uzByMxId.get(mxId) || (uzByPosition ? uzByPosition(v) : '') || '';
+    const uzText = uzLookup ? uzLookup(v) : '';
     // If RU text contains "Здравствуйте" and UZ identical, try to extract slash-separated translation
     let cleanRu = ruText, cleanUz = uzText;
     if (ruText && ruText.includes('/') && !uzText) {
