@@ -8287,7 +8287,7 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         let got = await runBatch(chunks[c], `chunk ${c + 1}`);
         if (got < chunks[c].length) {  // one retry for the blocks this chunk missed
           const miss = chunks[c].filter(p => !textById[p.id]);
-          if (miss.length) { showGenLoader(`AI дописывает… (порция ${c + 1})`); await runBatch(miss, `chunk ${c + 1} retry`); }
+          if (miss.length) { showGenLoader(`Генерирую зачился… (порция ${c + 1})`); await runBatch(miss, `chunk ${c + 1} retry`); }
         }
       }
       // Final sweep: gather every block still without text and re-request in one go.
