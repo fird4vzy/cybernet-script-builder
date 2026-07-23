@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-22-v6-resize-fix';
+const CYBERNET_BUILD = '2026-07-23-v7-route-export-answers';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -2358,6 +2358,9 @@ function exportDrawio() {
   const useManualLayout = blocksWithCoords.length > d.blocks.length / 2;
 
   const pos = {};
+  // Hoisted: the edge writer below needs the same offset to place absolute
+  // waypoints, otherwise a computed route lands far from its blocks.
+  let expOffX = 0, expOffY = 0;
 
   if (useManualLayout) {
     // ─── Use manual x, y from Canvas (normalize to start near 0,0) ───
@@ -2370,6 +2373,7 @@ function exportDrawio() {
     });
     const offsetX = PAD - minX;
     const offsetY = PAD - minY;
+    expOffX = offsetX; expOffY = offsetY;
     d.blocks.forEach(b => {
       const x = typeof b.x === 'number' ? b.x : 0;
       const y = typeof b.y === 'number' ? b.y : 0;
@@ -2455,7 +2459,13 @@ function exportDrawio() {
     else if (totalLen > 140) cellH = 140;
     else if (totalLen > 70) cellH = 100;
     else if (totalLen > 30) cellH = 80;
-    const cellW = totalLen > 70 ? 240 : NW;
+    const cellW0 = totalLen > 70 ? 240 : NW;
+    // Use the SAME box the canvas uses when the block has a real size: edge
+    // anchors are fractions of the box, so exporting a differently-sized box
+    // shifts every arrow that touches it.
+    const cbox = (typeof csBlockBox === 'function') ? csBlockBox(b) : null;
+    const cellW = (cbox && cbox.w > 40 && (b.wManual || b.dioSize)) ? Math.round(cbox.w) : cellW0;
+    if (cbox && cbox.h > 40 && (b.hManual || b.dioSize)) cellH = Math.round(cbox.h);
     cells += `<mxCell id="${cellId}" value="${txt}" style="${shapeStyle};whiteSpace=wrap;html=1;fillColor=${fill};strokeColor=#333333;fontSize=10;align=left;verticalAlign=top;spacing=6;" vertex="1" parent="1"><mxGeometry x="${x}" y="${y}" width="${cellW}" height="${cellH}" as="geometry"/></mxCell>`;
     idMap[b.id] = cellId;
     cellId++;
@@ -2471,8 +2481,33 @@ function exportDrawio() {
       if (br && br.entryX != null && br.entryY != null) anchors += `entryX=${br.entryX};entryY=${br.entryY};entryDx=${br.entryDx || 0};entryDy=${br.entryDy || 0};`;
       if (br && br.dashed) anchors += 'dashed=1;';
       const rnd = (br && br.rounded) ? 1 : 0;
-      const pts = (br && br.waypoints && br.waypoints.length)
-        ? `<Array as="points">${br.waypoints.map(p => `<mxPoint x="${Math.round(p.x)}" y="${Math.round(p.y)}"/>`).join('')}</Array>`
+      let ptsArr = (br && br.waypoints && br.waypoints.length) ? br.waypoints : null;
+      // No stored geometry? Export the route the CANVAS draws instead of leaving
+      // the edge bare — a bare edge lets draw.io invent its own path, which is
+      // why exported arrows looked nothing like the diagram on screen.
+      if (!ptsArr && br && typeof csEdgeGeom === 'function') {
+        try {
+          const tgt = d.blocks.find(x => x.id === toId);
+          if (tgt) {
+            const poly = csEdgeGeom(b, tgt, br).poly || [];
+            const mid = poly.slice(1, -1);          // drop the endpoints — draw.io attaches those
+            if (mid.length) ptsArr = mid;
+            if (!anchors) {
+              // Derive the attachment points from the computed route so draw.io
+              // starts and ends the arrow on the same sides the canvas does.
+              const sb = csBlockBox(b), tb = csBlockBox(tgt);
+              const s = poly[0], e2 = poly[poly.length - 1];
+              if (s && e2 && sb.w > 0 && sb.h > 0 && tb.w > 0 && tb.h > 0) {
+                const fx = (v, lo, len) => Math.max(0, Math.min(1, Math.round(((v - lo) / len) * 100) / 100));
+                anchors += `exitX=${fx(s.x, sb.x, sb.w)};exitY=${fx(s.y, sb.y, sb.h)};exitDx=0;exitDy=0;`;
+                anchors += `entryX=${fx(e2.x, tb.x, tb.w)};entryY=${fx(e2.y, tb.y, tb.h)};entryDx=0;entryDy=0;`;
+              }
+            }
+          }
+        } catch (err) { /* routing unavailable — fall back to a bare edge */ }
+      }
+      const pts = (ptsArr && ptsArr.length)
+        ? `<Array as="points">${ptsArr.map(p => `<mxPoint x="${Math.round(p.x + expOffX)}" y="${Math.round(p.y + expOffY)}"/>`).join('')}</Array>`
         : '';
       cells += `<mxCell id="${cellId}" value="${drawioLabel(label || '')}" style="edgeStyle=orthogonalEdgeStyle;rounded=${rnd};html=1;${anchors}strokeColor=${color};fontSize=10;fontStyle=1;" edge="1" parent="1" source="${from}" target="${to}"><mxGeometry relative="1" as="geometry">${pts}</mxGeometry></mxCell>`;
       cellId++;
@@ -8083,7 +8118,17 @@ async function generateScript() {
           : ruLen < 60 ? 'короткая'
           : ruLen < 160 ? 'средняя'
           : 'развёрнутая';
-        return { id: b.id, role: b.title || '', intent: b.intent || '', type: b.type || 'normal', len: lenHint };
+        // The labels on the outgoing edges ARE the client's possible answers.
+        // Without them the model wrote questions the branches can't answer —
+        // e.g. it asked "Когда вам удобно поговорить?" while the only branch
+        // out of that block was "Да, конечно". The question must fit the answers.
+        const answers = (b.branches || [])
+          .map(br => (br.label || '').trim())
+          .filter(Boolean)
+          .slice(0, 8);
+        const m = { id: b.id, role: b.title || '', intent: b.intent || '', type: b.type || 'normal', len: lenHint };
+        if (answers.length) m.answers = answers;
+        return m;
       });
 
       // ── Generate in CHUNKS ──────────────────────────────────────────
@@ -8112,6 +8157,14 @@ role может содержать предмет эталона («У нас у
 - «Что входит в тестовый период» → вопрос про условия → робот отвечает про ставку, срок, требования
 - Никогда не переноси слова старой темы («1С», «облако», «сервер», «тестовый период», «Uzcloud») ни в title, ни в ru, ни в uz.
 
+🔴 ВОПРОС ДОЛЖЕН СТЫКОВАТЬСЯ С ОТВЕТАМИ (поле answers):
+answers — это варианты, которые клиент может ответить на этот блок (подписи на стрелках). Твоя реплика обязана заканчиваться так, чтобы КАЖДЫЙ из этих вариантов был логичным ответом.
+- answers ["Да, конечно", "Нет"] → спрашивай ЗАКРЫТО: «Уделите минуту?» ✅
+  НЕПРАВИЛЬНО: «Когда вам будет удобно поговорить?» ← на такой вопрос нельзя ответить «Да, конечно» ❌
+- answers ["Сегодня", "Завтра", "На следующей неделе"] → спрашивай ОТКРЫТО: «Когда планируете?» ✅
+- Если answers нет — блок не задаёт вопрос, просто закончи мысль.
+Перед тем как записать реплику, мысленно подставь каждый вариант из answers — если хоть один звучит нелепо, переформулируй вопрос.
+
 ПРАВИЛА:
 - Для каждого блока: (1) пойми, что сказал клиент (role), (2) напиши краткий title на новой теме, (3) напиши ОТВЕТ РОБОТА: ru + перевод uz.
 - 🔴 В title, ru, uz НЕ должно быть НИ ОДНОГО слова старой темы.
@@ -8123,7 +8176,7 @@ role может содержать предмет эталона («У нас у
 - Если есть БРИФ КЛИЕНТА выше — конкретика (продукты, ставки, сроки, контакты) строго из него.
 - Верни СТРОГО JSON-массив: [{"id":"...","title":"...","ru":"...","uz":"..."}, ...] для ВСЕХ ${mapChunk.length} блоков этой порции, ничего кроме JSON.
 
-КАРКАС (${mapChunk.length} блоков — что говорит КЛИЕНТ; ты пишешь ОТВЕТ РОБОТА):
+КАРКАС (${mapChunk.length} блоков. role = что сказал КЛИЕНТ, answers = что он может ответить дальше; ты пишешь ОТВЕТ РОБОТА):
 ${JSON.stringify(mapChunk, null, 1)}`;
 
       const parseChunk = (raw) => {
