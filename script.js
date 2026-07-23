@@ -1,11 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-<<<<<<< HEAD
 const CYBERNET_BUILD = '2026-07-23-v15-labels-greeting';
-=======
-const CYBERNET_BUILD = '2026-07-23-v13-channel-aware';
->>>>>>> f6ca3e08bfe7280d77d004093b68fda0373222b9
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -7852,7 +7848,6 @@ function showGenLoader(text) {
   // freeze its scroll while the loader is up; then inset:0 covers it exactly.
   const card = document.querySelector('#gen-script-modal .modal');
   const host = card || document.getElementById('gen-script-modal') || document.body;
-<<<<<<< HEAD
   if (card) {
     // Scroll to the top BEFORE freezing. An absolutely-positioned overlay is
     // placed at the scroll container's content origin, so if the dialog was
@@ -7861,9 +7856,6 @@ function showGenLoader(text) {
     card.scrollTop = 0;
     card.classList.add('is-loading');
   }
-=======
-  if (card) card.classList.add('is-loading');
->>>>>>> f6ca3e08bfe7280d77d004093b68fda0373222b9
   const ov = document.createElement('div');
   ov.id = 'gen-loader-overlay';
   ov.className = 'gen-loader-overlay';
