@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-23-v20-favicon-inline';
+const CYBERNET_BUILD = '2026-07-23-v21-storage-fix';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -6457,15 +6457,24 @@ function pushVersionBackup(reason) {
     const now = Date.now();
     if (now - _lastHistoryPush < HISTORY_MIN_GAP_MS) return;
     if (!Object.keys(profiles).length) return;
+    // Back up ONLY the active profile. Storing every profile in every snapshot
+    // multiplied localStorage usage by the number of profiles and blew the ~5MB
+    // quota ("Ошибка сохранения"). You restore the profile you were editing.
     const cleaned = {};
-    Object.entries(profiles).forEach(([name, p]) => { const { _migrated, ...rest } = p; cleaned[name] = rest; });
+    const src = profiles[activeProfile];
+    if (src) {
+      const { _migrated, ...rest } = src;
+      if (Array.isArray(rest.blocks)) rest.blocks = rest.blocks.map(({ _mw, _mh, ...b }) => b);
+      cleaned[activeProfile] = rest;
+    }
+    if (!Object.keys(cleaned).length) return;
     let arr = [];
     try { arr = JSON.parse(localStorage.getItem(HISTORY_STORE_KEY) || '[]'); } catch { arr = []; }
     // skip if identical to the newest backup (no real change)
     const last = arr[arr.length - 1];
     const sig = JSON.stringify(cleaned);
     if (last && JSON.stringify(last.profiles) === sig) { _lastHistoryPush = now; return; }
-    arr.push({ ts: now, reason: reason || '', activeProfile, profiles: cleaned });
+    arr.push({ ts: now, reason: reason || '', activeProfile, partial: true, profiles: cleaned });
     while (arr.length > HISTORY_KEEP) arr.shift();
     let saved = false;
     while (!saved && arr.length) {
@@ -6485,7 +6494,9 @@ function restoreVersionBackup(ts) {
   if (!snap) { toast('Версия не найдена', 'error'); return; }
   if (!confirm('Восстановить эту версию? Текущее состояние будет заменено (его можно вернуть через Ctrl+Z).')) return;
   snapshot('Восстановление версии');
-  Object.keys(profiles).forEach(k => delete profiles[k]);
+  // A partial snapshot holds just one profile — replace only that one, leaving
+  // the rest untouched. Old full snapshots keep the original replace-all behaviour.
+  if (!snap.partial) Object.keys(profiles).forEach(k => delete profiles[k]);
   Object.entries(snap.profiles).forEach(([k, v]) => { profiles[k] = v; });
   activeProfile = profiles[snap.activeProfile] ? snap.activeProfile : Object.keys(profiles)[0];
   if (typeof renderProfiles === 'function') renderProfiles();
@@ -6556,13 +6567,44 @@ function saveToStorage() {
     // Also sync to cloud (debounced, only if logged in)
     scheduleCloudSync();
   } catch (err) {
-    // Likely QuotaExceededError
+    // Almost always QuotaExceededError. Version history is the biggest and the
+    // least important consumer, so free it and retry before giving up — the
+    // user's current work matters more than old snapshots.
     console.error('Autosave failed:', err);
+    let rescued = false;
+    try {
+      let arr = [];
+      try { arr = JSON.parse(localStorage.getItem(HISTORY_STORE_KEY) || '[]'); } catch { arr = []; }
+      while (!rescued && arr.length) {
+        arr.shift();                                     // drop the oldest snapshot
+        try {
+          localStorage.setItem(HISTORY_STORE_KEY, JSON.stringify(arr));
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            version: 1, savedAt: Date.now(), activeProfile,
+            profiles: (() => { const c = {}; Object.entries(profiles).forEach(([n, p]) => {
+              const { _migrated, ...rest } = p;
+              if (Array.isArray(rest.blocks)) rest.blocks = rest.blocks.map(({ _mw, _mh, ...b }) => b);
+              c[n] = rest; }); return c; })()
+          }));
+          rescued = true;
+        } catch (e2) { /* still too big — drop another snapshot */ }
+      }
+      if (!rescued) { try { localStorage.removeItem(HISTORY_STORE_KEY); } catch (e3) {} }
+    } catch (e4) {}
+    if (rescued) {
+      autosave.lastSaveAt = Date.now();
+      autosave.dirty = false;
+      updateAutosaveIndicator('saved');
+      if (!autosave._quotaNoticeShown || Date.now() - autosave._quotaNoticeShown > 300000) {
+        autosave._quotaNoticeShown = Date.now();
+        toast('Память браузера была переполнена — удалил старые версии из истории. Работа сохранена.');
+      }
+      return;
+    }
     updateAutosaveIndicator('error');
-    // Show toast only once every 30s to avoid spam
     if (!autosave._errorToastShown || Date.now() - autosave._errorToastShown > 30000) {
       autosave._errorToastShown = Date.now();
-      toast('Ошибка автосохранения: возможно, превышен лимит localStorage. Экспортируйте JSON вручную.', 'error');
+      toast('Не хватает памяти браузера. Удалите ненужные профили или выгрузите их в JSON (Экспорт).', 'error');
     }
   }
 }
