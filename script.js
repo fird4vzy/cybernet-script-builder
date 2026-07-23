@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-23-v15-labels-greeting';
+const CYBERNET_BUILD = '2026-07-23-v16-system-blocks';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8130,12 +8130,27 @@ async function generateScript() {
       // appeared twice. Keep them verbatim and never send them to the model.
       const isRouterBlock = (b) => {
         const t = (b.title || '').trim().toLowerCase();
+        const body = (b.ru || '').trim();
+        const low = body.toLowerCase();
+
+        // ── System directives, not speech ──
+        // The эталон puts engine commands in some blocks: «Установка русского
+        // языка», «Проверка языка в базе», «Случайный выбор», «По счетчику».
+        // Sending those to the model as "write a reply here" is what made it
+        // invent «Какой язык вам удобнее?» in a block that had ALREADY been
+        // routed by language. Keep such blocks exactly as the эталон has them.
+        if (/^установк[аи]\s/.test(low)
+          || /^проверк[аи]\s/.test(low)
+          || /^случайн/.test(low)
+          || /^по\s+счётчику|^по\s+счетчику/.test(low)
+          || /^перевод\s+на\s/.test(low)
+          || /^переход\s/.test(low)) return true;
+
         if (!t) return false;
         // Title alone is not enough: an эталон may title a real speaking block
         // "Любой ответ" too. Require that the reference itself put no real
         // speech there — a placeholder is short (or just echoes the title).
-        const body = (b.ru || '').trim();
-        const isPlaceholder = body.length <= 40 || body.toLowerCase() === t;
+        const isPlaceholder = body.length <= 40 || low === t;
         if (!isPlaceholder) return false;
         if (/^ответ\s+клиент/.test(t)) return true;
         if (/^любой\s+ответ$/.test(t)) return true;
