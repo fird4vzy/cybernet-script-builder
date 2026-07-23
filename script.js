@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-23-v16-system-blocks';
+const CYBERNET_BUILD = '2026-07-23-v17-greeting-strip';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8421,6 +8421,34 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       }
 
       const totalGot = Object.keys(textById).length;
+
+      // ── Strip duplicate greetings ───────────────────────────────────
+      // Only the opening block may greet. The model kept saying "Здравствуйте!"
+      // in mid-conversation blocks ("Кто вы? Откуда звоните?") despite the rule,
+      // so enforce it mechanically instead of hoping it complies.
+      const GREET_RU = /^\s*(алло[,!.\s]*)?(здравствуйте|добрый\s+день|добрый\s+вечер|доброе\s+утро|приветствую)[!,.\s—-]*/i;
+      const GREET_UZ = /^\s*(allo[,!.\s]*)?(assalomu\s+alaykum|assalom\s+alaykum|salom)[!,.\s—-]*/i;
+      let stripped = 0;
+      textMap.forEach(p => {
+        const isStart = !p.after || !p.after.length;
+        if (isStart) return;                       // the opening block keeps its greeting
+        const rec = textById[p.id];
+        if (!rec) return;
+        ['ru', 'uz'].forEach(k => {
+          const val = rec[k];
+          if (typeof val !== 'string' || !val.trim()) return;
+          const re = k === 'ru' ? GREET_RU : GREET_UZ;
+          if (!re.test(val)) return;
+          const cut = val.replace(re, '').trim();
+          // Only strip when a real sentence remains — never blank a block.
+          if (cut.length >= 15) {
+            rec[k] = cut.charAt(0).toUpperCase() + cut.slice(1);
+            if (k === 'ru') stripped++;
+          }
+        });
+      });
+      if (stripped) console.log(`[Cybernet] убрано повторных приветствий: ${stripped}`);
+
 
 
       if (!totalGot) {
