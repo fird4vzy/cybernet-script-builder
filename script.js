@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-22-structmode-v3-chunked';
+const CYBERNET_BUILD = '2026-07-22-structmode-v4-retry';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8057,7 +8057,7 @@ async function generateScript() {
       const refProfile = getRefProfile(ref);
       const refBlocks = refProfile?.blocks || [];
       if (!refBlocks.length) throw new Error('В эталоне нет блоков');
-      console.log('[Cybernet] STRUCTURE MODE v3 (skeleton, chunked, no reference texts) — blocks:', refBlocks.length);
+      console.log('[Cybernet] STRUCTURE MODE v4 (skeleton, chunked+retry, no reference texts) — blocks:', refBlocks.length);
 
       // Send AI a per-block ROLE map (NOT the reference texts). Sending the
       // real ru/uz made the model rewrite-in-place and drag the reference's
@@ -8118,30 +8118,54 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         return Array.isArray(arr) ? arr : [];
       };
 
-      const CHUNK = 30;
+      // Smaller chunks: 30 still truncated on long replies (that was the 40
+      // empty blocks). 15 keeps every response whole. Each chunk retries, and a
+      // final sweep re-requests whatever is still missing so we don't ship blanks.
+      const CHUNK = 15;
       const textById = {};
-      let totalGot = 0;
-      for (let i = 0; i < textMap.length; i += CHUNK) {
-        const part = textMap.slice(i, i + CHUNK);
-        showGenLoader(`AI пишет реплики… (${Math.min(i + CHUNK, textMap.length)}/${textMap.length})`);
+
+      const runBatch = async (part, label) => {
         const raw = await aiGenerate(buildPrompt(part), 'Напиши новые тексты для всех блоков этой порции и верни JSON-массив.', {
-          json: true, temperature: 0.7, maxTokens: 16000
+          json: true, temperature: 0.7, maxTokens: 12000
         });
         const arr = parseChunk(raw);
-        // Match by id; if the model dropped ids but count matches, fall back to order.
         let matched = 0;
-        arr.forEach(r => { if (r && r.id && part.some(p => p.id === r.id)) { textById[r.id] = r; matched++; } });
+        arr.forEach(r => { if (r && r.id && part.some(p => p.id === r.id) && !textById[r.id]) { textById[r.id] = r; matched++; } });
         if (!matched && arr.length === part.length) {
-          part.forEach((p, k) => { if (arr[k]) textById[p.id] = { id: p.id, ...arr[k] }; });
+          part.forEach((p, k) => { if (arr[k] && !textById[p.id]) textById[p.id] = { id: p.id, ...arr[k] }; });
           matched = arr.length;
         }
-        totalGot += matched;
-        console.log(`[Cybernet] chunk ${i / CHUNK + 1}: ${matched}/${part.length} блоков`);
+        console.log(`[Cybernet] ${label}: ${matched}/${part.length}`);
+        return matched;
+      };
+
+      const chunks = [];
+      for (let i = 0; i < textMap.length; i += CHUNK) chunks.push(textMap.slice(i, i + CHUNK));
+      for (let c = 0; c < chunks.length; c++) {
+        showGenLoader(`AI пишет реплики… (порция ${c + 1}/${chunks.length})`);
+        let got = await runBatch(chunks[c], `chunk ${c + 1}`);
+        if (got < chunks[c].length) {  // one retry for the blocks this chunk missed
+          const miss = chunks[c].filter(p => !textById[p.id]);
+          if (miss.length) { showGenLoader(`AI дописывает… (порция ${c + 1})`); await runBatch(miss, `chunk ${c + 1} retry`); }
+        }
       }
+      // Final sweep: gather every block still without text and re-request in one go.
+      let missing = textMap.filter(p => !textById[p.id]);
+      let sweep = 0;
+      while (missing.length && sweep < 3) {
+        sweep++;
+        showGenLoader(`AI дописывает пропущенные… (${missing.length})`);
+        const before = Object.keys(textById).length;
+        for (let i = 0; i < missing.length; i += CHUNK) await runBatch(missing.slice(i, i + CHUNK), `sweep ${sweep}`);
+        missing = textMap.filter(p => !textById[p.id]);
+        if (Object.keys(textById).length === before) break;  // no progress — stop
+      }
+
+      const totalGot = Object.keys(textById).length;
       if (!totalGot) {
         throw new Error('AI вернул неожиданный формат (не список блоков). Попробуйте ещё раз.');
       }
-      console.log(`[Cybernet] STRUCTURE MODE v2: получено ${totalGot}/${textMap.length} блоков`);
+      console.log(`[Cybernet] STRUCTURE MODE v3: получено ${totalGot}/${textMap.length} блоков, пропущено ${textMap.length - totalGot}`);
 
       // Build new profile by DEEP-COPYING the reference structure, swapping texts
       const profileName = `${niche} (по эталону ${ref.name})`;
@@ -8152,15 +8176,15 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         sections: JSON.parse(JSON.stringify(refProfile?.sections || [{ id: 's1', label: 'Основной раздел' }])),
         blocks: refBlocks.map(b => {
           const t = textById[b.id] || {};
-          // A block the model didn't return keeps NOTHING from the reference —
-          // not its text and not its title. The reference is on another theme
-          // ("У нас уже есть 1С"), so keeping b.title would leak that theme into
-          // the new script. Blank is visible and fixable; a stray 1С title is not.
+          // A block the model never returned keeps NOTHING from the reference —
+          // not its text and not its title ("У нас уже есть 1С" would leak the
+          // old theme). Mark it instead: a visible «[не сгенерировано]» is easy
+          // to find and fix, unlike a blank box or a stray off-theme heading.
           const gotIt = t.title !== undefined || t.ru !== undefined || t.uz !== undefined;
           return {
             id: b.id,
             sec: b.sec || 's1',
-            title: gotIt ? (t.title || '') : '',
+            title: gotIt ? (t.title || '') : '[не сгенерировано]',
             intent: b.intent || '',
             type: b.type || 'normal',
             ru: t.ru !== undefined ? t.ru : '',
@@ -8197,7 +8221,11 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       const canvasTab = document.querySelector('[data-tab="canvas"]');
       if (canvasTab) switchTab('canvas', canvasTab);
       saveToStorage();
-      toast(`✓ Создан профиль "${uniqueName}" · ${newProfile.blocks.length} блоков (структура эталона сохранена)`);
+      const missedCount = textMap.length - totalGot;
+      toast(missedCount
+        ? `⚠ Создан профиль "${uniqueName}" · ${newProfile.blocks.length} блоков, но ${missedCount} без текста (помечены «[не сгенерировано]») — сгенерируйте их заново или заполните вручную`
+        : `✓ Создан профиль "${uniqueName}" · ${newProfile.blocks.length} блоков (структура эталона сохранена)`,
+        missedCount ? 'error' : undefined);
       btn.disabled = false;
       btn.textContent = origText;
       return;
