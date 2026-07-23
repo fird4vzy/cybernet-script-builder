@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-23-v9-no-reask';
+const CYBERNET_BUILD = '2026-07-23-v10-funnel-stage';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8164,6 +8164,18 @@ async function generateScript() {
         const after = (incomingOf.get(b.id) || []).slice(0, 3);
         if (after.length) m.after = after;
         if (answers.length) m.answers = answers;
+        // What comes AFTER this block. Without it the model wrote a closing
+        // ("запишу вас на консультацию") in a block that is followed by a
+        // qualifying question — the funnel ran backwards. Knowing the next step
+        // keeps each reply at the right stage of the conversation.
+        const leadsTo = (b.branches || [])
+          .map(br => {
+            const nb = refBlocks.find(x => x.id === br.next);
+            return nb ? (nb.title || '').trim() : '';
+          })
+          .filter(Boolean)
+          .slice(0, 4);
+        if (leadsTo.length) m.leadsTo = leadsTo;
         return m;
       });
 
@@ -8211,6 +8223,12 @@ after — что произошло НЕПОСРЕДСТВЕННО ПЕРЕД э
 - Один и тот же вопрос НЕ должен звучать в двух блоках подряд. Проверь after перед тем, как задать вопрос.
 
 🔴 ЗАГОЛОВОК (title): если role — короткая структурная метка («Рус», «Уз», «Да», «Нет», «Молчание», «1ый раз», «2 ой раз»), ОСТАВЬ её как title без изменений. Переписывай title только если в нём есть предмет старой темы.
+
+🔴 ЭТАП РАЗГОВОРА (поле leadsTo):
+leadsTo — блоки, которые идут ПОСЛЕ этого. Реплика должна ПОДВОДИТЬ к ним, а не перепрыгивать через них.
+- Если в leadsTo есть уточняющие вопросы («Интерес к финансированию», «Какие условия») — значит разговор ЕЩЁ ИДЁТ. Нельзя закрывать: ❌ «Запишу вас на консультацию, когда удобно?» Правильно: короткий аргумент + переход к следующему вопросу.
+- Закрывать (записать на встречу, передать менеджеру, попрощаться) можно ТОЛЬКО если leadsTo пустой или ведёт в завершение звонка.
+- Не задавай в блоке тот же вопрос, что стоит в leadsTo — его задаст следующий блок.
 
 ПРАВИЛА:
 - Для каждого блока: (1) пойми, что сказал клиент (role), (2) напиши краткий title на новой теме, (3) напиши ОТВЕТ РОБОТА: ru + перевод uz.
@@ -8291,7 +8309,9 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       console.log(`[Cybernet] STRUCTURE MODE v3: получено ${totalGot}/${textMap.length} блоков, пропущено ${textMap.length - totalGot}`);
 
       // Build new profile by DEEP-COPYING the reference structure, swapping texts
-      const profileName = `${niche} (по эталону ${ref.name})`;
+      // Don't paste the reference's name into the profile: it carries the old
+      // theme ("tm_script_1C_uzcloud") and then shows up on every export header.
+      const profileName = `${niche}`.trim() || 'Новый скрипт';
       const uniqueName = profiles[profileName] ? `${profileName} ${Date.now().toString().slice(-4)}` : profileName;
       const newProfile = {
         name: uniqueName,
@@ -8346,10 +8366,23 @@ ${JSON.stringify(mapChunk, null, 1)}`;
             || /^\d+\s*(ый|ой|ий|-?й)?\s*раз/i.test(refTitle)
             || /^молчание$/i.test(refTitle);
           const gotIt = t.title !== undefined || t.ru !== undefined || t.uz !== undefined;
+          // The model sometimes echoes the role back as the title, which keeps
+          // the old theme visible ("У нас уже есть 1С") even though the body is
+          // correctly rewritten. When that happens, build a short title from the
+          // generated text instead so nothing off-theme survives in a heading.
+          let outTitle = isStructural ? refTitle : (gotIt ? (t.title || '') : '[не сгенерировано]');
+          if (!isStructural && gotIt && outTitle && refTitle
+              && outTitle.trim().toLowerCase() === refTitle.toLowerCase()) {
+            const src = (t.ru || '').trim();
+            if (src) {
+              const firstSentence = src.split(/(?<=[.?!])\s/)[0] || src;
+              outTitle = firstSentence.length > 42 ? firstSentence.slice(0, 40).trim() + '…' : firstSentence;
+            }
+          }
           return {
             id: b.id,
             sec: b.sec || 's1',
-            title: isStructural ? refTitle : (gotIt ? (t.title || '') : '[не сгенерировано]'),
+            title: outTitle,
             intent: b.intent || '',
             type: b.type || 'normal',
             ru: t.ru !== undefined ? t.ru : '',
