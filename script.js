@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-23-v11-turns-loader';
+const CYBERNET_BUILD = '2026-07-23-v15-labels-greeting';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -7843,11 +7843,19 @@ function buildBriefSection() {
 
 function showGenLoader(text) {
   hideGenLoader();
-  // Anchor to the BACKDROP, not the inner card. The card is a scrollable box
-  // (overflow:auto, max-height:90vh), so an absolutely-positioned overlay inside
-  // it covered only one screenful and scrolled away — leaving the form and the
-  // footer buttons exposed and clickable mid-generation.
-  const host = document.getElementById('gen-script-modal') || document.body;
+  // Cover the dialog card only (blurred), not the whole screen. The card scrolls
+  // (overflow:auto), which is why an absolute overlay used to slide away — so we
+  // freeze its scroll while the loader is up; then inset:0 covers it exactly.
+  const card = document.querySelector('#gen-script-modal .modal');
+  const host = card || document.getElementById('gen-script-modal') || document.body;
+  if (card) {
+    // Scroll to the top BEFORE freezing. An absolutely-positioned overlay is
+    // placed at the scroll container's content origin, so if the dialog was
+    // scrolled down the overlay sat above the visible area — covering nothing
+    // and leaving the footer exposed, with scrolling frozen in that position.
+    card.scrollTop = 0;
+    card.classList.add('is-loading');
+  }
   const ov = document.createElement('div');
   ov.id = 'gen-loader-overlay';
   ov.className = 'gen-loader-overlay';
@@ -7865,6 +7873,8 @@ function showGenLoader(text) {
 function hideGenLoader() {
   const ov = document.getElementById('gen-loader-overlay');
   if (ov) { if (ov._timer) clearInterval(ov._timer); ov.remove(); }
+  document.querySelectorAll('#gen-script-modal .modal.is-loading')
+    .forEach(el => el.classList.remove('is-loading'));
 }
 
 // ═══ LEARNING FROM EDITS (было → стало) ═══
@@ -8060,7 +8070,7 @@ async function generateScript() {
 - Для каждого блока сочини живую реплику по его роли (title/intent) и длине (textHint).
 - 🔴 Скелет может быть от эталона на другую тему (1С, облако и т.п.). Твой скрипт — строго про тему запроса. Ни одного слова из чужой темы (никаких «1С», «облако», «сервер», «тестовый период»), если её нет в запросе пользователя.
 - Служебные блоки (textHint = «служебный/без речи»: «Ответ клиента», «Начало», ромбы) — оставь их роль как есть, без выдуманной речи.
-- Реплики — живые, продающие, в тоне «{tone}»: присоединение → аргумент по сути → мягкий возврат к цели. Без канцелярита и без повтора одной фразы в разных блоках.
+- Реплики — живые, продающие, в тоне «{tone}»: присоединение → аргумент по сути. Вопрос в конце — ТОЛЬКО если у блока есть варианты ответа. Без канцелярита и без повтора одной фразы в разных блоках.
 
 ИТОГ: тот же каркас, что у эталона (можно богаче), но все реплики новые и под нужную тему.`;
     } else {
@@ -8134,6 +8144,52 @@ async function generateScript() {
         return false;
       };
 
+      // ── Rewrite the BRANCH LABELS too ───────────────────────────────
+      // Labels are the client's own lines ("У нас уже есть 1С"). They were
+      // copied verbatim from the эталон, so the old theme stayed visible on the
+      // arrows even when the reply under them was correctly about credit.
+      const labelMap = {};
+      try {
+        const uniqLabels = [];
+        refBlocks.forEach(b => (b.branches || []).forEach(br => {
+          const l = (br.label || '').trim();
+          if (l && !uniqLabels.includes(l)) uniqLabels.push(l);
+        }));
+        if (uniqLabels.length) {
+          showGenLoader('AI переписывает подписи веток…');
+          const lblPrompt = `Это подписи на стрелках диалогового скрипта — КОРОТКИЕ реплики/намерения КЛИЕНТА.
+Перепиши каждую под новую сферу, сохранив СМЫСЛ намерения. Длина — как в оригинале (1-5 слов), это метка, а не реплика.
+
+НОВАЯ СФЕРА: ${niche}
+ЦЕЛЬ: ${goal}
+
+ПРАВИЛА:
+- Смысл сохраняй: «У нас уже есть 1С» = «у нас уже есть это решение» → для финансирования: «У нас уже есть кредит».
+- 🔴 Ни одного слова чужой темы («1С», «облако», «сервер», «тестовый период», «Uzcloud»), если её нет в новой сфере.
+- Технические и служебные метки НЕ ТРОГАЙ, верни как есть: «Да», «Нет», «Рус», «Уз», «Молчание», «1ый раз», «2 ой раз», «3ий раз», «Любой другой ответ», «Ошиблись номером», «Мошенники», «Это робот?».
+- Верни СТРОГО JSON-объект вида {"оригинал":"новая подпись", ...} для ВСЕХ ${uniqLabels.length} подписей, ничего кроме JSON.
+
+ПОДПИСИ:
+${JSON.stringify(uniqLabels, null, 1)}`;
+          const rawL = await aiGenerate(lblPrompt, 'Перепиши подписи и верни JSON-объект.', { json: true, temperature: 0.4, maxTokens: 4000 });
+          let parsedL;
+          try { parsedL = JSON.parse(rawL); } catch {
+            const mm = rawL.match(/\{[\s\S]*\}/);
+            if (mm) { try { parsedL = JSON.parse(mm[0]); } catch {} }
+          }
+          if (parsedL && typeof parsedL === 'object' && !Array.isArray(parsedL)) {
+            Object.entries(parsedL).forEach(([k, v]) => {
+              if (typeof v === 'string' && v.trim()) labelMap[k.trim()] = v.trim();
+            });
+          }
+          console.log(`[Cybernet] подписей веток переписано: ${Object.keys(labelMap).length}/${uniqLabels.length}`);
+        }
+      } catch (e) { console.warn('[Cybernet] подписи веток не переписаны:', e && e.message); }
+      const newLabel = (l) => {
+        const k = (l || '').trim();
+        return (k && labelMap[k]) ? labelMap[k] : (l || '');
+      };
+
       // What leads INTO each block. Without this the model wrote every reply in
       // isolation and produced non-sequiturs — "Понимаю, есть ли что-то ещё?"
       // directly after a greeting. Knowing the previous step keeps it coherent.
@@ -8141,7 +8197,7 @@ async function generateScript() {
       refBlocks.forEach(src => (src.branches || []).forEach(br => {
         if (!br.next) return;
         if (!incomingOf.has(br.next)) incomingOf.set(br.next, []);
-        const via = (br.label || '').trim();
+        const via = newLabel(br.label).trim();
         const prev = (src.title || '').trim();
         if (!prev) return;
         // Spell out WHETHER the client actually spoke. A labelled edge means the
@@ -8164,7 +8220,7 @@ async function generateScript() {
         // e.g. it asked "Когда вам удобно поговорить?" while the only branch
         // out of that block was "Да, конечно". The question must fit the answers.
         const answers = (b.branches || [])
-          .map(br => (br.label || '').trim())
+          .map(br => newLabel(br.label).trim())
           .filter(Boolean)
           .slice(0, 8);
         const m = { id: b.id, role: b.title || '', intent: b.intent || '', type: b.type || 'normal', len: lenHint };
@@ -8190,6 +8246,26 @@ async function generateScript() {
       // 94 blocks × (title+ru+uz) overflow a single response and the JSON gets
       // cut off — that was the "35 empty blocks" bug: the model only returned
       // the first ~60. Batching keeps every response comfortably whole.
+      // The channel dropdown was only pasted in as a label, so the model never
+      // drew any behaviour from it — an OUTBOUND call greeted with "Чем могу
+      // помочь?", which belongs to an inbound support line. Turn the choice into
+      // an explicit behavioural rule (and never hardcode one direction).
+      const ch = String(channel || '').toLowerCase();
+      let channelRule;
+      if (ch.includes('исходящ')) {
+        channelRule = `- 🔴 ЭТО ИСХОДЯЩИЙ ЗВОНОК: робот позвонил клиенту САМ и ВЕДЁТ разговор. Клиент ни о чём не просил и не ждёт звонка.
+  ❌ СТРОГО ЗАПРЕЩЕНО: «Как могу помочь вам сегодня?», «О чём вы хотели узнать?», «Чем могу быть полезен?», «Какой вопрос вас интересует?», «Слушаю вас» — это фразы ВХОДЯЩЕЙ линии поддержки.
+  ✅ Робот сам представляется, сам называет причину звонка и сам предлагает следующий шаг.`;
+      } else if (ch.includes('входящ')) {
+        channelRule = `- 🔴 ЭТО ВХОДЯЩИЙ ЗВОНОК: клиент позвонил САМ, у него есть вопрос. Робот принимает обращение.
+  ✅ Уместно: «Чем могу помочь?», «Слушаю вас», уточняющие вопросы по его запросу.
+  ❌ НЕ надо навязывать причину звонка, будто робот позвонил первым.`;
+      } else {
+        channelRule = `- 🔴 ЭТО ПЕРЕПИСКА (${channel}), а НЕ телефонный разговор.
+  ❌ ЗАПРЕЩЕНЫ слова «звоню», «на связи», «слышно ли меня», «перезвоню» — никто не звонит.
+  ✅ Пиши короткими сообщениями для чата: приветствие, суть, вопрос.`;
+      }
+
       const buildPrompt = (mapChunk, usedSoFar) => `Ты — эксперт по скриптам колл-центра. У тебя есть КАРКАС эталонного скрипта: список блоков с их РОЛЯМИ (role/intent/type) и нужной длиной реплики (len). Тексты эталона намеренно НЕ показаны. Твоя задача — для КАЖДОГО блока написать НОВЫЙ заголовок (title) и НОВЫЕ живые реплики (ru, uz) под новую сферу. НЕ добавляй и НЕ удаляй блоки. НЕ меняй id.
 
 НОВАЯ СФЕРА: ${niche}
@@ -8231,7 +8307,8 @@ answers — это варианты, которые клиент может от
    ❌ СТРОГО ЗАПРЕЩЕНО: «Понял вас!», «Спасибо за ответ», «Отлично!», «Согласен», «Хорошо, что спросили» — реагировать НЕ НА ЧТО.
    ✅ Просто продолжай мысль с того места, где робот остановился.
 
-- Пустой after → стартовый блок разговора.
+- Пустой after → стартовый блок разговора: ЗДЕСЬ и только здесь робот здоровается и представляется.
+- 🔴 ЗДОРОВАТЬСЯ МОЖНО ТОЛЬКО ОДИН РАЗ ЗА ВЕСЬ СКРИПТ. Если after НЕ пустой — «Здравствуйте», «Добрый день», «Salom» уже прозвучали раньше, ПОВТОРЯТЬ ИХ ЗАПРЕЩЕНО. Представляться второй раз («Меня зовут…», «Я представляю банк…») тоже нельзя, если это уже было в предыдущем блоке.
 - Один и тот же вопрос НЕ должен звучать в двух блоках подряд. Проверь after перед тем, как задать вопрос.
 
 🔴 ЗАГОЛОВОК (title): если role — короткая структурная метка («Рус», «Уз», «Да», «Нет», «Молчание», «1ый раз», «2 ой раз»), ОСТАВЬ её как title без изменений. Переписывай title только если в нём есть предмет старой темы.
@@ -8246,7 +8323,11 @@ leadsTo — блоки, которые идут ПОСЛЕ этого. Репл�
 - Для каждого блока: (1) пойми, что сказал клиент (role), (2) напиши краткий title на новой теме, (3) напиши ОТВЕТ РОБОТА: ru + перевод uz.
 - 🔴 В title, ru, uz НЕ должно быть НИ ОДНОГО слова старой темы.
 - Служебные блоки (len=«служебный/без речи»: «Ответ клиента», «Завершение», «Молчание», «Автоответчик») — короткая служебная подпись, без выдуманной речи.
-- 🔴 РЕПЛИКА ДОЛЖНА БЫТЬ СОДЕРЖАТЕЛЬНОЙ, а не вежливой пустышкой. В ответе на возражение обязательно: (а) короткое присоединение, (б) КОНКРЕТНЫЙ аргумент — что клиент получит (закрыть кассовый разрыв, профинансировать поставку, лимит без залога, решение за N дней), (в) мягкий возврат к цели вопросом.
+- 🔴 ВОПРОС СТАВЬ ТОЛЬКО ТАМ, ГДЕ ЕСТЬ ПОЛЕ answers. Если answers НЕТ — реплика заканчивается УТВЕРЖДЕНИЕМ, без вопроса. Иначе получается «вопрос на вопросе»: робот спрашивает, а следующий блок снова спрашивает.
+  ✅ answers есть → аргумент + один короткий вопрос, на который эти answers являются ответами.
+  ✅ answers нет → аргумент и точка. Ни «Вы готовы?», ни «Вам интересно?», ни «Как считаете?».
+- 🔴 РЕПЛИКА ДОЛЖНА БЫТЬ СОДЕРЖАТЕЛЬНОЙ, а не вежливой пустышкой: (а) короткое присоединение, (б) КОНКРЕТНЫЙ аргумент — что клиент получит (закрыть кассовый разрыв, профинансировать поставку, лимит без залога, решение за N дней).
+${channelRule}
 - ЗАПРЕЩЕНЫ пустые фразы без пользы: «Спасибо за ваше время», «Как я могу помочь», «Мы предлагаем выгодные условия», «Обратитесь к специалисту» — если фраза не несёт конкретики, перепиши.
 - Тон «${tone}», живая устная речь (её произносят вслух по телефону). НЕ повторяй один и тот же аргумент в разных блоках — у каждого возражения свой довод.
 - Узбекский (uz) — ТОЛЬКО ЛАТИНИЦА (o', g', sh, ch), кириллица запрещена.
@@ -8325,10 +8406,20 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       }
 
       const totalGot = Object.keys(textById).length;
+
+
       if (!totalGot) {
         throw new Error('AI вернул неожиданный формат (не список блоков). Попробуйте ещё раз.');
       }
       console.log(`[Cybernet] STRUCTURE MODE v3: получено ${totalGot}/${textMap.length} блоков, пропущено ${textMap.length - totalGot}`);
+      // Diagnostic: a block with no outgoing answers should not end on a question
+      // ("вопрос на вопросе"). Counting them shows whether the rule is holding.
+      try {
+        const noAnsAsking = textMap.filter(p => !p.answers || !p.answers.length)
+          .filter(p => { const r = (textById[p.id] || {}).ru || ''; return /\?\s*$/.test(r.trim()); }).length;
+        const noAnsTotal = textMap.filter(p => !p.answers || !p.answers.length).length;
+        console.log(`[Cybernet] блоков без вариантов ответа: ${noAnsTotal}, из них всё же заканчиваются вопросом: ${noAnsAsking}`);
+      } catch (e) {}
 
       // Build new profile by DEEP-COPYING the reference structure, swapping texts
       // Don't paste the reference's name into the profile: it carries the old
@@ -8361,7 +8452,7 @@ ${JSON.stringify(mapChunk, null, 1)}`;
               hManual: b.hManual, wManual: b.wManual, dioSize: b.dioSize,
               branches: (b.branches || []).map(br => ({
                 id: branchId(),
-                label: br.label || '',
+                label: newLabel(br.label),
                 color: br.color || BRANCH_COLOR_DEFAULT,
                 next: br.next || '',
                 _dio: br._dio,
@@ -8420,7 +8511,7 @@ ${JSON.stringify(mapChunk, null, 1)}`;
             dioSize: b.dioSize,
             branches: (b.branches || []).map(br => ({
               id: branchId(),
-              label: br.label || '',
+              label: newLabel(br.label),
               color: br.color || BRANCH_COLOR_DEFAULT,
               next: br.next || '',
               // Carry the reference's ROUTING, not just the link. Without these
