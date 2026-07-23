@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-23-v10-funnel-stage';
+const CYBERNET_BUILD = '2026-07-23-v11-turns-loader';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -7843,11 +7843,11 @@ function buildBriefSection() {
 
 function showGenLoader(text) {
   hideGenLoader();
-  // anchor to the inner card (.modal) so the overlay covers only the dialog and
-  // doesn't rely on the backdrop, whose fixed-centering must stay intact.
-  // Anchor to the inner card so the loader covers the DIALOG, keeping it visible
-  // underneath — not a full-screen black takeover.
-  const host = document.querySelector('#gen-script-modal .modal') || document.getElementById('gen-script-modal') || document.body;
+  // Anchor to the BACKDROP, not the inner card. The card is a scrollable box
+  // (overflow:auto, max-height:90vh), so an absolutely-positioned overlay inside
+  // it covered only one screenful and scrolled away — leaving the form and the
+  // footer buttons exposed and clickable mid-generation.
+  const host = document.getElementById('gen-script-modal') || document.body;
   const ov = document.createElement('div');
   ov.id = 'gen-loader-overlay';
   ov.className = 'gen-loader-overlay';
@@ -8143,7 +8143,14 @@ async function generateScript() {
         if (!incomingOf.has(br.next)) incomingOf.set(br.next, []);
         const via = (br.label || '').trim();
         const prev = (src.title || '').trim();
-        if (prev) incomingOf.get(br.next).push(via ? `${prev} → «${via}»` : prev);
+        if (!prev) return;
+        // Spell out WHETHER the client actually spoke. A labelled edge means the
+        // client answered; an unlabelled one means the robot is simply
+        // continuing its own turn. Without this the model wrote "Понял вас!"
+        // right after the robot's own greeting, when nobody had replied yet.
+        incomingOf.get(br.next).push(via
+          ? `после «${prev}» клиент ответил: «${via}»`
+          : `продолжение собственной реплики робота «${prev}» (клиент ещё НИЧЕГО не сказал)`);
       }));
 
       const textMap = refBlocks.filter(b => !isRouterBlock(b)).map(b => {
@@ -8183,7 +8190,7 @@ async function generateScript() {
       // 94 blocks × (title+ru+uz) overflow a single response and the JSON gets
       // cut off — that was the "35 empty blocks" bug: the model only returned
       // the first ~60. Batching keeps every response comfortably whole.
-      const buildPrompt = (mapChunk) => `Ты — эксперт по скриптам колл-центра. У тебя есть КАРКАС эталонного скрипта: список блоков с их РОЛЯМИ (role/intent/type) и нужной длиной реплики (len). Тексты эталона намеренно НЕ показаны. Твоя задача — для КАЖДОГО блока написать НОВЫЙ заголовок (title) и НОВЫЕ живые реплики (ru, uz) под новую сферу. НЕ добавляй и НЕ удаляй блоки. НЕ меняй id.
+      const buildPrompt = (mapChunk, usedSoFar) => `Ты — эксперт по скриптам колл-центра. У тебя есть КАРКАС эталонного скрипта: список блоков с их РОЛЯМИ (role/intent/type) и нужной длиной реплики (len). Тексты эталона намеренно НЕ показаны. Твоя задача — для КАЖДОГО блока написать НОВЫЙ заголовок (title) и НОВЫЕ живые реплики (ru, uz) под новую сферу. НЕ добавляй и НЕ удаляй блоки. НЕ меняй id.
 
 НОВАЯ СФЕРА: ${niche}
 ЦЕЛЬ: ${goal}
@@ -8213,13 +8220,18 @@ answers — это варианты, которые клиент может от
 - Если answers нет — блок не задаёт вопрос, просто закончи мысль.
 Перед тем как записать реплику, мысленно подставь каждый вариант из answers — если хоть один звучит нелепо, переформулируй вопрос.
 
-🔴 КОНТЕКСТ ДИАЛОГА (поле after):
-after — что произошло НЕПОСРЕДСТВЕННО ПЕРЕД этим блоком: предыдущий шаг и по какой ветке сюда пришли. Реплика обязана быть логичным ПРОДОЛЖЕНИЕМ.
+🔴 КОНТЕКСТ ДИАЛОГА (поле after) — читай буквально, это две РАЗНЫЕ ситуации:
 
-🔴 ГЛАВНОЕ: стрелка в after — это УЖЕ ПРОЗВУЧАВШИЙ ОТВЕТ КЛИЕНТА. Никогда не переспрашивай то, на что он только что ответил. Подтверди и веди разговор дальше.
-- after ["Проверка языка → «Рус»"] → клиент УЖЕ выбрал русский. Правильно: «Отлично, продолжим на русском.» ❌ НЕЛЬЗЯ: «На каком языке вам удобнее общаться?» — он это только что сказал.
-- after ["Согласие → «Да, конечно»"] → он УЖЕ согласился. Правильно: сразу переходи к сути. ❌ НЕЛЬЗЯ: «Уделите минуту?»
-- after ["Приветствие"] → начало разговора: представься и обозначь цель. ❌ НЕЛЬЗЯ: «Есть ли что-то ещё, с чем помочь?» — это фраза из конца.
+1) «после «X» клиент ответил: «Y»» → клиент РЕАЛЬНО произнёс Y.
+   Это уже прозвучавший ответ: подтверди его и веди дальше, НИКОГДА не переспрашивай то же самое.
+   Пример «...клиент ответил: «Рус»» → «Отлично, продолжим на русском.» ❌ НЕЛЬЗЯ снова спрашивать про язык.
+   Пример «...клиент ответил: «Да, конечно»» → сразу к сути. ❌ НЕЛЬЗЯ «Уделите минуту?»
+
+2) «продолжение собственной реплики робота «X» (клиент ещё НИЧЕГО не сказал)» → говорит ТОЛЬКО робот, клиент молчал.
+   ❌ СТРОГО ЗАПРЕЩЕНО: «Понял вас!», «Спасибо за ответ», «Отлично!», «Согласен», «Хорошо, что спросили» — реагировать НЕ НА ЧТО.
+   ✅ Просто продолжай мысль с того места, где робот остановился.
+
+- Пустой after → стартовый блок разговора.
 - Один и тот же вопрос НЕ должен звучать в двух блоках подряд. Проверь after перед тем, как задать вопрос.
 
 🔴 ЗАГОЛОВОК (title): если role — короткая структурная метка («Рус», «Уз», «Да», «Нет», «Молчание», «1ый раз», «2 ой раз»), ОСТАВЬ её как title без изменений. Переписывай title только если в нём есть предмет старой темы.
@@ -8241,7 +8253,10 @@ leadsTo — блоки, которые идут ПОСЛЕ этого. Репл�
 - Если есть БРИФ КЛИЕНТА выше — конкретика (продукты, ставки, сроки, контакты) строго из него.
 - Верни СТРОГО JSON-массив: [{"id":"...","title":"...","ru":"...","uz":"..."}, ...] для ВСЕХ ${mapChunk.length} блоков этой порции, ничего кроме JSON.
 
-КАРКАС (${mapChunk.length} блоков. role = что сказал КЛИЕНТ, answers = что он может ответить дальше; ты пишешь ОТВЕТ РОБОТА):
+${usedSoFar && usedSoFar.length ? `🔴 УЖЕ НАПИСАНО В ДРУГИХ БЛОКАХ (НЕ ПОВТОРЯЙ эти формулировки и не пиши то же самое другими словами):
+${usedSoFar.map(u => '- ' + u).join('\n')}
+
+` : ''}КАРКАС (${mapChunk.length} блоков. role = что сказал КЛИЕНТ, answers = что он может ответить дальше; ты пишешь ОТВЕТ РОБОТА):
 ${JSON.stringify(mapChunk, null, 1)}`;
 
       const parseChunk = (raw) => {
@@ -8266,7 +8281,14 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       const textById = {};
 
       const runBatch = async (part, label) => {
-        const raw = await aiGenerate(buildPrompt(part), 'Напиши новые тексты для всех блоков этой порции и верни JSON-массив.', {
+        // Chunks are independent requests, so without this the model reinvented
+        // the same line in three different blocks ("расскажу подробнее" ×3).
+        // Feeding back what it already wrote keeps each block distinct.
+        const usedSoFar = Object.values(textById)
+          .map(v => (v && v.ru ? String(v.ru).trim().split(/\s+/).slice(0, 7).join(' ') : ''))
+          .filter(Boolean)
+          .slice(-40);
+        const raw = await aiGenerate(buildPrompt(part, usedSoFar), 'Напиши новые тексты для всех блоков этой порции и верни JSON-массив.', {
           json: true, temperature: 0.7, maxTokens: 12000
         });
         const arr = parseChunk(raw);
@@ -8287,7 +8309,7 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         let got = await runBatch(chunks[c], `chunk ${c + 1}`);
         if (got < chunks[c].length) {  // one retry for the blocks this chunk missed
           const miss = chunks[c].filter(p => !textById[p.id]);
-          if (miss.length) { showGenLoader(`Генерирую зачился… (порция ${c + 1})`); await runBatch(miss, `chunk ${c + 1} retry`); }
+          if (miss.length) { showGenLoader(`AI дописывает… (порция ${c + 1})`); await runBatch(miss, `chunk ${c + 1} retry`); }
         }
       }
       // Final sweep: gather every block still without text and re-request in one go.
