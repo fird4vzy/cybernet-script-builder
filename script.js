@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-23-v18-knowledge-base';
+const CYBERNET_BUILD = '2026-07-23-v19-kb-styling';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -7365,7 +7365,8 @@ function updateKnowledgeStatus() {
   if (!st) return;
   const n = getKnowledgeBase().length;
   st.textContent = n ? `сохранено · ${n} симв.` : 'пусто — реплики будут общими';
-  st.style.color = n ? '#16a34a' : '#f59e0b';
+  // Theme variables, not hardcoded hex — the app has light and dark palettes.
+  st.style.color = n ? 'var(--ok)' : 'var(--warn)';
 }
 let customStyles = {};  // { styleId: { label, desc } }
 
