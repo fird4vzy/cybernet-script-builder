@@ -4289,7 +4289,7 @@ body.canvas-fullscreen-active .side-rail {
 
 
 /* ═══ GENERATION LOADER OVERLAY ═══ */
-.gen-loader-overlay { position: absolute; inset: 0; background: color-mix(in srgb, var(--bg-surface) 70%, transparent); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 30; border-radius: inherit; }
+.gen-loader-overlay { position: fixed; inset: 0; z-index: 4000; background: color-mix(in srgb, var(--bg-surface) 70%, transparent); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; border-radius: inherit; }
 .gen-loader-box { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 20px; }
 .gen-loader-box .ai-gif { width: 130px; max-width: 70%; height: auto; border-radius: 12px; }
 .gen-loader-text { font-size: 15px; font-weight: 700; color: var(--tx-primary); }
