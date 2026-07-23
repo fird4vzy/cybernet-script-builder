@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-23-v21-storage-fix';
+const CYBERNET_BUILD = '2026-07-23-v22-richer-replies';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8304,10 +8304,15 @@ ${JSON.stringify(uniqLabels, null, 1)}`;
 
       const textMap = refBlocks.filter(b => !isRouterBlock(b)).map(b => {
         const ruLen = (b.ru || '').trim().length;
+        // Explicit WORD targets, not vague labels. The эталон's own replies can
+        // be terse (median ~106 chars ≈ 15 words) and the model copied that
+        // budget — too small to fit an argument plus a real figure, so every
+        // reply came out as polite filler. Keep the relative sizing, raise the
+        // floor so a substantive block has room to actually say something.
         const lenHint = ruLen === 0 ? 'служебный/без речи'
-          : ruLen < 60 ? 'короткая'
-          : ruLen < 160 ? 'средняя'
-          : 'развёрнутая';
+          : ruLen < 60 ? '12-20 слов'
+          : ruLen < 160 ? '25-40 слов'
+          : '40-60 слов';
         // The labels on the outgoing edges ARE the client's possible answers.
         // Without them the model wrote questions the branches can't answer —
         // e.g. it asked "Когда вам удобно поговорить?" while the only branch
@@ -8370,7 +8375,11 @@ ${JSON.stringify(uniqLabels, null, 1)}`;
 ${knowledge ? `📚 БАЗА ЗНАНИЙ О ПРОДУКТАХ — бери конкретику ТОЛЬКО отсюда:
 ${knowledge}
 
-🔴 Используй эти цифры и условия в репликах вместо общих слов. НЕ ВЫДУМЫВАЙ ставки, сроки, суммы и названия, которых здесь нет — если факта нет, говори без цифр.
+🔴 КАК ПОЛЬЗОВАТЬСЯ БАЗОЙ (это главное отличие хорошего скрипта от пустого):
+- В КАЖДОМ блоке, где робот рассказывает о продукте, условиях, выгоде или отвечает на возражение — назови КОНКРЕТНЫЙ факт из базы: сумму, ставку, срок, название продукта. Не «выгодные условия», а «до 5 млрд сум на 36 месяцев» или «дисконт от 1,75%».
+- В РАЗНЫХ блоках бери РАЗНЫЕ факты и разные продукты — не повторяй одну и ту же цифру везде. База большая, используй её целиком.
+- Название продукта пиши как в базе (BIZNES STANDART, TEZKOR SARMOYA, LOANS LIMIT), а не «наш кредит».
+- НЕ ВЫДУМЫВАЙ ставки, сроки, суммы и названия, которых в базе нет. Если факта нет — говори без цифр.
 
 ` : ''}${briefSection ? briefSection + '\n\n' : ''}${varsSection ? varsSection + '\n\n' : ''}${learningSection ? learningSection + '\n\n' : ''}🔴 КТО ГОВОРИТ — САМОЕ ВАЖНОЕ ПРАВИЛО:
 role — это то, что говорит КЛИЕНТ (его возражение, вопрос или ситуация). А ru/uz — это ОТВЕТ РОБОТА на него. НИКОГДА не пиши реплику от лица клиента.
@@ -8426,7 +8435,8 @@ leadsTo — блоки, которые идут ПОСЛЕ этого. Репл�
   ✅ answers нет → аргумент и точка. Ни «Вы готовы?», ни «Вам интересно?», ни «Как считаете?».
 - 🔴 РЕПЛИКА ДОЛЖНА БЫТЬ СОДЕРЖАТЕЛЬНОЙ, а не вежливой пустышкой: (а) короткое присоединение, (б) КОНКРЕТНЫЙ аргумент — что клиент получит (закрыть кассовый разрыв, профинансировать поставку, лимит без залога, решение за N дней).
 ${channelRule}
-- ЗАПРЕЩЕНЫ пустые фразы без пользы: «Спасибо за ваше время», «Как я могу помочь», «Мы предлагаем выгодные условия», «Обратитесь к специалисту» — если фраза не несёт конкретики, перепиши.
+- 🔴 ЗАПРЕЩЁННЫЕ ПУСТЫШКИ (реальные примеры того, что писать НЕЛЬЗЯ): «Мы предлагаем выгодные условия», «Давайте обсудим ваши потребности», «Я здесь, чтобы помочь вам с финансированием», «Спасибо за ваше время», «Обратитесь к специалисту», «Это может быть вам интересно», «Мы всегда готовы помочь». Такая фраза не несёт клиенту НИЧЕГО — вместо неё назови конкретную выгоду или цифру.
+- Проверь каждую реплику: если из неё убрать название банка, останется ли полезная информация? Если нет — перепиши с фактом.
 - Тон «${tone}», живая устная речь (её произносят вслух по телефону). НЕ повторяй один и тот же аргумент в разных блоках — у каждого возражения свой довод.
 - Узбекский (uz) — ТОЛЬКО ЛАТИНИЦА (o', g', sh, ch), кириллица запрещена.
 - Если есть БРИФ КЛИЕНТА выше — конкретика (продукты, ставки, сроки, контакты) строго из него.
@@ -8531,6 +8541,17 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         });
       });
       if (stripped) console.log(`[Cybernet] убрано повторных приветствий: ${stripped}`);
+
+      // Measure concreteness so "суховато" stops being a matter of opinion:
+      // how many replies carry an actual figure, and how many are known filler.
+      try {
+        const FILLER = /выгодны[ех]\s+услови|обсудим\s+ваши\s+потребност|здесь,?\s+чтобы\s+помочь|всегда\s+готов[а-яё]*\s+помоч|может\s+быть\s+вам\s+интересн|обратитесь\s+к\s+специалист/i;
+        const vals = Object.values(textById).map(v => (v && v.ru) ? String(v.ru) : '').filter(Boolean);
+        const withNum = vals.filter(r => /\d/.test(r)).length;
+        const withFiller = vals.filter(r => FILLER.test(r)).length;
+        const avgWords = vals.length ? Math.round(vals.reduce((a, r) => a + r.trim().split(/\s+/).length, 0) / vals.length) : 0;
+        console.log(`[Cybernet] качество реплик: с цифрами ${withNum}/${vals.length}, пустышек ${withFiller}, средняя длина ${avgWords} слов`);
+      } catch (e) {}
 
 
 
