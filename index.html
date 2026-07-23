@@ -687,7 +687,7 @@
         <div class="field">
           <label class="field-label">Дополнительные требования (опционально)</label>
           <textarea id="gs-extras" class="textarea" placeholder="Например: обязательно обработать возражения «дорого» и «уже есть кредит»; упомянуть акцию 0% на 3 месяца; предложить рассрочку как альтернативу" style="min-height: 70px;"></textarea>
-          <div class="field-hint" style="margin-top: 6px; color: #f59e0b;">⚠ Ссылки AI не открывает — он видит их как обычный текст. Факты о продуктах вставляйте в «Базу знаний» ниже.</div>
+          <div style="font-size:11px; color:var(--warn, #f59e0b); margin-top:4px;">Ссылки AI не открывает — он видит их как обычный текст. Факты о продуктах вставляйте в «Базу знаний» ниже.</div>
         </div>
         <div class="field">
           <label class="field-label" style="display: flex; align-items: center; justify-content: space-between;">
@@ -695,7 +695,7 @@
             <span id="kb-status" style="font-size: 11px; color: #6b7280; font-weight: 400;"></span>
           </label>
           <textarea id="gs-knowledge" class="textarea" placeholder="Кредит для бизнеса: до 10 млрд сум, срок до 36 мес, ставка от 22%, без залога до 500 млн, решение за 2 дня.&#10;Факторинг: финансирование поставок до 90% суммы, без залога.&#10;Гарантии: тендерные и на исполнение, выпуск за 1 день.&#10;Как оформить: приложение AAB Mobile, отделения, aab.uz" style="min-height: 110px;" oninput="saveKnowledgeBase()"></textarea>
-          <div class="field-hint" style="margin-top: 6px;">Сохраняется один раз и подставляется в КАЖДУЮ генерацию — заполнять заново не нужно. Обновляйте, когда меняются условия. Именно отсюда AI берёт цифры, иначе реплики будут общими.</div>
+          <div style="font-size:11px; color:var(--tx-tertiary); margin-top:4px;">Сохраняется один раз и подставляется в каждую генерацию — заполнять заново не нужно. Обновляйте, когда меняются условия: именно отсюда AI берёт цифры.</div>
         </div>
         <div class="field" style="margin-top: 14px;">
           <label class="field-label" style="display: flex; align-items: center; justify-content: space-between;">
