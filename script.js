@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-23-v22-richer-replies';
+const CYBERNET_BUILD = '2026-07-23-v23-enforce-flow';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8521,10 +8521,16 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       // so enforce it mechanically instead of hoping it complies.
       const GREET_RU = /^\s*(алло[,!.\s]*)?(здравствуйте|добрый\s+день|добрый\s+вечер|доброе\s+утро|приветствую)[!,.\s—-]*/i;
       const GREET_UZ = /^\s*(allo[,!.\s]*)?(assalomu\s+alaykum|assalom\s+alaykum|salom)[!,.\s—-]*/i;
+      // Exactly ONE block may greet. Using "has no incoming edge" as the test
+      // failed badly: in this reference 81 of 157 blocks have no incoming edge,
+      // so almost every block counted as an opening and was free to say
+      // "Здравствуйте". Pick a single greeter and strip the rest.
+      const startId = (refBlocks.find(b => (b.type || '') === 'start')
+        || refBlocks.find(b => { const e = textMap.find(x => x.id === b.id); return e && (!e.after || !e.after.length); })
+        || refBlocks[0] || {}).id;
       let stripped = 0;
       textMap.forEach(p => {
-        const isStart = !p.after || !p.after.length;
-        if (isStart) return;                       // the opening block keeps its greeting
+        if (p.id === startId) return;              // the one opening block keeps its greeting
         const rec = textById[p.id];
         if (!rec) return;
         ['ru', 'uz'].forEach(k => {
@@ -8541,6 +8547,28 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         });
       });
       if (stripped) console.log(`[Cybernet] убрано повторных приветствий: ${stripped}`);
+      // Drop a trailing question from blocks that have no answer branches.
+      // The prompt asks for this, but the model ignored it 41 times out of 42 —
+      // a question nobody can answer is exactly the "вопрос на вопросе" the flow
+      // suffers from. Only cut when a full sentence remains, never gut a block.
+      let deQ = 0;
+      textMap.forEach(p => {
+        if (p.answers && p.answers.length) return;   // a real question belongs here
+        const rec = textById[p.id];
+        if (!rec) return;
+        ['ru', 'uz'].forEach(k => {
+          const val = typeof rec[k] === 'string' ? rec[k].trim() : '';
+          if (!val.endsWith('?')) return;
+          const parts = val.split(/(?<=[.!?])\s+/).filter(Boolean);
+          if (parts.length < 2) return;              // single sentence — leave it alone
+          const kept = parts.slice(0, -1).join(' ').trim();
+          if (kept.length >= 25 && /[.!?]$/.test(kept)) {
+            rec[k] = kept;
+            if (k === 'ru') deQ++;
+          }
+        });
+      });
+      if (deQ) console.log(`[Cybernet] убрано лишних вопросов: ${deQ}`);
 
       // Measure concreteness so "суховато" stops being a matter of opinion:
       // how many replies carry an actual figure, and how many are known filler.
