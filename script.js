@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-22-structmode-v5-geom-voice';
+const CYBERNET_BUILD = '2026-07-22-v6-resize-fix';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -5332,11 +5332,12 @@ function initCanvasHandlers() {
       if (bb && rz.w && rz.h) {
         bb.w = rz.w;
         bb.h = rz.h;
-        bb.hManual = true; // only now is the height pinned exactly
-        // sizes changed → stale manual waypoints on touching edges would look wrong
-        (data().blocks || []).forEach(x => (x.branches || []).forEach(br => {
-          if (br.waypoints && (x.id === rz.id || br.next === rz.id)) br.waypoints = undefined;
-        }));
+        bb.wManual = true; // pin BOTH dimensions — without this the decision-block
+        bb.hManual = true; // min-width clamp snapped a resized rhombus back to 200px
+        // NOTE: manual waypoints are deliberately KEPT. They are absolute canvas
+        // coordinates, so resizing a block does not invalidate them — the router
+        // recomputes only the first/last segment against the new box. Wiping them
+        // here is what made carefully laid-out arrows jump on every resize.
         canvasRender();
         saveToStorage();
       }
@@ -5386,15 +5387,27 @@ function initCanvasHandlers() {
       if (nodeEl) nodeEl.classList.remove('dragging');
       const wasMoved = canvasState.dragging.moved;
       const movedIds = new Set((canvasState.dragging.group || []).map(g => g.id));
+      // How far each block actually travelled — needed to carry its arrows along.
+      const deltaById = new Map();
+      (canvasState.dragging.group || []).forEach(g => {
+        const sb = data().blocks.find(x => x.id === g.id);
+        if (sb) deltaById.set(g.id, { dx: (sb.x || 0) - (g.origX || 0), dy: (sb.y || 0) - (g.origY || 0) });
+      });
       canvasState.dragging = null;
       // After release: re-render edges with FULL obstacle-aware routing
       if (wasMoved) {
-        // Imported Draw.io waypoints were baked for the OLD positions; once an endpoint
-        // moves they no longer line up (diagonal "floating" arrows). Drop waypoints ONLY
-        // on edges touching a moved block so they re-route cleanly; untouched edges keep theirs.
+        // Never DELETE a route on move — that threw away the reference layout and
+        // was the "стрелки съезжают" bug. When BOTH endpoints moved by the same
+        // delta the whole edge translates rigidly, so shift its bend points too.
+        // When only one end moved, keep the bends: the router re-computes just the
+        // first/last segment against the new box and stays orthogonal.
         if (movedIds.size) {
           data().blocks.forEach(bl => (bl.branches || []).forEach(br => {
-            if (br.waypoints && (movedIds.has(bl.id) || movedIds.has(br.next))) br.waypoints = undefined;
+            if (!br.waypoints || !br.waypoints.length) return;
+            const a = deltaById.get(bl.id), b = deltaById.get(br.next);
+            if (a && b && Math.abs(a.dx - b.dx) < 0.5 && Math.abs(a.dy - b.dy) < 0.5) {
+              br.waypoints = br.waypoints.map(p => ({ x: p.x + a.dx, y: p.y + a.dy }));
+            }
           }));
           saveToStorage();
         }
