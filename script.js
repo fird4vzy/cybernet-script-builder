@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-23-v17-greeting-strip';
+const CYBERNET_BUILD = '2026-07-23-v18-knowledge-base';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -7334,6 +7334,39 @@ const IMPROVE_PROMPTS = {
 
 // User-defined custom styles (saved to storage + cloud)
 const CUSTOM_STYLES_KEY = 'cybernet_ai_styles_v1';
+
+// ── Knowledge base ───────────────────────────────────────────────────────
+// Facts about the products (rates, terms, limits, how to apply). Entered ONCE
+// and injected into every generation: without concrete numbers the model can
+// only write vague filler ("выгодные условия"). Links can't help here — the app
+// never fetches them, so the facts have to live in the app.
+const KNOWLEDGE_KEY = 'cybernet_knowledge_v1';
+function loadKnowledgeBase() {
+  let v = '';
+  try { v = localStorage.getItem(KNOWLEDGE_KEY) || ''; } catch (e) {}
+  const el = document.getElementById('gs-knowledge');
+  if (el) el.value = v;
+  updateKnowledgeStatus();
+  return v;
+}
+function saveKnowledgeBase() {
+  const el = document.getElementById('gs-knowledge');
+  if (!el) return;
+  try { localStorage.setItem(KNOWLEDGE_KEY, el.value); } catch (e) {}
+  updateKnowledgeStatus();
+}
+function getKnowledgeBase() {
+  const el = document.getElementById('gs-knowledge');
+  if (el) return el.value.trim();
+  try { return (localStorage.getItem(KNOWLEDGE_KEY) || '').trim(); } catch (e) { return ''; }
+}
+function updateKnowledgeStatus() {
+  const st = document.getElementById('kb-status');
+  if (!st) return;
+  const n = getKnowledgeBase().length;
+  st.textContent = n ? `сохранено · ${n} симв.` : 'пусто — реплики будут общими';
+  st.style.color = n ? '#16a34a' : '#f59e0b';
+}
 let customStyles = {};  // { styleId: { label, desc } }
 
 function loadCustomStyles() {
@@ -7628,6 +7661,7 @@ function openGenScriptModal() {
   clearGenVars();
   if (!llmSettings.apiKey && !llmSettings.useServerKey) { openLLMSettings(); toast('Сначала настройте API ключ', 'error'); return; }
   document.getElementById('gen-script-modal').style.display = 'flex';
+  loadKnowledgeBase();
   renderGsRefsPicker();
   setTimeout(() => document.getElementById('gs-niche').focus(), 50);
 }
@@ -7996,6 +8030,7 @@ async function generateScript() {
   const tone = document.getElementById('gs-tone').value;
   const size = document.getElementById('gs-size').value;
   const extras = document.getElementById('gs-extras').value.trim();
+  const knowledge = getKnowledgeBase();
   const genVars = collectGenVars(); // { NAME: value, ... } from the variables block
 
   if (!niche) { toast('Укажите нишу / сферу', 'error'); return; }
@@ -8289,7 +8324,12 @@ ${JSON.stringify(uniqLabels, null, 1)}`;
 ТОН: ${tone}
 ДОП. ТРЕБОВАНИЯ: ${extras || '(нет)'}
 
-${briefSection ? briefSection + '\n\n' : ''}${varsSection ? varsSection + '\n\n' : ''}${learningSection ? learningSection + '\n\n' : ''}🔴 КТО ГОВОРИТ — САМОЕ ВАЖНОЕ ПРАВИЛО:
+${knowledge ? `📚 БАЗА ЗНАНИЙ О ПРОДУКТАХ — бери конкретику ТОЛЬКО отсюда:
+${knowledge}
+
+🔴 Используй эти цифры и условия в репликах вместо общих слов. НЕ ВЫДУМЫВАЙ ставки, сроки, суммы и названия, которых здесь нет — если факта нет, говори без цифр.
+
+` : ''}${briefSection ? briefSection + '\n\n' : ''}${varsSection ? varsSection + '\n\n' : ''}${learningSection ? learningSection + '\n\n' : ''}🔴 КТО ГОВОРИТ — САМОЕ ВАЖНОЕ ПРАВИЛО:
 role — это то, что говорит КЛИЕНТ (его возражение, вопрос или ситуация). А ru/uz — это ОТВЕТ РОБОТА на него. НИКОГДА не пиши реплику от лица клиента.
 - role «Перезвоните, я занят» → это КЛИЕНТ сказал, что занят. Робот отвечает: «Понимаю, займу буквально минуту — речь про финансирование, которое может закрыть кассовый разрыв. Когда удобно перезвонить?»
 - НЕПРАВИЛЬНО: «Извините, я сейчас занят, могу перезвонить позже?» ← это слова клиента, робот так говорить не может.
