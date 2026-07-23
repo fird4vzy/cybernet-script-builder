@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-23-v7-route-export-answers';
+const CYBERNET_BUILD = '2026-07-23-v8-routers-context';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8112,7 +8112,41 @@ async function generateScript() {
       // theme along (the "1С leaks into credits" bug): it saw a paragraph about
       // 1С and lightly edited it instead of writing fresh. Giving only the role
       // + a length target leaves nothing to copy, so it must compose new speech.
-      const textMap = refBlocks.map(b => {
+      // A "router" block is the CLIENT's turn, not the robot's: «Ответ клиента»,
+      // «Любой ответ», «Ситуации во всём скрипте». The эталон fills them with a
+      // short placeholder ("Ответ клиента"), so the old empty-ru check missed
+      // them and the model wrote robot speech into them — that's why a greeting
+      // was followed by "Понимаю, есть ли что-то ещё?" and the language question
+      // appeared twice. Keep them verbatim and never send them to the model.
+      const isRouterBlock = (b) => {
+        const t = (b.title || '').trim().toLowerCase();
+        if (!t) return false;
+        // Title alone is not enough: an эталон may title a real speaking block
+        // "Любой ответ" too. Require that the reference itself put no real
+        // speech there — a placeholder is short (or just echoes the title).
+        const body = (b.ru || '').trim();
+        const isPlaceholder = body.length <= 40 || body.toLowerCase() === t;
+        if (!isPlaceholder) return false;
+        if (/^ответ\s+клиент/.test(t)) return true;
+        if (/^любой\s+ответ$/.test(t)) return true;
+        if (/^ситуации/.test(t)) return true;
+        if (/^ответ$/.test(t)) return true;
+        return false;
+      };
+
+      // What leads INTO each block. Without this the model wrote every reply in
+      // isolation and produced non-sequiturs — "Понимаю, есть ли что-то ещё?"
+      // directly after a greeting. Knowing the previous step keeps it coherent.
+      const incomingOf = new Map();
+      refBlocks.forEach(src => (src.branches || []).forEach(br => {
+        if (!br.next) return;
+        if (!incomingOf.has(br.next)) incomingOf.set(br.next, []);
+        const via = (br.label || '').trim();
+        const prev = (src.title || '').trim();
+        if (prev) incomingOf.get(br.next).push(via ? `${prev} → «${via}»` : prev);
+      }));
+
+      const textMap = refBlocks.filter(b => !isRouterBlock(b)).map(b => {
         const ruLen = (b.ru || '').trim().length;
         const lenHint = ruLen === 0 ? 'служебный/без речи'
           : ruLen < 60 ? 'короткая'
@@ -8127,6 +8161,8 @@ async function generateScript() {
           .filter(Boolean)
           .slice(0, 8);
         const m = { id: b.id, role: b.title || '', intent: b.intent || '', type: b.type || 'normal', len: lenHint };
+        const after = (incomingOf.get(b.id) || []).slice(0, 3);
+        if (after.length) m.after = after;
         if (answers.length) m.answers = answers;
         return m;
       });
@@ -8164,6 +8200,12 @@ answers — это варианты, которые клиент может от
 - answers ["Сегодня", "Завтра", "На следующей неделе"] → спрашивай ОТКРЫТО: «Когда планируете?» ✅
 - Если answers нет — блок не задаёт вопрос, просто закончи мысль.
 Перед тем как записать реплику, мысленно подставь каждый вариант из answers — если хоть один звучит нелепо, переформулируй вопрос.
+
+🔴 КОНТЕКСТ ДИАЛОГА (поле after):
+after — что произошло НЕПОСРЕДСТВЕННО ПЕРЕД этим блоком (предыдущий шаг и по какой ветке пришли). Реплика обязана быть логичным ПРОДОЛЖЕНИЕМ этого шага.
+- after ["Приветствие"] → нельзя писать «Понимаю, есть ли что-то ещё, с чем помочь?» — это фраза из конца разговора, а не сразу после «здравствуйте». Пиши то, что говорят в начале: представься и обозначь цель звонка.
+- НЕ ЗАДАВАЙ ПОВТОРНО вопрос, который уже прозвучал на предыдущем шаге (например про язык общения или про имя) — посмотри after и не дублируй.
+- Если after пустой — это стартовый блок.
 
 ПРАВИЛА:
 - Для каждого блока: (1) пойми, что сказал клиент (role), (2) напиши краткий title на новой теме, (3) напиши ОТВЕТ РОБОТА: ru + перевод uz.
@@ -8252,6 +8294,39 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         sections: JSON.parse(JSON.stringify(refProfile?.sections || [{ id: 's1', label: 'Основной раздел' }])),
         blocks: refBlocks.map(b => {
           const t = textById[b.id] || {};
+          // Router blocks were never sent to the model — they are the client's
+          // turn. Keep the reference's own placeholder: it is generic ("Ответ
+          // клиента") and carries no theme, so it is safe to copy verbatim.
+          if (isRouterBlock(b)) {
+            const shortRu = (b.ru || '').trim();
+            const shortUz = (b.uz || '').trim();
+            return {
+              id: b.id,
+              sec: b.sec || 's1',
+              title: b.title || '',
+              intent: b.intent || '',
+              type: b.type || 'normal',
+              ru: shortRu.length <= 40 ? shortRu : '',
+              uz: shortUz.length <= 40 ? shortUz : '',
+              aiRu: '', aiUz: '',
+              color: b.color || '',
+              x: b.x, y: b.y, w: b.w, h: b.h,
+              hManual: b.hManual, wManual: b.wManual, dioSize: b.dioSize,
+              branches: (b.branches || []).map(br => ({
+                id: branchId(),
+                label: br.label || '',
+                color: br.color || BRANCH_COLOR_DEFAULT,
+                next: br.next || '',
+                _dio: br._dio,
+                waypoints: br.waypoints ? br.waypoints.map(p => ({ x: p.x, y: p.y })) : undefined,
+                exitX: br.exitX, exitY: br.exitY, exitDx: br.exitDx, exitDy: br.exitDy,
+                entryX: br.entryX, entryY: br.entryY, entryDx: br.entryDx, entryDy: br.entryDy,
+                dashed: br.dashed, dashPattern: br.dashPattern, rounded: br.rounded,
+                strokeWidth: br.strokeWidth, lblGeom: br.lblGeom
+              })),
+              next_default: '', next_yes: '', next_no: ''
+            };
+          }
           // A block the model never returned keeps NOTHING from the reference —
           // not its text and not its title ("У нас уже есть 1С" would leak the
           // old theme). Mark it instead: a visible «[не сгенерировано]» is easy
