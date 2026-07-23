@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-23-v11-turns-loader';
+const CYBERNET_BUILD = '2026-07-23-v12-no-question-spam';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -7843,11 +7843,12 @@ function buildBriefSection() {
 
 function showGenLoader(text) {
   hideGenLoader();
-  // Anchor to the BACKDROP, not the inner card. The card is a scrollable box
-  // (overflow:auto, max-height:90vh), so an absolutely-positioned overlay inside
-  // it covered only one screenful and scrolled away — leaving the form and the
-  // footer buttons exposed and clickable mid-generation.
-  const host = document.getElementById('gen-script-modal') || document.body;
+  // Cover the dialog card only (blurred), not the whole screen. The card scrolls
+  // (overflow:auto), which is why an absolute overlay used to slide away — so we
+  // freeze its scroll while the loader is up; then inset:0 covers it exactly.
+  const card = document.querySelector('#gen-script-modal .modal');
+  const host = card || document.getElementById('gen-script-modal') || document.body;
+  if (card) card.classList.add('is-loading');
   const ov = document.createElement('div');
   ov.id = 'gen-loader-overlay';
   ov.className = 'gen-loader-overlay';
@@ -7865,6 +7866,8 @@ function showGenLoader(text) {
 function hideGenLoader() {
   const ov = document.getElementById('gen-loader-overlay');
   if (ov) { if (ov._timer) clearInterval(ov._timer); ov.remove(); }
+  document.querySelectorAll('#gen-script-modal .modal.is-loading')
+    .forEach(el => el.classList.remove('is-loading'));
 }
 
 // ═══ LEARNING FROM EDITS (было → стало) ═══
@@ -8060,7 +8063,7 @@ async function generateScript() {
 - Для каждого блока сочини живую реплику по его роли (title/intent) и длине (textHint).
 - 🔴 Скелет может быть от эталона на другую тему (1С, облако и т.п.). Твой скрипт — строго про тему запроса. Ни одного слова из чужой темы (никаких «1С», «облако», «сервер», «тестовый период»), если её нет в запросе пользователя.
 - Служебные блоки (textHint = «служебный/без речи»: «Ответ клиента», «Начало», ромбы) — оставь их роль как есть, без выдуманной речи.
-- Реплики — живые, продающие, в тоне «{tone}»: присоединение → аргумент по сути → мягкий возврат к цели. Без канцелярита и без повтора одной фразы в разных блоках.
+- Реплики — живые, продающие, в тоне «{tone}»: присоединение → аргумент по сути. Вопрос в конце — ТОЛЬКО если у блока есть варианты ответа. Без канцелярита и без повтора одной фразы в разных блоках.
 
 ИТОГ: тот же каркас, что у эталона (можно богаче), но все реплики новые и под нужную тему.`;
     } else {
@@ -8246,7 +8249,13 @@ leadsTo — блоки, которые идут ПОСЛЕ этого. Репл�
 - Для каждого блока: (1) пойми, что сказал клиент (role), (2) напиши краткий title на новой теме, (3) напиши ОТВЕТ РОБОТА: ru + перевод uz.
 - 🔴 В title, ru, uz НЕ должно быть НИ ОДНОГО слова старой темы.
 - Служебные блоки (len=«служебный/без речи»: «Ответ клиента», «Завершение», «Молчание», «Автоответчик») — короткая служебная подпись, без выдуманной речи.
-- 🔴 РЕПЛИКА ДОЛЖНА БЫТЬ СОДЕРЖАТЕЛЬНОЙ, а не вежливой пустышкой. В ответе на возражение обязательно: (а) короткое присоединение, (б) КОНКРЕТНЫЙ аргумент — что клиент получит (закрыть кассовый разрыв, профинансировать поставку, лимит без залога, решение за N дней), (в) мягкий возврат к цели вопросом.
+- 🔴 ВОПРОС СТАВЬ ТОЛЬКО ТАМ, ГДЕ ЕСТЬ ПОЛЕ answers. Если answers НЕТ — реплика заканчивается УТВЕРЖДЕНИЕМ, без вопроса. Иначе получается «вопрос на вопросе»: робот спрашивает, а следующий блок снова спрашивает.
+  ✅ answers есть → аргумент + один короткий вопрос, на который эти answers являются ответами.
+  ✅ answers нет → аргумент и точка. Ни «Вы готовы?», ни «Вам интересно?», ни «Как считаете?».
+- 🔴 РЕПЛИКА ДОЛЖНА БЫТЬ СОДЕРЖАТЕЛЬНОЙ, а не вежливой пустышкой: (а) короткое присоединение, (б) КОНКРЕТНЫЙ аргумент — что клиент получит (закрыть кассовый разрыв, профинансировать поставку, лимит без залога, решение за N дней).
+- 🔴 ЭТО ИСХОДЯЩИЙ ЗВОНОК: робот позвонил клиенту сам и ВЕДЁТ разговор. Клиент ничего не просил.
+  ❌ ЗАПРЕЩЕНО: «Как могу помочь вам сегодня?», «О чём вы хотели узнать?», «Чем могу быть полезен?», «Какой вопрос вас интересует?» — это фразы входящей линии поддержки.
+  ✅ Робот сам называет причину звонка и сам предлагает следующий шаг.
 - ЗАПРЕЩЕНЫ пустые фразы без пользы: «Спасибо за ваше время», «Как я могу помочь», «Мы предлагаем выгодные условия», «Обратитесь к специалисту» — если фраза не несёт конкретики, перепиши.
 - Тон «${tone}», живая устная речь (её произносят вслух по телефону). НЕ повторяй один и тот же аргумент в разных блоках — у каждого возражения свой довод.
 - Узбекский (uz) — ТОЛЬКО ЛАТИНИЦА (o', g', sh, ch), кириллица запрещена.
@@ -8329,6 +8338,14 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         throw new Error('AI вернул неожиданный формат (не список блоков). Попробуйте ещё раз.');
       }
       console.log(`[Cybernet] STRUCTURE MODE v3: получено ${totalGot}/${textMap.length} блоков, пропущено ${textMap.length - totalGot}`);
+      // Diagnostic: a block with no outgoing answers should not end on a question
+      // ("вопрос на вопросе"). Counting them shows whether the rule is holding.
+      try {
+        const noAnsAsking = textMap.filter(p => !p.answers || !p.answers.length)
+          .filter(p => { const r = (textById[p.id] || {}).ru || ''; return /\?\s*$/.test(r.trim()); }).length;
+        const noAnsTotal = textMap.filter(p => !p.answers || !p.answers.length).length;
+        console.log(`[Cybernet] блоков без вариантов ответа: ${noAnsTotal}, из них всё же заканчиваются вопросом: ${noAnsAsking}`);
+      } catch (e) {}
 
       // Build new profile by DEEP-COPYING the reference structure, swapping texts
       // Don't paste the reference's name into the profile: it carries the old
