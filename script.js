@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-23-v23-enforce-flow';
+const CYBERNET_BUILD = '2026-07-24-v24-flow-order';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8224,13 +8224,16 @@ async function generateScript() {
           || /^перевод\s+на\s/.test(low)
           || /^переход\s/.test(low)) return true;
 
+        // "Ответ клиента" is the client's turn by definition — never robot speech,
+        // no matter how much placeholder text the эталон left in it.
+        if (/^ответ\s+клиент/.test(t)) return true;
+
         if (!t) return false;
         // Title alone is not enough: an эталон may title a real speaking block
         // "Любой ответ" too. Require that the reference itself put no real
         // speech there — a placeholder is short (or just echoes the title).
         const isPlaceholder = body.length <= 40 || low === t;
         if (!isPlaceholder) return false;
-        if (/^ответ\s+клиент/.test(t)) return true;
         if (/^любой\s+ответ$/.test(t)) return true;
         if (/^ситуации/.test(t)) return true;
         if (/^ответ$/.test(t)) return true;
@@ -8286,6 +8289,12 @@ ${JSON.stringify(uniqLabels, null, 1)}`;
       // What leads INTO each block. Without this the model wrote every reply in
       // isolation and produced non-sequiturs — "Понимаю, есть ли что-то ещё?"
       // directly after a greeting. Knowing the previous step keeps it coherent.
+      const incomingIds = new Map();
+      refBlocks.forEach(src => (src.branches || []).forEach(br => {
+        if (!br.next) return;
+        if (!incomingIds.has(br.next)) incomingIds.set(br.next, []);
+        incomingIds.get(br.next).push(src.id);
+      }));
       const incomingOf = new Map();
       refBlocks.forEach(src => (src.branches || []).forEach(br => {
         if (!br.next) return;
@@ -8415,6 +8424,11 @@ answers — это варианты, которые клиент может от
    ✅ Просто продолжай мысль с того места, где робот остановился.
 
 - Пустой after → стартовый блок разговора: ЗДЕСЬ и только здесь робот здоровается и представляется.
+
+🔴 ПОЛЕ «ужеСказаноПеред» — ЭТО ДОСЛОВНО ТО, ЧТО РОБОТ УЖЕ ПРОИЗНЁС НА ПРЕДЫДУЩЕМ ШАГЕ:
+- НЕ ПОВТОРЯЙ ничего из этого текста: ни представление («Я представляю банк», «Меня зовут…»), ни аргумент, ни цифру, ни вопрос.
+- Твоя реплика — СЛЕДУЮЩАЯ фраза этого же разговора. Продолжай с того места, где он остановился, добавляя НОВУЮ информацию.
+- Если там уже названы банк и цель звонка — сразу переходи к сути, без повторного знакомства.
 - 🔴 ЗДОРОВАТЬСЯ МОЖНО ТОЛЬКО ОДИН РАЗ ЗА ВЕСЬ СКРИПТ. Если after НЕ пустой — «Здравствуйте», «Добрый день», «Salom» уже прозвучали раньше, ПОВТОРЯТЬ ИХ ЗАПРЕЩЕНО. Представляться второй раз («Меня зовут…», «Я представляю банк…») тоже нельзя, если это уже было в предыдущем блоке.
 - Один и тот же вопрос НЕ должен звучать в двух блоках подряд. Проверь after перед тем, как задать вопрос.
 
@@ -8477,7 +8491,29 @@ ${JSON.stringify(mapChunk, null, 1)}`;
           .map(v => (v && v.ru ? String(v.ru).trim().split(/\s+/).slice(0, 7).join(' ') : ''))
           .filter(Boolean)
           .slice(-40);
-        const raw = await aiGenerate(buildPrompt(part, usedSoFar), 'Напиши новые тексты для всех блоков этой порции и верни JSON-массив.', {
+        // Attach what was ACTUALLY said right before each block. Flow order means
+        // those replies are already generated, so the model can continue the
+        // conversation instead of re-introducing the bank in every other block.
+        // Walk BACK through silent blocks. A router ("Ответ клиента") has no
+        // text, so stopping at the immediate predecessor returned nothing and
+        // the model lost the thread — keep stepping back to the last block that
+        // actually spoke.
+        const lastSpoken = (id, depth) => {
+          if (depth > 4) return '';
+          for (const pid of (incomingIds.get(id) || []).slice(0, 3)) {
+            const txt = (textById[pid] && textById[pid].ru) ? String(textById[pid].ru).trim() : '';
+            if (txt) return txt;
+            const deeper = lastSpoken(pid, depth + 1);
+            if (deeper) return deeper;
+          }
+          return '';
+        };
+        const partWithPrev = part.map(item => {
+          const said = lastSpoken(item.id, 0);
+          if (!said) return item;
+          return { ...item, ужеСказаноПеред: said.length > 200 ? said.slice(0, 200) + '…' : said };
+        });
+        const raw = await aiGenerate(buildPrompt(partWithPrev, usedSoFar), 'Напиши новые тексты для всех блоков этой порции и верни JSON-массив.', {
           json: true, temperature: 0.7, maxTokens: 12000
         });
         const arr = parseChunk(raw);
@@ -8491,8 +8527,38 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         return matched;
       };
 
+      const startId = (refBlocks.find(b => (b.type || '') === 'start')
+        || refBlocks.find(b => { const e = textMap.find(x => x.id === b.id); return e && (!e.after || !e.after.length); })
+        || refBlocks[0] || {}).id;
+
+      // Generate in CONVERSATION order, not array order. Walking the graph from
+      // the opening block means a block's predecessors are already written when
+      // its turn comes — which is what lets us show the model what was actually
+      // said just before (see prevText in buildPrompt). Array order gave it only
+      // block titles, so it re-introduced the bank in six different blocks.
+      const orderIds = [];
+      {
+        const seen = new Set();
+        const outMap = new Map();
+        refBlocks.forEach(b => outMap.set(b.id, (b.branches || []).map(br => br.next).filter(Boolean)));
+        const queue = [];
+        const first = refBlocks.find(b => b.id === startId) || refBlocks[0];
+        if (first) queue.push(first.id);
+        while (queue.length) {
+          const id = queue.shift();
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          orderIds.push(id);
+          (outMap.get(id) || []).forEach(n => { if (!seen.has(n)) queue.push(n); });
+        }
+        refBlocks.forEach(b => { if (!seen.has(b.id)) orderIds.push(b.id); });  // unreachable blocks last
+      }
+      const orderPos = new Map(orderIds.map((id, i) => [id, i]));
+      const ordered = textMap.slice().sort((a, b) =>
+        (orderPos.has(a.id) ? orderPos.get(a.id) : 1e9) - (orderPos.has(b.id) ? orderPos.get(b.id) : 1e9));
+
       const chunks = [];
-      for (let i = 0; i < textMap.length; i += CHUNK) chunks.push(textMap.slice(i, i + CHUNK));
+      for (let i = 0; i < ordered.length; i += CHUNK) chunks.push(ordered.slice(i, i + CHUNK));
       for (let c = 0; c < chunks.length; c++) {
         showGenLoader(`AI пишет реплики… (порция ${c + 1}/${chunks.length})`);
         let got = await runBatch(chunks[c], `chunk ${c + 1}`);
@@ -8525,9 +8591,6 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       // failed badly: in this reference 81 of 157 blocks have no incoming edge,
       // so almost every block counted as an opening and was free to say
       // "Здравствуйте". Pick a single greeter and strip the rest.
-      const startId = (refBlocks.find(b => (b.type || '') === 'start')
-        || refBlocks.find(b => { const e = textMap.find(x => x.id === b.id); return e && (!e.after || !e.after.length); })
-        || refBlocks[0] || {}).id;
       let stripped = 0;
       textMap.forEach(p => {
         if (p.id === startId) return;              // the one opening block keeps its greeting
