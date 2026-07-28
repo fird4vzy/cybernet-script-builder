@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-24-v25-conversation-flow';
+const CYBERNET_BUILD = '2026-07-24-v26-fix-startid';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8193,6 +8193,9 @@ async function generateScript() {
       const refProfile = getRefProfile(ref);
       const refBlocks = refProfile?.blocks || [];
       if (!refBlocks.length) throw new Error('В эталоне нет блоков');
+      // The single block allowed to greet. Defined up front because both the
+      // flow-order walk and the greeting-stripper below rely on it.
+      const startId = (refBlocks.find(b => (b.type || '') === 'start') || refBlocks[0] || {}).id;
       console.log('[Cybernet] STRUCTURE MODE v5 (geometry+voice fix, no reference texts) — blocks:', refBlocks.length);
 
       // Send AI a per-block ROLE map (NOT the reference texts). Sending the
@@ -8576,10 +8579,6 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         console.log(`[Cybernet] ${label}: ${matched}/${part.length}`);
         return matched;
       };
-
-      const startId = (refBlocks.find(b => (b.type || '') === 'start')
-        || refBlocks.find(b => { const e = textMap.find(x => x.id === b.id); return e && (!e.after || !e.after.length); })
-        || refBlocks[0] || {}).id;
 
 
       const chunks = [];
