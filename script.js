@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-24-v24-flow-order';
+const CYBERNET_BUILD = '2026-07-24-v25-conversation-flow';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8425,10 +8425,11 @@ answers — это варианты, которые клиент может от
 
 - Пустой after → стартовый блок разговора: ЗДЕСЬ и только здесь робот здоровается и представляется.
 
-🔴 ПОЛЕ «ужеСказаноПеред» — ЭТО ДОСЛОВНО ТО, ЧТО РОБОТ УЖЕ ПРОИЗНЁС НА ПРЕДЫДУЩЕМ ШАГЕ:
-- НЕ ПОВТОРЯЙ ничего из этого текста: ни представление («Я представляю банк», «Меня зовут…»), ни аргумент, ни цифру, ни вопрос.
-- Твоя реплика — СЛЕДУЮЩАЯ фраза этого же разговора. Продолжай с того места, где он остановился, добавляя НОВУЮ информацию.
-- Если там уже названы банк и цель звонка — сразу переходи к сути, без повторного знакомства.
+🔴 ПОЛЕ «разговорДоЭтогоБлока» — ЭТО ВЕСЬ ДИАЛОГ ДО ТЕКУЩЕГО БЛОКА (реплики робота по порядку, что он уже произнёс):
+- Твоя реплика — СЛЕДУЮЩИЙ шаг этого разговора. Прочитай всю цепочку и продолжи её естественно.
+- НЕ ПОВТОРЯЙ ничего, что уже прозвучало: ни приветствие, ни представление («Я представляю банк», «Меня зовут…»), ни уже названный аргумент, ни цифру, ни заданный вопрос.
+- Если банк и цель звонка уже названы в цепочке — переходи к сути, без повторного знакомства.
+- Добавляй НОВУЮ информацию/довод, а не пересказывай сказанное другими словами.
 - 🔴 ЗДОРОВАТЬСЯ МОЖНО ТОЛЬКО ОДИН РАЗ ЗА ВЕСЬ СКРИПТ. Если after НЕ пустой — «Здравствуйте», «Добрый день», «Salom» уже прозвучали раньше, ПОВТОРЯТЬ ИХ ЗАПРЕЩЕНО. Представляться второй раз («Меня зовут…», «Я представляю банк…») тоже нельзя, если это уже было в предыдущем блоке.
 - Один и тот же вопрос НЕ должен звучать в двух блоках подряд. Проверь after перед тем, как задать вопрос.
 
@@ -8483,54 +8484,6 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       const CHUNK = 15;
       const textById = {};
 
-      const runBatch = async (part, label) => {
-        // Chunks are independent requests, so without this the model reinvented
-        // the same line in three different blocks ("расскажу подробнее" ×3).
-        // Feeding back what it already wrote keeps each block distinct.
-        const usedSoFar = Object.values(textById)
-          .map(v => (v && v.ru ? String(v.ru).trim().split(/\s+/).slice(0, 7).join(' ') : ''))
-          .filter(Boolean)
-          .slice(-40);
-        // Attach what was ACTUALLY said right before each block. Flow order means
-        // those replies are already generated, so the model can continue the
-        // conversation instead of re-introducing the bank in every other block.
-        // Walk BACK through silent blocks. A router ("Ответ клиента") has no
-        // text, so stopping at the immediate predecessor returned nothing and
-        // the model lost the thread — keep stepping back to the last block that
-        // actually spoke.
-        const lastSpoken = (id, depth) => {
-          if (depth > 4) return '';
-          for (const pid of (incomingIds.get(id) || []).slice(0, 3)) {
-            const txt = (textById[pid] && textById[pid].ru) ? String(textById[pid].ru).trim() : '';
-            if (txt) return txt;
-            const deeper = lastSpoken(pid, depth + 1);
-            if (deeper) return deeper;
-          }
-          return '';
-        };
-        const partWithPrev = part.map(item => {
-          const said = lastSpoken(item.id, 0);
-          if (!said) return item;
-          return { ...item, ужеСказаноПеред: said.length > 200 ? said.slice(0, 200) + '…' : said };
-        });
-        const raw = await aiGenerate(buildPrompt(partWithPrev, usedSoFar), 'Напиши новые тексты для всех блоков этой порции и верни JSON-массив.', {
-          json: true, temperature: 0.7, maxTokens: 12000
-        });
-        const arr = parseChunk(raw);
-        let matched = 0;
-        arr.forEach(r => { if (r && r.id && part.some(p => p.id === r.id) && !textById[r.id]) { textById[r.id] = r; matched++; } });
-        if (!matched && arr.length === part.length) {
-          part.forEach((p, k) => { if (arr[k] && !textById[p.id]) textById[p.id] = { id: p.id, ...arr[k] }; });
-          matched = arr.length;
-        }
-        console.log(`[Cybernet] ${label}: ${matched}/${part.length}`);
-        return matched;
-      };
-
-      const startId = (refBlocks.find(b => (b.type || '') === 'start')
-        || refBlocks.find(b => { const e = textMap.find(x => x.id === b.id); return e && (!e.after || !e.after.length); })
-        || refBlocks[0] || {}).id;
-
       // Generate in CONVERSATION order, not array order. Walking the graph from
       // the opening block means a block's predecessors are already written when
       // its turn comes — which is what lets us show the model what was actually
@@ -8556,6 +8509,78 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       const orderPos = new Map(orderIds.map((id, i) => [id, i]));
       const ordered = textMap.slice().sort((a, b) =>
         (orderPos.has(a.id) ? orderPos.get(a.id) : 1e9) - (orderPos.has(b.id) ? orderPos.get(b.id) : 1e9));
+
+      const runBatch = async (part, label) => {
+        // Chunks are independent requests, so without this the model reinvented
+        // the same line in three different blocks ("расскажу подробнее" ×3).
+        // Feeding back what it already wrote keeps each block distinct.
+        const usedSoFar = Object.values(textById)
+          .map(v => (v && v.ru ? String(v.ru).trim().split(/\s+/).slice(0, 7).join(' ') : ''))
+          .filter(Boolean)
+          .slice(-40);
+        // Attach what was ACTUALLY said right before each block. Flow order means
+        // those replies are already generated, so the model can continue the
+        // conversation instead of re-introducing the bank in every other block.
+        // CONVERSATION FLOW: give the model the whole dialogue path from the
+        // start down to this block, not just the last line. Walk back through
+        // predecessors (skipping silent router blocks), collecting every reply
+        // the robot already said on the way here, oldest → newest. A block deep
+        // in a branch then sees the full lead-up and can neither repeat an
+        // earlier argument nor break the thread.
+        const pathTo = (id) => {
+          const chain = [];
+          const seen = new Set();
+          let cur = id;
+          let hops = 0;
+          while (cur && hops < 30) {
+            hops++;
+            const preds = incomingIds.get(cur) || [];
+            // Prefer a predecessor that actually appears earlier in flow order,
+            // so we follow the real route in rather than a back-edge/loop.
+            let chosen = null;
+            let best = Infinity;
+            for (const pid of preds) {
+              if (seen.has(pid)) continue;
+              const rank = orderPos.has(pid) ? orderPos.get(pid) : 1e9;
+              if (rank < best) { best = rank; chosen = pid; }
+            }
+            if (chosen == null) break;
+            seen.add(chosen);
+            const txt = (textById[chosen] && textById[chosen].ru) ? String(textById[chosen].ru).trim() : '';
+            if (txt) {
+              const one = txt.length > 130 ? txt.slice(0, 130) + '…' : txt;
+              chain.push({ title: (textById[chosen].title || '').trim(), ru: one });
+            }
+            cur = chosen;
+          }
+          return chain.reverse(); // oldest first
+        };
+        const partWithPrev = part.map(item => {
+          const path = pathTo(item.id);
+          if (!path.length) return item;
+          // Keep the last 6 turns — enough for continuity, small enough for the
+          // token budget across a 15-block batch.
+          const trimmed = path.slice(-6).map((s, i) => `${i + 1}. ${s.ru}`);
+          return { ...item, разговорДоЭтогоБлока: trimmed };
+        });
+        const raw = await aiGenerate(buildPrompt(partWithPrev, usedSoFar), 'Напиши новые тексты для всех блоков этой порции и верни JSON-массив.', {
+          json: true, temperature: 0.7, maxTokens: 12000
+        });
+        const arr = parseChunk(raw);
+        let matched = 0;
+        arr.forEach(r => { if (r && r.id && part.some(p => p.id === r.id) && !textById[r.id]) { textById[r.id] = r; matched++; } });
+        if (!matched && arr.length === part.length) {
+          part.forEach((p, k) => { if (arr[k] && !textById[p.id]) textById[p.id] = { id: p.id, ...arr[k] }; });
+          matched = arr.length;
+        }
+        console.log(`[Cybernet] ${label}: ${matched}/${part.length}`);
+        return matched;
+      };
+
+      const startId = (refBlocks.find(b => (b.type || '') === 'start')
+        || refBlocks.find(b => { const e = textMap.find(x => x.id === b.id); return e && (!e.after || !e.after.length); })
+        || refBlocks[0] || {}).id;
+
 
       const chunks = [];
       for (let i = 0; i < ordered.length; i += CHUNK) chunks.push(ordered.slice(i, i + CHUNK));
