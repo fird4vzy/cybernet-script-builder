@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-24-v26-fix-startid';
+const CYBERNET_BUILD = '2026-07-24-v27-fact-diversity';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8376,7 +8376,7 @@ ${JSON.stringify(uniqLabels, null, 1)}`;
   ✅ Пиши короткими сообщениями для чата: приветствие, суть, вопрос.`;
       }
 
-      const buildPrompt = (mapChunk, usedSoFar) => `Ты — эксперт по скриптам колл-центра. У тебя есть КАРКАС эталонного скрипта: список блоков с их РОЛЯМИ (role/intent/type) и нужной длиной реплики (len). Тексты эталона намеренно НЕ показаны. Твоя задача — для КАЖДОГО блока написать НОВЫЙ заголовок (title) и НОВЫЕ живые реплики (ru, uz) под новую сферу. НЕ добавляй и НЕ удаляй блоки. НЕ меняй id.
+      const buildPrompt = (mapChunk, usedSoFar, usedFacts) => `Ты — эксперт по скриптам колл-центра. У тебя есть КАРКАС эталонного скрипта: список блоков с их РОЛЯМИ (role/intent/type) и нужной длиной реплики (len). Тексты эталона намеренно НЕ показаны. Твоя задача — для КАЖДОГО блока написать НОВЫЙ заголовок (title) и НОВЫЕ живые реплики (ru, uz) под новую сферу. НЕ добавляй и НЕ удаляй блоки. НЕ меняй id.
 
 НОВАЯ СФЕРА: ${niche}
 ЦЕЛЬ: ${goal}
@@ -8454,7 +8454,8 @@ leadsTo — блоки, которые идут ПОСЛЕ этого. Репл�
 - 🔴 РЕПЛИКА ДОЛЖНА БЫТЬ СОДЕРЖАТЕЛЬНОЙ, а не вежливой пустышкой: (а) короткое присоединение, (б) КОНКРЕТНЫЙ аргумент — что клиент получит (закрыть кассовый разрыв, профинансировать поставку, лимит без залога, решение за N дней).
 ${channelRule}
 - 🔴 ЗАПРЕЩЁННЫЕ ПУСТЫШКИ (реальные примеры того, что писать НЕЛЬЗЯ): «Мы предлагаем выгодные условия», «Давайте обсудим ваши потребности», «Я здесь, чтобы помочь вам с финансированием», «Спасибо за ваше время», «Обратитесь к специалисту», «Это может быть вам интересно», «Мы всегда готовы помочь». Такая фраза не несёт клиенту НИЧЕГО — вместо неё назови конкретную выгоду или цифру.
-- Проверь каждую реплику: если из неё убрать название банка, останется ли полезная информация? Если нет — перепиши с фактом.
+- 🔴 НЕ заканчивай реплику пустым предложением помощи: «Если вас интересует, могу помочь», «Могу рассказать подробнее», «Обращайтесь, если возникнут вопросы», «Готов ответить на вопросы». Это вода. Вместо концовки-заглушки добавь ЕЩЁ ОДИН конкретный факт из базы или закончи реплику по существу.
+- Проверь каждую реплику: если убрать название банка и вежливые обороты, останется ли КОНКРЕТИКА (сумма, ставка, срок, условие)? Если осталась только вежливость — перепиши с фактом из базы.
 - Тон «${tone}», живая устная речь (её произносят вслух по телефону). НЕ повторяй один и тот же аргумент в разных блоках — у каждого возражения свой довод.
 - Узбекский (uz) — ТОЛЬКО ЛАТИНИЦА (o', g', sh, ch), кириллица запрещена.
 - Если есть БРИФ КЛИЕНТА выше — конкретика (продукты, ставки, сроки, контакты) строго из него.
@@ -8462,6 +8463,9 @@ ${channelRule}
 
 ${usedSoFar && usedSoFar.length ? `🔴 УЖЕ НАПИСАНО В ДРУГИХ БЛОКАХ (НЕ ПОВТОРЯЙ эти формулировки и не пиши то же самое другими словами):
 ${usedSoFar.map(u => '- ' + u).join('\n')}
+
+` : ''}${usedFacts && usedFacts.length ? `🔴 ФАКТЫ ИЗ БАЗЫ, УЖЕ УПОМЯНУТЫЕ РАНЬШЕ (в этом блоке возьми ДРУГИЕ — продукт, ставку, срок или сумму, которых тут ещё не было):
+${usedFacts.map(u => '- ' + u).join('\n')}
 
 ` : ''}КАРКАС (${mapChunk.length} блоков. role = что сказал КЛИЕНТ, answers = что он может ответить дальше; ты пишешь ОТВЕТ РОБОТА):
 ${JSON.stringify(mapChunk, null, 1)}`;
@@ -8517,10 +8521,18 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         // Chunks are independent requests, so without this the model reinvented
         // the same line in three different blocks ("расскажу подробнее" ×3).
         // Feeding back what it already wrote keeps each block distinct.
-        const usedSoFar = Object.values(textById)
-          .map(v => (v && v.ru ? String(v.ru).trim().split(/\s+/).slice(0, 7).join(' ') : ''))
-          .filter(Boolean)
-          .slice(-40);
+        // Track FACTS already used (numbers, product names), not just openings.
+        // The model was repeating "BIZNES STANDART, 5 млрд, 36 мес" across many
+        // blocks because it couldn't see it had already spent that fact. Show
+        // the spent facts so it reaches for a different one from the base.
+        const allRu = Object.values(textById).map(v => (v && v.ru) ? String(v.ru) : '').filter(Boolean);
+        const usedSoFar = allRu.map(r => r.trim().split(/\s+/).slice(0, 7).join(' ')).slice(-40);
+        const usedFacts = Array.from(new Set(
+          allRu.flatMap(r => [
+            ...(r.match(/\b[A-Z][A-Z ]{3,}\b/g) || []),          // PRODUCT NAMES in caps
+            ...(r.match(/\d+[\d.,]*\s*(?:%|млрд|млн|тыс|мес[а-я]*|дн[а-я]*|лет|год[а-я]*)/gi) || []) // figures
+          ].map(x => x.trim()))
+        )).slice(-30);
         // Attach what was ACTUALLY said right before each block. Flow order means
         // those replies are already generated, so the model can continue the
         // conversation instead of re-introducing the bank in every other block.
@@ -8566,7 +8578,7 @@ ${JSON.stringify(mapChunk, null, 1)}`;
           const trimmed = path.slice(-6).map((s, i) => `${i + 1}. ${s.ru}`);
           return { ...item, разговорДоЭтогоБлока: trimmed };
         });
-        const raw = await aiGenerate(buildPrompt(partWithPrev, usedSoFar), 'Напиши новые тексты для всех блоков этой порции и верни JSON-массив.', {
+        const raw = await aiGenerate(buildPrompt(partWithPrev, usedSoFar, usedFacts), 'Напиши новые тексты для всех блоков этой порции и верни JSON-массив.', {
           json: true, temperature: 0.7, maxTokens: 12000
         });
         const arr = parseChunk(raw);
@@ -8665,7 +8677,11 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         const withNum = vals.filter(r => /\d/.test(r)).length;
         const withFiller = vals.filter(r => FILLER.test(r)).length;
         const avgWords = vals.length ? Math.round(vals.reduce((a, r) => a + r.trim().split(/\s+/).length, 0) / vals.length) : 0;
-        console.log(`[Cybernet] качество реплик: с цифрами ${withNum}/${vals.length}, пустышек ${withFiller}, средняя длина ${avgWords} слов`);
+        const distinctFacts = new Set(vals.flatMap(r => [
+          ...(r.match(/\b[A-Z][A-Z ]{3,}\b/g) || []),
+          ...(r.match(/\d+[\d.,]*\s*(?:%|млрд|млн|тыс|мес[а-я]*|дн[а-я]*|лет|год[а-я]*)/gi) || [])
+        ].map(x => x.trim()))).size;
+        console.log(`[Cybernet] качество реплик: с цифрами ${withNum}/${vals.length}, пустышек ${withFiller}, средняя длина ${avgWords} слов, разных фактов из базы ${distinctFacts}`);
       } catch (e) {}
 
 
