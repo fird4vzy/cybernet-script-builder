@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-24-v27-fact-diversity';
+const CYBERNET_BUILD = '2026-07-24-v29-loader-title';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8596,7 +8596,7 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       const chunks = [];
       for (let i = 0; i < ordered.length; i += CHUNK) chunks.push(ordered.slice(i, i + CHUNK));
       for (let c = 0; c < chunks.length; c++) {
-        showGenLoader(`AI пишет реплики… (порция ${c + 1}/${chunks.length})`);
+        showGenLoader(`Генерирую, а ты зачилься (порция ${c + 1}/${chunks.length})`);
         let got = await runBatch(chunks[c], `chunk ${c + 1}`);
         if (got < chunks[c].length) {  // one retry for the blocks this chunk missed
           const miss = chunks[c].filter(p => !textById[p.id]);
