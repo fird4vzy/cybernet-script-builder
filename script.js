@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-24-v29-loader-title';
+const CYBERNET_BUILD = '2026-07-24-v31-router-answers';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8329,10 +8329,27 @@ ${JSON.stringify(uniqLabels, null, 1)}`;
         // Without them the model wrote questions the branches can't answer —
         // e.g. it asked "Когда вам удобно поговорить?" while the only branch
         // out of that block was "Да, конечно". The question must fit the answers.
-        const answers = (b.branches || [])
+        let answers = (b.branches || [])
           .map(br => newLabel(br.label).trim())
           .filter(Boolean)
           .slice(0, 8);
+        // If the block itself has no labelled branches but flows into a router
+        // ("Ответ клиента") that DOES split into client answers, surface those
+        // as this block's answers. Otherwise the model saw "no answers" and
+        // wrote a statement with no question — leaving an offer that dead-ends
+        // into "Ответ клиента" with nothing for the client to actually answer.
+        if (!answers.length) {
+          for (const br of (b.branches || [])) {
+            const nb = refBlocks.find(x => x.id === br.next);
+            if (nb && isRouterBlock(nb)) {
+              const via = (nb.branches || [])
+                .map(x => newLabel(x.label).trim())
+                .filter(Boolean)
+                .slice(0, 8);
+              if (via.length) { answers = via; break; }
+            }
+          }
+        }
         const m = { id: b.id, role: b.title || '', intent: b.intent || '', type: b.type || 'normal', len: lenHint };
         const after = (incomingOf.get(b.id) || []).slice(0, 3);
         if (after.length) m.after = after;
@@ -8646,13 +8663,53 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         });
       });
       if (stripped) console.log(`[Cybernet] убрано повторных приветствий: ${stripped}`);
-      // Drop a trailing question from blocks that have no answer branches.
-      // The prompt asks for this, but the model ignored it 41 times out of 42 —
-      // a question nobody can answer is exactly the "вопрос на вопросе" the flow
-      // suffers from. Only cut when a full sentence remains, never gut a block.
+
+      // Safety net: the opening block must actually greet. The model sometimes
+      // returns the start block empty (Gemini did on one run), which left the
+      // whole script with no greeting at all. If the designated greeter — or a
+      // block literally titled "Приветствие" — came back blank, drop in a
+      // sensible default rather than shipping an empty first bubble.
+      const greeterRec = textById[startId];
+      const titleBlock = refBlocks.find(b => /^приветств/i.test((b.title || '').trim()));
+      [startId, titleBlock && titleBlock.id].filter(Boolean).forEach(gid => {
+        const rec = textById[gid];
+        if (!rec) return;
+        if (!rec.ru || !rec.ru.trim()) {
+          rec.ru = 'Здравствуйте! Меня зовут {AGENT_NAME}, я представляю {BANK_NAME}. Удобно ли вам сейчас говорить?';
+        }
+        if (!rec.uz || !rec.uz.trim()) {
+          rec.uz = "Assalomu alaykum! Mening ismim {AGENT_NAME}, men {BANK_NAME} vakiliman. Hozir gaplashishingiz qulaymi?";
+        }
+      });
+
+      // Drop a trailing question ONLY from blocks that truly expect no answer.
+      // A block often doesn't branch directly — it flows into a router ("Ответ
+      // клиента") which then splits into the real client answers. Stripping the
+      // question there was wrong: the client IS meant to reply, just via the
+      // router. So a question is legitimate if the block has answers OR leads
+      // (through routers) to a block that has answers.
+      const idToBlock = new Map(refBlocks.map(b => [b.id, b]));
+      const leadsToAnswers = (id, seen) => {
+        seen = seen || new Set();
+        if (seen.has(id)) return false;
+        seen.add(id);
+        const b = idToBlock.get(id);
+        if (!b) return false;
+        for (const br of (b.branches || [])) {
+          if (!br.next) continue;
+          const nb = idToBlock.get(br.next);
+          if (!nb) continue;
+          // a labelled branch out of the next block = a real client choice
+          const nbAnswers = (nb.branches || []).some(x => (x.label || '').trim());
+          if (nbAnswers) return true;
+          if (isRouterBlock(nb) && leadsToAnswers(nb.id, seen)) return true;
+        }
+        return false;
+      };
       let deQ = 0;
       textMap.forEach(p => {
         if (p.answers && p.answers.length) return;   // a real question belongs here
+        if (leadsToAnswers(p.id)) return;            // question answered via a router downstream
         const rec = textById[p.id];
         if (!rec) return;
         ['ru', 'uz'].forEach(k => {
