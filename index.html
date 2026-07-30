@@ -704,15 +704,22 @@
             <!-- populated by openGenScriptModal -->
           </div>
           <div id="gs-mode-box" class="gs-mode-box" style="display: none;">
-            <label class="field-label" style="margin-bottom: 8px;">Как использовать несколько эталонов?</label>
+            <label class="field-label" style="margin-bottom: 8px;" id="gs-mode-label">Как использовать эталон?</label>
             <label class="gs-mode-option">
               <input type="radio" name="gs-mode" value="exact" checked>
               <div>
-                <div class="gs-mode-title"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M9 2h6v4H9z"/><path d="M6 4v18h12V4"/><path d="M9 10h6M9 14h6"/></svg> Точная копия (по первому)</div>
-                <div class="gs-mode-desc">Скопировать логику, структуру и тон ближайшего эталона, адаптировав под новую сферу</div>
+                <div class="gs-mode-title"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M9 2h6v4H9z"/><path d="M6 4v18h12V4"/><path d="M9 10h6M9 14h6"/></svg> Структура и логика эталона</div>
+                <div class="gs-mode-desc">Скопировать все блоки, ветки и расположение 1:1. Столько же блоков, что в эталоне. Реплики — новые под вашу тему</div>
               </div>
             </label>
             <label class="gs-mode-option">
+              <input type="radio" name="gs-mode" value="style">
+              <div>
+                <div class="gs-mode-title"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg> Только стиль и тон реплик</div>
+                <div class="gs-mode-desc">Структуру AI строит сам под ваш сценарий, у эталона берёт только манеру речи. Размер — из настройки выше</div>
+              </div>
+            </label>
+            <label class="gs-mode-option" id="gs-mode-blend">
               <input type="radio" name="gs-mode" value="blend">
               <div>
                 <div class="gs-mode-title"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M3 6h4l10 12h4M17 4l4 4-4 4M3 18h4M17 20l4-4-4-4"/></svg> Смешать лучшее</div>
