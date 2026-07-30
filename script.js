@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-25-v32-start-marker-name';
+const CYBERNET_BUILD = '2026-07-25-v33-gemini-thinking';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -7077,15 +7077,47 @@ async function geminiGenerate(systemPrompt, userPrompt, opts = {}) {
       responseMimeType: opts.json ? 'application/json' : 'text/plain'
     }
   };
+  // Gemini 2.5+ and 3.x think before answering, and those thinking tokens are
+  // charged against maxOutputTokens. On a big prompt the model can burn the
+  // whole budget reasoning and return an EMPTY response ("Пустой ответ от
+  // Gemini") — it isn't a key or access problem. We don't need chain-of-thought
+  // here (the prompt already spells out the steps), so switch it off: newer
+  // models take thinkingLevel, 2.5 takes thinkingBudget.
+  {
+    const m = String(model).toLowerCase();
+    // Only 2.5 and 3.x reason by default. 1.5 and older don't take the field.
+    const isThinker = /gemini-(?:2\.5|3(?:\.\d+)?)/.test(m);
+    if (isThinker && opts.thinking !== true) {
+      if (/gemini-2\.5/.test(m)) {
+        // Reasoning can't be fully disabled on 2.5 Pro — give it a small budget.
+        body.generationConfig.thinkingConfig = { thinkingBudget: /pro/.test(m) ? 128 : 0 };
+      } else {
+        body.generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
+      }
+    }
+  }
   if (systemPrompt) {
     body.systemInstruction = { parts: [{ text: systemPrompt }] };
   }
 
-  const resp = await fetch(url, {
+  let resp = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify(body)
   });
+  // Older models don't know thinkingConfig and reject the whole request. Retry
+  // once without it rather than failing the generation.
+  if (!resp.ok && body.generationConfig.thinkingConfig) {
+    const probe = await resp.clone().text().catch(() => '');
+    if (/thinking|unknown name|invalid.*field/i.test(probe)) {
+      delete body.generationConfig.thinkingConfig;
+      resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify(body)
+      });
+    }
+  }
   if (!resp.ok) {
     const errText = await resp.text();
     let msg = `Gemini API ${resp.status}`;
@@ -7096,10 +7128,19 @@ async function geminiGenerate(systemPrompt, userPrompt, opts = {}) {
     throw new Error(msg);
   }
   const data = await resp.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  // Concatenate every text part: thinking models may return several.
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const text = parts.map(p => (p && typeof p.text === 'string') ? p.text : '').join('').trim();
   if (!text) {
     const reason = data?.candidates?.[0]?.finishReason;
-    throw new Error(reason === 'SAFETY' ? 'Модель заблокировала ответ по safety-фильтрам. Переформулируйте запрос.' : 'Пустой ответ от Gemini');
+    const thoughts = data?.usageMetadata?.thoughtsTokenCount;
+    if (reason === 'SAFETY') throw new Error('Модель заблокировала ответ по safety-фильтрам. Переформулируйте запрос.');
+    if (reason === 'MAX_TOKENS') {
+      throw new Error(thoughts
+        ? `Модель ${model} израсходовала весь лимит на "размышления" (${thoughts} токенов) и не выдала текст. Выберите Flash-модель без размышлений или уменьшите размер скрипта.`
+        : `Ответ ${model} не поместился в лимит токенов. Уменьшите размер скрипта.`);
+    }
+    throw new Error(`Пустой ответ от Gemini (${model}${reason ? ', причина: ' + reason : ''})`);
   }
   return text.trim();
 }
