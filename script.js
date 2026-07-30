@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-25-v34-retry-503';
+const CYBERNET_BUILD = '2026-07-25-v35-fixed-greeting';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8296,6 +8296,25 @@ async function generateScript() {
         // stays silent.
         if ((b.type || '') === 'start') return true;
         if (/^начало(\s|$)/.test(low) || /^начало\s+разговора/.test(t)) return true;
+
+        // ── Fixed bilingual greeting probe ──
+        // The эталон opens with «Алло, Assalomu aleykum /Здравствуйте» — a
+        // deliberate RU+UZ probe so the client answers in one of the two
+        // languages and the bot can pick it. It must stay VERBATIM: generating a
+        // Russian-only greeting here breaks the language detection the whole
+        // script depends on. Detect "greetings and nothing else".
+        {
+          const stripped = low
+            // drop stage directions like "(so'roq intonatsiyasi bilan)"
+            .replace(/\([^)]*\)/g, '')
+            // RU + UZ greetings, including the Cyrillic transliteration the
+            // эталон sometimes uses ("Ассалом алекум")
+            .replace(/алло|здравствуйте|здрасьте|добрый\s+день|доброе\s+утро|добрый\s+вечер/g, '')
+            .replace(/assalomu?\s*al[ae]ykum|assalom\s*al[ae]ykum|salom|salam/g, '')
+            .replace(/ассалом[уy]?\s*ал[еэ]йкум|ассалом\s*алекум|салом/g, '')
+            .replace(/[\s,.!?\/\\()|—–-]+/g, '');
+          if (body && stripped.length <= 8) return true;
+        }
 
         // ── System directives, not speech ──
         // The эталон puts engine commands in some blocks: «Установка русского
