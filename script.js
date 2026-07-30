@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-25-v40-delete-profiles';
+const CYBERNET_BUILD = '2026-07-25-v41-handles-on-top';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -4776,11 +4776,26 @@ function csUpdateEdgeLive(ef, et) {
 // entryX/entryY — fractions of the block box, the same fields Draw.io import
 // and export already use, so a hand-placed endpoint survives a round-trip.
 function csEndHandleSvg(from, to, geom) {
+  // Nudge each handle slightly OUTWARD, away from the block it attaches to.
+  // Sitting exactly on the border left half the handle under the block, which
+  // is what made a tip feel stuck — you were grabbing the block, not the arrow.
+  const push = (pt, box) => {
+    if (!box || !box.w || !box.h) return pt;
+    const dx = pt.x - box.cx, dy = pt.y - box.cy;
+    const len = Math.hypot(dx, dy) || 1;
+    const OUT = 9;
+    return { x: pt.x + (dx / len) * OUT, y: pt.y + (dy / len) * OUT };
+  };
+  const sBox = csBlockBox(from), tBox = csBlockBox(to);
+  const sp = push(geom.start, sBox), ep = push(geom.end, tBox);
   const h = (pt, kind) => `<rect x="${pt.x - 5.5}" y="${pt.y - 5.5}" width="11" height="11" rx="2"`
     + ` fill="#ffffff" stroke="#16a34a" stroke-width="2.5" class="edge-end"`
     + ` data-ef="${from.id}" data-et="${to.id}" data-kind="${kind}"`
     + ` style="pointer-events:all;cursor:crosshair;"/>`;
-  return h(geom.start, 'exit') + h(geom.end, 'entry');
+  // A thin tick back to the real attachment point, so it stays obvious where
+  // the arrow actually connects even though the grip sits just outside.
+  const tick = (a, b2) => `<line x1="${a.x}" y1="${a.y}" x2="${b2.x}" y2="${b2.y}" stroke="#16a34a" stroke-width="1.5" opacity="0.6"/>`;
+  return tick(geom.start, sp) + tick(geom.end, ep) + h(sp, 'exit') + h(ep, 'entry');
 }
 
 // Where on the block's border does a dragged endpoint land? Returns fractions.
@@ -4875,6 +4890,10 @@ function buildCanvasEdges(blocks, opts = {}) {
   Array.from(colorSet).forEach((c, i) => { colorToMarkerId[c] = `cvarr-${i}`; });
 
   let svg = `<svg class="canvas-edges" width="${maxX + 200}" height="${maxY + 200}" style="width:${maxX+200}px;height:${maxY+200}px;">`;
+  // Handles for the selected edge go into a SEPARATE overlay that paints ABOVE
+  // the blocks. The edge layer sits under the block layer, so a handle that
+  // landed beneath a block was simply unclickable — the endpoint looked stuck.
+  let topSvg = '';
   svg += '<defs>';
   Object.entries(colorToMarkerId).forEach(([color, id]) => {
     svg += `<marker id="${id}" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="${color}"/></marker>`;
@@ -4951,9 +4970,9 @@ function buildCanvasEdges(blocks, opts = {}) {
       svg += `<path d="${dp}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit" data-ef="${from.id}" data-et="${to.id}" style="pointer-events:stroke;cursor:pointer;"/>`;
       svg += `<path d="${dp}" data-from="${from.id}" data-to="${to.id}" data-ef="${from.id}" data-et="${to.id}" stroke="${isSelEdge ? '#2563eb' : color}" stroke-width="${isSelEdge ? Math.max(sw, 2.6) : sw}"${dash} fill="none" marker-end="url(#${mk})" opacity="${isSelEdge ? 1 : 0.9}"/>`;
       if (isSelEdge) {
-        svg += csEndHandleSvg(from, to, { start: r.start, end: r.end });
+        topSvg += csEndHandleSvg(from, to, { start: r.start, end: r.end });
         (branch.waypoints || []).forEach((pt, i) => {
-          svg += `<circle cx="${pt.x}" cy="${pt.y}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" class="edge-wp" data-ef="${from.id}" data-et="${to.id}" data-idx="${i}" style="pointer-events:all;cursor:move;"/>`;
+          topSvg += `<circle cx="${pt.x}" cy="${pt.y}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" class="edge-wp" data-ef="${from.id}" data-et="${to.id}" data-idx="${i}" style="pointer-events:all;cursor:move;"/>`;
         });
       }
       if (label && showEdgeLabels) {
@@ -4987,9 +5006,9 @@ function buildCanvasEdges(blocks, opts = {}) {
       svg += `<path d="${dpath}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit" data-ef="${from.id}" data-et="${to.id}" style="pointer-events:stroke;cursor:pointer;"/>`;
       svg += `<path d="${dpath}" data-from="${from.id}" data-to="${to.id}" data-ef="${from.id}" data-et="${to.id}" stroke="${isSelEdge ? '#2563eb' : color}" stroke-width="${isSelEdge ? 2.6 : 1.8}" fill="none" marker-end="url(#${markerId2})" opacity="${isSelEdge ? 1 : 0.85}"/>`;
       if (isSelEdge) {
-        svg += csEndHandleSvg(from, to, geom);
+        topSvg += csEndHandleSvg(from, to, geom);
         ((branch && branch.waypoints) || []).forEach((pt, i) => {
-          svg += `<circle cx="${pt.x}" cy="${pt.y}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" class="edge-wp" data-ef="${from.id}" data-et="${to.id}" data-idx="${i}" style="pointer-events:all;cursor:move;"/>`;
+          topSvg += `<circle cx="${pt.x}" cy="${pt.y}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" class="edge-wp" data-ef="${from.id}" data-et="${to.id}" data-idx="${i}" style="pointer-events:all;cursor:move;"/>`;
         });
       } else if (label && showEdgeLabels) {
         const pts = (branch && branch.waypoints) || [];
@@ -5133,7 +5152,20 @@ function buildCanvasEdges(blocks, opts = {}) {
   });
 
   svg += '</svg>';
+  if (topSvg) {
+    svg += `<svg class="canvas-edges-top" width="${maxX + 200}" height="${maxY + 200}" style="width:${maxX+200}px;height:${maxY+200}px;">${topSvg}</svg>`;
+  }
   return svg;
+}
+
+// Replace the edge layers together. The overlay is a sibling of .canvas-edges,
+// so swapping only .canvas-edges would leave a stale overlay behind and stack
+// duplicates on every re-render.
+function csRefreshEdges(obstacleAware) {
+  const edgesEl = document.querySelector('.canvas-edges');
+  if (!edgesEl) return;
+  document.querySelectorAll('.canvas-edges-top').forEach(el => el.remove());
+  edgesEl.outerHTML = buildCanvasEdges(data().blocks, { obstacleAware: obstacleAware !== false });
 }
 
 // ── Node drag handlers ────────────────────────────────────────
@@ -5341,8 +5373,7 @@ function initCanvasHandlers() {
         // A hand-placed endpoint overrides an imported Draw.io route, otherwise
         // csEdgeGeom would keep returning the original baked geometry.
         if (br._dio && (!br.waypoints || !br.waypoints.length)) br._dio = undefined;
-        const edgesEl = document.querySelector('.canvas-edges');
-        if (edgesEl) edgesEl.outerHTML = buildCanvasEdges(data().blocks, { obstacleAware: false });
+        csRefreshEdges(false);
       }
       return;
     }
@@ -5367,8 +5398,7 @@ function initCanvasHandlers() {
         canvasState.selectedId = null; canvasState.selectedIds.clear();
         canvasState.wpDrag = { ef: g.ef, et: g.et, idx: seg };
         canvasState.edgeGrab = null;
-        const edgesEl = document.querySelector('.canvas-edges');
-        if (edgesEl) edgesEl.outerHTML = buildCanvasEdges(data().blocks, { obstacleAware: true });
+        csRefreshEdges(true);
       } else { canvasState.edgeGrab = null; }
       return;
     }
@@ -5413,8 +5443,7 @@ function initCanvasHandlers() {
         }
       });
       // Re-render edges only — fast routing during drag (no obstacle avoidance)
-      const edgesEl = document.querySelector('.canvas-edges');
-      if (edgesEl) edgesEl.outerHTML = buildCanvasEdges(data().blocks, { obstacleAware: false });
+      csRefreshEdges(false);
     } else if (canvasState.boxSelect) {
       const stage = document.getElementById('canvas-stage');
       const stageRect = stage.getBoundingClientRect();
@@ -5549,8 +5578,7 @@ function initCanvasHandlers() {
           }));
           saveToStorage();
         }
-        const edgesEl = document.querySelector('.canvas-edges');
-        if (edgesEl) edgesEl.outerHTML = buildCanvasEdges(data().blocks, { obstacleAware: true });
+        csRefreshEdges(true);
       }
     }
     if (canvasState.boxSelect) {
