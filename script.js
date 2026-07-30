@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-25-v44-tolerant-json';
+const CYBERNET_BUILD = '2026-07-25-v45-size-enforce';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8392,10 +8392,17 @@ async function generateScript() {
     : '';
   const learningSection = await buildLearningSection();
   const systemPrompt = aiPrompts.generate_system + referencesSection + briefSection + varsSection + learningSection;
-  const userPrompt = fillTemplate(aiPrompts.generate_user, {
+  let userPrompt = fillTemplate(aiPrompts.generate_user, {
     niche, goal, channel, tone, blockCount,
     extras: extras || '(нет)'
   });
+  // The size requirement travels via the {blockCount} placeholder. A hand-edited
+  // prompt often drops it, and then the model never learns how big the script
+  // should be — asking for 90-120 blocks quietly produced 11. Append the
+  // requirement whenever the filled prompt doesn't already state it.
+  if (!/\d\s*[-–]\s*\d/.test(userPrompt) || userPrompt.indexOf(blockCount) === -1) {
+    userPrompt += `\n\n🔴 РАЗМЕР СКРИПТА — ОБЯЗАТЕЛЬНО: ${blockCount} блоков. Это не пожелание, а требование: меньше нижней границы — брак. Раскрой тему подробно: отдельный блок на каждое возражение, на каждый вопрос клиента, на каждую особую ситуацию (молчание, не слышно, робот?, соедините с оператором, ошиблись номером, мошенники), плюс счётчики повторов для повторяющихся возражений.`;
+  }
 
   try {
     // ════════════════════════════════════════════════════════════
@@ -9220,10 +9227,16 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       return;
     }
 
+    // Scale the response budget to the requested size. A 90-120 block script
+    // with RU+UZ texts needs ~28k tokens; the old flat 16000 cap physically
+    // couldn't hold it, so the model returned a truncated, much smaller script.
+    const targetMax = parseInt(String(blockCount).split(/[-–]/).pop(), 10) || 35;
+    const genMaxTokens = Math.min(64000, Math.max(8000, Math.round(targetMax * 260)));
+    console.log(`[Cybernet] запрошено блоков: ${blockCount}, лимит ответа: ${genMaxTokens} токенов`);
     const raw = await aiGenerate(systemPrompt, userPrompt, {
       json: true,
       temperature: 0.8,
-      maxTokens: 16000
+      maxTokens: genMaxTokens
     });
     let parsed;
     try { parsed = JSON.parse(raw); } catch {
@@ -9298,7 +9311,17 @@ ${JSON.stringify(mapChunk, null, 1)}`;
     const canvasTab = document.querySelector('[data-tab="canvas"]');
     if (canvasTab) switchTab('canvas', canvasTab);
 
-    toast(`✓ Создан профиль "${uniqueName}" · ${profile.blocks.length} блоков`);
+    {
+      // Say it out loud when the model undershot the requested size — this used
+      // to pass silently and looked like the size setting was being ignored.
+      const wantMin = parseInt(String(blockCount).split(/[-–]/)[0], 10) || 0;
+      const got = profile.blocks.length;
+      if (wantMin && got < wantMin * 0.7) {
+        toast(`⚠ Создан профиль "${uniqueName}" · всего ${got} блоков вместо ${blockCount}. AI не раскрыл тему — попробуйте ещё раз или выберите эталон, чтобы структура копировалась.`, 'error');
+      } else {
+        toast(`✓ Создан профиль "${uniqueName}" · ${got} блоков`);
+      }
+    }
   } catch (err) {
     toast('Ошибка генерации: ' + err.message, 'error');
   } finally {
