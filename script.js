@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-25-v39-edge-endpoints';
+const CYBERNET_BUILD = '2026-07-25-v40-delete-profiles';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -566,20 +566,59 @@ function renameProfile() {
   }
 }
 
-function deleteProfile() {
+// Profiles deleted locally used to come back on reload. Three reasons, all
+// fixed here: (1) the delete never called saveToStorage, so localStorage kept
+// the profile; (2) the cloud delete was fire-and-forget, so a failure was
+// invisible; (3) on load the cloud REPLACES local profiles wholesale, so any row
+// left in the cloud resurrects itself. A tombstone list closes the last hole.
+const DELETED_KEY = 'cybernet_deleted_profiles_v1';
+function getDeletedTombstones() {
+  try { const v = JSON.parse(localStorage.getItem(DELETED_KEY) || '{}'); return { ids: v.ids || [], names: v.names || [] }; }
+  catch (e) { return { ids: [], names: [] }; }
+}
+function addDeletedTombstone(cloudId, name) {
+  const t = getDeletedTombstones();
+  if (cloudId && !t.ids.includes(cloudId)) t.ids.push(cloudId);
+  if (name && !t.names.includes(name)) t.names.push(name);
+  // keep the list short — it only needs to outlive a failed cloud delete
+  t.ids = t.ids.slice(-50); t.names = t.names.slice(-50);
+  try { localStorage.setItem(DELETED_KEY, JSON.stringify(t)); } catch (e) {}
+}
+function clearDeletedTombstone(cloudId, name) {
+  const t = getDeletedTombstones();
+  const next = { ids: t.ids.filter(x => x !== cloudId), names: t.names.filter(x => x !== name) };
+  try { localStorage.setItem(DELETED_KEY, JSON.stringify(next)); } catch (e) {}
+}
+
+async function deleteProfile() {
   if (Object.keys(profiles).length <= 1) { toast('Нужен хотя бы один профиль', 'error'); return; }
-  const p = profiles[activeProfile];
+  const name = activeProfile;
+  const p = profiles[name];
   if (p && p._readOnly) { toast('Это общий профиль коллеги — его нельзя удалить', 'error'); return; }
-  if (!confirm(`Удалить «${activeProfile}»?`)) return;
+  if (!confirm(`Удалить «${name}»?`)) return;
   snapshot('Удаление профиля');
-  // Удалить из облака
-  if (p && p._cloudId && typeof cloudDeleteProfile === 'function') {
-    cloudDeleteProfile(p._cloudId);
-  }
-  delete profiles[activeProfile];
+
+  const cloudId = p && p._cloudId;
+  // Remember the deletion BEFORE touching the cloud, so an interrupted delete
+  // (network drop, closed tab) still can't bring the profile back.
+  addDeletedTombstone(cloudId, name);
+
+  delete profiles[name];
   activeProfile = Object.keys(profiles)[0];
+  saveToStorage();   // persist locally — this was missing entirely
   renderProfiles(); renderBlocks(); renderVars(); renderStats();
-  toast('Профиль удалён');
+  try {
+    const stage = document.getElementById('canvas-stage');
+    if (stage && stage.offsetParent !== null && typeof canvasRender === 'function') canvasRender();
+  } catch (e) {}
+
+  if (cloudId && typeof cloudDeleteProfile === 'function') {
+    const ok = await cloudDeleteProfile(cloudId);
+    if (ok) { clearDeletedTombstone(cloudId, name); toast('Профиль удалён'); }
+    else toast('Профиль удалён локально, но из облака удалить не удалось — попробую при следующем входе', 'error');
+  } else {
+    toast('Профиль удалён');
+  }
 }
 
 function toggleShareProfile() {
@@ -6740,8 +6779,26 @@ async function cloudPullProfiles() {
   if (!rows.length) return false; // нет облачных данных — оставляем локальные
 
   const myId = getCurrentUserId();
+  // Skip rows the user already deleted locally. On load the cloud replaces local
+  // profiles wholesale, so without this a row left behind by a failed delete
+  // reappears every session. Retry the cloud delete while we're here.
+  const tomb = (typeof getDeletedTombstones === 'function') ? getDeletedTombstones() : { ids: [], names: [] };
+  const liveRows = rows.filter(row => {
+    // A name tombstone must not block a NEW profile that reuses the same name,
+    // so it only applies while nothing local carries that name.
+    const nameGone = row.owner_id === myId && tomb.names.includes(row.name) && !profiles[row.name];
+    const gone = tomb.ids.includes(row.id) || nameGone;
+    if (gone && typeof cloudDeleteProfile === 'function') {
+      cloudDeleteProfile(row.id).then(ok => {
+        if (ok && typeof clearDeletedTombstone === 'function') clearDeletedTombstone(row.id, row.name);
+      });
+    }
+    return !gone;
+  });
+  if (!liveRows.length) return false;   // everything in the cloud was deleted — keep local
+
   const newProfiles = {};
-  rows.forEach(row => {
+  liveRows.forEach(row => {
     const p = sanitizeProfileIds(row.data || {});
     p._cloudId = row.id;
     p._isShared = row.is_shared;
