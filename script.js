@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-24-v31-router-answers';
+const CYBERNET_BUILD = '2026-07-25-v32-start-marker-name';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8214,6 +8214,15 @@ async function generateScript() {
         const body = (b.ru || '').trim();
         const low = body.toLowerCase();
 
+        // ── Flow marker, not a speaking block ──
+        // The эталон's opening node is just a label ("Начало разговора") marking
+        // where the diagram starts — the robot says nothing there; the greeting
+        // lives in the NEXT block. Generating speech here produced two greetings
+        // in a row. Anything the эталон left empty or marked as a start node
+        // stays silent.
+        if ((b.type || '') === 'start') return true;
+        if (/^начало(\s|$)/.test(low) || /^начало\s+разговора/.test(t)) return true;
+
         // ── System directives, not speech ──
         // The эталон puts engine commands in some blocks: «Установка русского
         // языка», «Проверка языка в базе», «Случайный выбор», «По счетчику».
@@ -8423,6 +8432,13 @@ role может содержать предмет эталона («У нас у
 - «У нас уже есть 1С» → возражение «у нас уже есть это решение» → для финансирования: клиент говорит «у нас уже есть кредит» → робот отвечает про рефинансирование/доп. лимит
 - «Что входит в тестовый период» → вопрос про условия → робот отвечает про ставку, срок, требования
 - Никогда не переноси слова старой темы («1С», «облако», «сервер», «тестовый период», «Uzcloud») ни в title, ни в ru, ни в uz.
+
+🔴 ИМЯ РОБОТА И НАЗВАНИЕ БАНКА — ТОЛЬКО ЧЕРЕЗ ПЕРЕМЕННЫЕ:
+- Имя агента пиши как {AGENT_NAME}, название банка как {BANK_NAME}. Их подставит система.
+- ❌ КАТЕГОРИЧЕСКИ НЕЛЬЗЯ: «Меня зовут виртуальный помощник», «Меня зовут ассистент банка» — это НЕ имя, это должность. Так не говорят живые люди.
+- ✅ Правильно: «Меня зовут {AGENT_NAME}, я виртуальный помощник {BANK_NAME}» — сначала ИМЯ, потом роль.
+- ✅ Или без имени вовсе: «Я виртуальный помощник {BANK_NAME}».
+- Формула «Меня зовут» + должность запрещена. Либо настоящее имя через {AGENT_NAME}, либо не используй «меня зовут».
 
 🔴 ВОПРОС ДОЛЖЕН СТЫКОВАТЬСЯ С ОТВЕТАМИ (поле answers):
 answers — это варианты, которые клиент может ответить на этот блок (подписи на стрелках). Твоя реплика обязана заканчиваться так, чтобы КАЖДЫЙ из этих вариантов был логичным ответом.
@@ -8664,23 +8680,21 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       });
       if (stripped) console.log(`[Cybernet] убрано повторных приветствий: ${stripped}`);
 
-      // Safety net: the opening block must actually greet. The model sometimes
-      // returns the start block empty (Gemini did on one run), which left the
-      // whole script with no greeting at all. If the designated greeter — or a
-      // block literally titled "Приветствие" — came back blank, drop in a
-      // sensible default rather than shipping an empty first bubble.
-      const greeterRec = textById[startId];
-      const titleBlock = refBlocks.find(b => /^приветств/i.test((b.title || '').trim()));
-      [startId, titleBlock && titleBlock.id].filter(Boolean).forEach(gid => {
-        const rec = textById[gid];
-        if (!rec) return;
-        if (!rec.ru || !rec.ru.trim()) {
-          rec.ru = 'Здравствуйте! Меня зовут {AGENT_NAME}, я представляю {BANK_NAME}. Удобно ли вам сейчас говорить?';
-        }
-        if (!rec.uz || !rec.uz.trim()) {
-          rec.uz = "Assalomu alaykum! Mening ismim {AGENT_NAME}, men {BANK_NAME} vakiliman. Hozir gaplashishingiz qulaymi?";
-        }
+      // Fix "меня зовут <должность>". The model filled the name slot with the
+      // role ("Меня зовут виртуальный помощник Asia Alliance Bank"), which no
+      // human would say. Rewrite to the role alone — dropping the false name is
+      // safer than inventing one.
+      let nameFix = 0;
+      const ROLE_AS_NAME = /мен[яь]\s+зовут\s+((?:виртуальн[а-яё]+\s+)?(?:помощник|ассистент|консультант|бот|робот)[а-яё]*)/gi;
+      Object.values(textById).forEach(rec => {
+        if (!rec || typeof rec.ru !== 'string' || !rec.ru) return;
+        if (!ROLE_AS_NAME.test(rec.ru)) { ROLE_AS_NAME.lastIndex = 0; return; }
+        ROLE_AS_NAME.lastIndex = 0;
+        const before = rec.ru;
+        rec.ru = rec.ru.replace(ROLE_AS_NAME, (m, role) => 'Я ' + role.toLowerCase());
+        if (rec.ru !== before) nameFix++;
       });
+      if (nameFix) console.log(`[Cybernet] исправлено «меня зовут <должность>»: ${nameFix}`);
 
       // Drop a trailing question ONLY from blocks that truly expect no answer.
       // A block often doesn't branch directly — it flows into a router ("Ответ
