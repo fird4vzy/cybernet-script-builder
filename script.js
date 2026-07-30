@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-25-v33-gemini-thinking';
+const CYBERNET_BUILD = '2026-07-25-v34-retry-503';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -7233,6 +7233,39 @@ async function proxyGenerate(systemPrompt, userPrompt, opts = {}) {
 }
 
 async function aiGenerate(systemPrompt, userPrompt, opts = {}) {
+  // Transient provider failures (503 "high demand", 429 rate limit, 500) used to
+  // kill a whole generation five minutes in, losing every chunk already written.
+  // They are explicitly temporary, so retry with growing pauses before giving up.
+  const attempts = opts.retries ?? 4;
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await aiGenerateOnce(systemPrompt, userPrompt, opts);
+    } catch (err) {
+      lastErr = err;
+      const msg = String(err && err.message || err);
+      const transient = /\b(429|500|502|503|504)\b/.test(msg)
+        || /high demand|UNAVAILABLE|overloaded|rate limit|quota|try again later|temporarily/i.test(msg)
+        || /Failed to fetch|NetworkError|network error/i.test(msg);
+      if (!transient || i === attempts - 1) throw err;
+      const waitMs = Math.round((2000 * Math.pow(2, i)) + Math.random() * 500); // 2s, 4s, 8s…
+      const secs = Math.round(waitMs / 1000);
+      console.warn(`[Cybernet] провайдер занят (${msg.slice(0, 80)}) — повтор ${i + 1}/${attempts - 1} через ${secs}с`);
+      try {
+        const sub = document.getElementById('gen-loader-sub');
+        if (sub) { sub.dataset.sticky = '1'; sub.textContent = `Провайдер занят, повтор через ${secs}с…`; }
+      } catch (e) {}
+      await new Promise(r => setTimeout(r, waitMs));
+      try {
+        const sub2 = document.getElementById('gen-loader-sub');
+        if (sub2) sub2.dataset.sticky = '';
+      } catch (e) {}
+    }
+  }
+  throw lastErr;
+}
+
+async function aiGenerateOnce(systemPrompt, userPrompt, opts = {}) {
   // Server-side key mode: the browser never sees or stores an API key.
   if (llmSettings.useServerKey && !opts.apiKey) {
     return proxyGenerate(systemPrompt, userPrompt, opts);
@@ -7986,7 +8019,7 @@ function showGenLoader(text) {
   host.appendChild(ov);
   const msgs = ['Собираю структуру…', 'Пишу реплики…', 'Перевожу на узбекский…', 'Расставляю ветки…', 'Почти готово…'];
   let i = 0;
-  ov._timer = setInterval(() => { i = (i + 1) % msgs.length; const sub = document.getElementById('gen-loader-sub'); if (sub) sub.textContent = msgs[i]; }, 2200);
+  ov._timer = setInterval(() => { const sub = document.getElementById('gen-loader-sub'); if (!sub || sub.dataset.sticky === '1') return; i = (i + 1) % msgs.length; sub.textContent = msgs[i]; }, 2200);
 }
 function hideGenLoader() {
   const ov = document.getElementById('gen-loader-overlay');
@@ -8123,7 +8156,7 @@ async function generateScript() {
   const origText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Генерирую скрипт... (30-60 сек)';
-  showGenLoader('AI создаёт скрипт…');
+  showGenLoader('Генерирую, а ты зачилься');
 
   const sizeMap = { small: '10-15', medium: '25-35', large: '50-70', xlarge: '90-120', huge: '150-200' };
   let blockCount = sizeMap[size] || '25-35';
@@ -8305,7 +8338,7 @@ async function generateScript() {
           if (l && !uniqLabels.includes(l)) uniqLabels.push(l);
         }));
         if (uniqLabels.length) {
-          showGenLoader('AI переписывает подписи веток…');
+          showGenLoader('Генерирую, а ты зачилься');
           const lblPrompt = `Это подписи на стрелках диалогового скрипта — КОРОТКИЕ реплики/намерения КЛИЕНТА.
 Перепиши каждую под новую сферу, сохранив СМЫСЛ намерения. Длина — как в оригинале (1-5 слов), это метка, а не реплика.
 
@@ -8674,7 +8707,7 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         let got = await runBatch(chunks[c], `chunk ${c + 1}`);
         if (got < chunks[c].length) {  // one retry for the blocks this chunk missed
           const miss = chunks[c].filter(p => !textById[p.id]);
-          if (miss.length) { showGenLoader(`AI дописывает… (порция ${c + 1})`); await runBatch(miss, `chunk ${c + 1} retry`); }
+          if (miss.length) { showGenLoader(`Генерирую, а ты зачилься (дописываю порцию ${c + 1})`); await runBatch(miss, `chunk ${c + 1} retry`); }
         }
       }
       // Final sweep: gather every block still without text and re-request in one go.
@@ -8682,7 +8715,7 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       let sweep = 0;
       while (missing.length && sweep < 3) {
         sweep++;
-        showGenLoader(`AI дописывает пропущенные… (${missing.length})`);
+        showGenLoader(`Генерирую, а ты зачилься (дописываю ${missing.length})`);
         const before = Object.keys(textById).length;
         for (let i = 0; i < missing.length; i += CHUNK) await runBatch(missing.slice(i, i + CHUNK), `sweep ${sweep}`);
         missing = textMap.filter(p => !textById[p.id]);
