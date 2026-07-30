@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-25-v43-revert-endpoints';
+const CYBERNET_BUILD = '2026-07-25-v44-tolerant-json';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -9227,14 +9227,33 @@ ${JSON.stringify(mapChunk, null, 1)}`;
     });
     let parsed;
     try { parsed = JSON.parse(raw); } catch {
-      const m = raw.match(/\{[\s\S]*\}/);
-      if (!m) throw new Error('Не могу распарсить JSON');
-      parsed = JSON.parse(m[0]);
+      const m = raw.match(/\{[\s\S]*\}/) || raw.match(/\[[\s\S]*\]/);
+      if (!m) throw new Error('AI вернул не JSON. Проверьте промпт: в нём должно остаться требование вернуть строго JSON.');
+      try { parsed = JSON.parse(m[0]); } catch { parsed = parseAIJson(raw); }
+    }
+
+    // Models (and hand-edited prompts) wrap the array in different shapes. Accept
+    // the common ones instead of failing with a blank "script is empty": an edited
+    // prompt that no longer spells out {"blocks": [...]} is the usual cause.
+    if (parsed && !Array.isArray(parsed.blocks)) {
+      const alt = Array.isArray(parsed) ? parsed
+        : (parsed.script && Array.isArray(parsed.script.blocks)) ? parsed.script.blocks
+        : Array.isArray(parsed.items) ? parsed.items
+        : Array.isArray(parsed.nodes) ? parsed.nodes
+        : Array.isArray(parsed.steps) ? parsed.steps
+        : Array.isArray(parsed.data) ? parsed.data
+        : null;
+      if (alt) {
+        if (Array.isArray(parsed)) parsed = { blocks: alt };
+        else parsed.blocks = alt;
+      }
     }
 
     // Validate
-    if (!parsed.blocks || !Array.isArray(parsed.blocks) || !parsed.blocks.length) {
-      throw new Error('Скрипт пустой — AI не смог сгенерировать блоки');
+    if (!parsed || !Array.isArray(parsed.blocks) || !parsed.blocks.length) {
+      const keys = (parsed && typeof parsed === 'object') ? Object.keys(parsed).slice(0, 8).join(', ') : typeof parsed;
+      console.error('[Cybernet] ответ AI без блоков. Ключи ответа:', keys, '| начало ответа:', String(raw).slice(0, 400));
+      throw new Error(`AI вернул ответ без списка блоков (получено: ${keys || 'пусто'}). Скорее всего изменённый промпт больше не требует формат {"blocks": [...]} — откройте «Редактор промптов» и нажмите «По умолчанию».`);
     }
 
     // Build profile
