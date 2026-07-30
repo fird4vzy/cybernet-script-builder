@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-25-v38-edge-hover';
+const CYBERNET_BUILD = '2026-07-25-v39-edge-endpoints';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -4732,6 +4732,37 @@ function csUpdateEdgeLive(ef, et) {
     if (h && wp) { h.setAttribute('cx', wp.x); h.setAttribute('cy', wp.y); }
   }
 }
+// Endpoint handles for a selected edge (Visio-style): drag the arrow's tail or
+// tip to choose WHERE it attaches to the block. Stored as exitX/exitY and
+// entryX/entryY — fractions of the block box, the same fields Draw.io import
+// and export already use, so a hand-placed endpoint survives a round-trip.
+function csEndHandleSvg(from, to, geom) {
+  const h = (pt, kind) => `<rect x="${pt.x - 5.5}" y="${pt.y - 5.5}" width="11" height="11" rx="2"`
+    + ` fill="#ffffff" stroke="#16a34a" stroke-width="2.5" class="edge-end"`
+    + ` data-ef="${from.id}" data-et="${to.id}" data-kind="${kind}"`
+    + ` style="pointer-events:all;cursor:crosshair;"/>`;
+  return h(geom.start, 'exit') + h(geom.end, 'entry');
+}
+
+// Where on the block's border does a dragged endpoint land? Returns fractions.
+function csBorderFraction(box, pt) {
+  const w = box.w || 1, hh = box.h || 1;
+  let fx = (pt.x - box.x) / w, fy = (pt.y - box.y) / hh;
+  fx = Math.max(0, Math.min(1, fx));
+  fy = Math.max(0, Math.min(1, fy));
+  // Snap to the nearest edge of the box so the arrow attaches ON the border,
+  // not floating inside the block.
+  const dLeft = fx, dRight = 1 - fx, dTop = fy, dBot = 1 - fy;
+  const m = Math.min(dLeft, dRight, dTop, dBot);
+  if (m === dTop) fy = 0;
+  else if (m === dBot) fy = 1;
+  else if (m === dLeft) fx = 0;
+  else fx = 1;
+  // Snap to eighths so endpoints line up tidily between sibling arrows.
+  const snap = (v) => Math.round(v * 8) / 8;
+  return { fx: snap(fx), fy: snap(fy) };
+}
+
 function csStraightenEdge() {
   if (!canvasState.selEdge) return;
   const br = csGetBranch(canvasState.selEdge.from, canvasState.selEdge.to);
@@ -4881,6 +4912,7 @@ function buildCanvasEdges(blocks, opts = {}) {
       svg += `<path d="${dp}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit" data-ef="${from.id}" data-et="${to.id}" style="pointer-events:stroke;cursor:pointer;"/>`;
       svg += `<path d="${dp}" data-from="${from.id}" data-to="${to.id}" data-ef="${from.id}" data-et="${to.id}" stroke="${isSelEdge ? '#2563eb' : color}" stroke-width="${isSelEdge ? Math.max(sw, 2.6) : sw}"${dash} fill="none" marker-end="url(#${mk})" opacity="${isSelEdge ? 1 : 0.9}"/>`;
       if (isSelEdge) {
+        svg += csEndHandleSvg(from, to, { start: r.start, end: r.end });
         (branch.waypoints || []).forEach((pt, i) => {
           svg += `<circle cx="${pt.x}" cy="${pt.y}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" class="edge-wp" data-ef="${from.id}" data-et="${to.id}" data-idx="${i}" style="pointer-events:all;cursor:move;"/>`;
         });
@@ -4916,6 +4948,7 @@ function buildCanvasEdges(blocks, opts = {}) {
       svg += `<path d="${dpath}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit" data-ef="${from.id}" data-et="${to.id}" style="pointer-events:stroke;cursor:pointer;"/>`;
       svg += `<path d="${dpath}" data-from="${from.id}" data-to="${to.id}" data-ef="${from.id}" data-et="${to.id}" stroke="${isSelEdge ? '#2563eb' : color}" stroke-width="${isSelEdge ? 2.6 : 1.8}" fill="none" marker-end="url(#${markerId2})" opacity="${isSelEdge ? 1 : 0.85}"/>`;
       if (isSelEdge) {
+        svg += csEndHandleSvg(from, to, geom);
         ((branch && branch.waypoints) || []).forEach((pt, i) => {
           svg += `<circle cx="${pt.x}" cy="${pt.y}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" class="edge-wp" data-ef="${from.id}" data-et="${to.id}" data-idx="${i}" style="pointer-events:all;cursor:move;"/>`;
         });
@@ -5186,6 +5219,13 @@ function initCanvasHandlers() {
 
     // ── Manual edge editing (Draw.io-style): drag a bend, or grab the line
     //    anywhere to create a bend; a plain click just selects the edge. ──
+    const _end = e.target.closest('.edge-end');
+    if (_end) {
+      e.preventDefault(); e.stopPropagation();
+      snapshot('Перенос конца стрелки');
+      canvasState.endDrag = { ef: _end.dataset.ef, et: _end.dataset.et, kind: _end.dataset.kind };
+      return;
+    }
     const _wp = e.target.closest('.edge-wp');
     const _hit = e.target.closest('.edge-hit');
     if (_wp) {
@@ -5248,6 +5288,23 @@ function initCanvasHandlers() {
       rz.node.style.minHeight = h + 'px';
       rz.node.style.maxHeight = h + 'px';
       rz.w = w; rz.h = h;
+      return;
+    }
+    if (canvasState.endDrag) {
+      const { ef, et, kind } = canvasState.endDrag;
+      const br = csGetBranch(ef, et);
+      const blk = csFindBlock(kind === 'exit' ? ef : et);
+      if (br && blk) {
+        const box = csBlockBox(blk);
+        const { fx, fy } = csBorderFraction(box, csStagePoint(e));
+        if (kind === 'exit') { br.exitX = fx; br.exitY = fy; br.exitDx = 0; br.exitDy = 0; }
+        else { br.entryX = fx; br.entryY = fy; br.entryDx = 0; br.entryDy = 0; }
+        // A hand-placed endpoint overrides an imported Draw.io route, otherwise
+        // csEdgeGeom would keep returning the original baked geometry.
+        if (br._dio && (!br.waypoints || !br.waypoints.length)) br._dio = undefined;
+        const edgesEl = document.querySelector('.canvas-edges');
+        if (edgesEl) edgesEl.outerHTML = buildCanvasEdges(data().blocks, { obstacleAware: false });
+      }
       return;
     }
     if (canvasState.edgeGrab) {
@@ -5384,6 +5441,13 @@ function initCanvasHandlers() {
       canvasState.selEdge = { from: g.ef, to: g.et };
       canvasState.selectedId = null; canvasState.selectedIds.clear();
       canvasRender();
+      renderCanvasSidebar(null);
+      return;
+    }
+    if (canvasState.endDrag) {
+      canvasState.endDrag = null;
+      canvasRender();
+      saveToStorage();
       renderCanvasSidebar(null);
       return;
     }
@@ -5860,6 +5924,7 @@ function renderCanvasSidebar(id) {
         <div style="font-size:13px;color:var(--tx-secondary);line-height:1.7;">
           ${esc((fromB && (fromB.title || (fromB.ru || fromB.uz || '').replace(/\n/g, ' ').slice(0, 22))) || '?')} → ${esc((toB && (toB.title || (toB.ru || toB.uz || '').replace(/\n/g, ' ').slice(0, 22))) || '?')}<br><br>
           Точек изгиба: <b>${nWp}</b>${br && br._dio ? ' · геометрия из Draw.io' : ''}<br><br>
+          • Тяни <b style="color:#16a34a;">зелёные</b> квадраты на концах — выбираешь, к какой точке блока цепляется стрелка.<br>
           • Тяни <b style="color:#2563eb;">синюю</b> точку — двигаешь изгиб.<br>
           • Тяни саму линию в любом месте — появится новый изгиб.<br>
           • Двойной клик по синей точке — удалить изгиб.<br>
