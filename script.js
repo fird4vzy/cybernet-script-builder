@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-25-v35-fixed-greeting';
+const CYBERNET_BUILD = '2026-07-25-v36-intro-block';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8552,14 +8552,21 @@ answers — это варианты, которые клиент может от
    ❌ СТРОГО ЗАПРЕЩЕНО: «Понял вас!», «Спасибо за ответ», «Отлично!», «Согласен», «Хорошо, что спросили» — реагировать НЕ НА ЧТО.
    ✅ Просто продолжай мысль с того места, где робот остановился.
 
-- Пустой after → стартовый блок разговора: ЗДЕСЬ и только здесь робот здоровается и представляется.
+- Пустой after → самое начало разговора.
+
+🔴 ПОЛЕ «этоБлокПредставления»: true — ЭТО БЛОК ЗНАКОМСТВА, и он ОБЯЗАН содержать:
+1) кто звонит: «Меня зовут {AGENT_NAME}, я виртуальный помощник {BANK_NAME}»,
+2) ЗАЧЕМ звонит — цель звонка по теме скрипта,
+3) первый вопрос, если у блока есть варианты ответа (answers).
+Приветствие («Здравствуйте») здесь НЕ пиши — оно уже прозвучало в предыдущем блоке. Только знакомство и цель звонка.
 
 🔴 ПОЛЕ «разговорДоЭтогоБлока» — ЭТО ВЕСЬ ДИАЛОГ ДО ТЕКУЩЕГО БЛОКА (реплики робота по порядку, что он уже произнёс):
 - Твоя реплика — СЛЕДУЮЩИЙ шаг этого разговора. Прочитай всю цепочку и продолжи её естественно.
 - НЕ ПОВТОРЯЙ ничего, что уже прозвучало: ни приветствие, ни представление («Я представляю банк», «Меня зовут…»), ни уже названный аргумент, ни цифру, ни заданный вопрос.
 - Если банк и цель звонка уже названы в цепочке — переходи к сути, без повторного знакомства.
 - Добавляй НОВУЮ информацию/довод, а не пересказывай сказанное другими словами.
-- 🔴 ЗДОРОВАТЬСЯ МОЖНО ТОЛЬКО ОДИН РАЗ ЗА ВЕСЬ СКРИПТ. Если after НЕ пустой — «Здравствуйте», «Добрый день», «Salom» уже прозвучали раньше, ПОВТОРЯТЬ ИХ ЗАПРЕЩЕНО. Представляться второй раз («Меня зовут…», «Я представляю банк…») тоже нельзя, если это уже было в предыдущем блоке.
+- 🔴 ЗДОРОВАТЬСЯ МОЖНО ТОЛЬКО ОДИН РАЗ ЗА ВЕСЬ СКРИПТ: «Здравствуйте», «Добрый день», «Salom» уже прозвучали в самом первом блоке, ПОВТОРЯТЬ ИХ ЗАПРЕЩЕНО ни в одном блоке.
+- 🔴 ПРЕДСТАВЛЯТЬСЯ («Меня зовут…», «я виртуальный помощник…») можно ТОЛЬКО в блоке с полем этоБлокПредставления. В остальных блоках нельзя — клиент уже знает, кто звонит. ИСКЛЮЧЕНИЕ: блоки про недоверие («Кто вы?», «Откуда звоните?», «Мошенники», «Вы робот?») — там представиться заново уместно, клиент сам об этом спросил.
 - Один и тот же вопрос НЕ должен звучать в двух блоках подряд. Проверь after перед тем, как задать вопрос.
 
 🔴 ЗАГОЛОВОК (title): если role — короткая структурная метка («Рус», «Уз», «Да», «Нет», «Молчание», «1ый раз», «2 ой раз»), ОСТАВЬ её как title без изменений. Переписывай title только если в нём есть предмет старой темы.
@@ -8642,6 +8649,18 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       const orderPos = new Map(orderIds.map((id, i) => [id, i]));
       const ordered = textMap.slice().sort((a, b) =>
         (orderPos.has(a.id) ? orderPos.get(a.id) : 1e9) - (orderPos.has(b.id) ? orderPos.get(b.id) : 1e9));
+
+      // The bilingual greeting probe is fixed and says nothing about WHO is
+      // calling, and the "don't introduce twice" rule then stopped every block
+      // from introducing at all — the bot never gave its name. Designate the
+      // FIRST speaking block in flow order as the introduction: name, role, and
+      // the reason for the call belong exactly there.
+      const introId = ordered.length ? ordered[0].id : null;
+      if (introId) {
+        const entry = textMap.find(x => x.id === introId);
+        if (entry) entry.этоБлокПредставления = true;
+        console.log('[Cybernet] блок представления:', introId);
+      }
 
       const runBatch = async (part, label) => {
         // Chunks are independent requests, so without this the model reinvented
@@ -8832,6 +8851,14 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         });
       });
       if (deQ) console.log(`[Cybernet] убрано лишних вопросов: ${deQ}`);
+
+      // Did the bot actually introduce itself? Report it instead of silently
+      // injecting text — a wrong auto-fill here caused the double-greeting bug.
+      try {
+        const iv = introId ? (textById[introId] || {}).ru || '' : '';
+        const hasIntro = /мен[яь]\s+зовут|я\s+виртуальн|я\s+представляю|\{AGENT_NAME\}/i.test(iv);
+        console.log(`[Cybernet] представление робота в блоке знакомства: ${hasIntro ? 'есть' : 'НЕТ — проверьте блок ' + introId}`);
+      } catch (e) {}
 
       // Measure concreteness so "суховато" stops being a matter of opinion:
       // how many replies carry an actual figure, and how many are known filler.
