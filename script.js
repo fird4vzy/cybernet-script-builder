@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-25-v36-intro-block';
+const CYBERNET_BUILD = '2026-07-25-v37-root-goal';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8267,9 +8267,37 @@ async function generateScript() {
       const refProfile = getRefProfile(ref);
       const refBlocks = refProfile?.blocks || [];
       if (!refBlocks.length) throw new Error('В эталоне нет блоков');
-      // The single block allowed to greet. Defined up front because both the
-      // flow-order walk and the greeting-stripper below rely on it.
-      const startId = (refBlocks.find(b => (b.type || '') === 'start') || refBlocks[0] || {}).id;
+      // The real conversation root, found from the GRAPH — not refBlocks[0].
+      // Array order is meaningless: the first element can be a title cell or one
+      // of the many orphan blocks this эталон carries, and picking it sent the
+      // whole flow walk (and the intro flag) into a disconnected block.
+      const startId = (() => {
+        const explicit = refBlocks.find(b => (b.type || '') === 'start');
+        if (explicit) return explicit.id;
+        const incCount = new Map();
+        refBlocks.forEach(b => (b.branches || []).forEach(br => {
+          if (br.next) incCount.set(br.next, (incCount.get(br.next) || 0) + 1);
+        }));
+        const outMap = new Map(refBlocks.map(b => [b.id, (b.branches || []).map(br => br.next).filter(Boolean)]));
+        const reach = (id) => {
+          const seen = new Set([id]);
+          const q = [id];
+          while (q.length) {
+            const cur = q.shift();
+            (outMap.get(cur) || []).forEach(n => { if (n && !seen.has(n)) { seen.add(n); q.push(n); } });
+          }
+          return seen.size;
+        };
+        // Roots: nothing points at them, but they lead somewhere. The one that
+        // reaches the most blocks is the main tree.
+        const roots = refBlocks.filter(b => !incCount.get(b.id) && (outMap.get(b.id) || []).length);
+        if (roots.length) {
+          return roots.reduce((best, b) => (reach(b.id) > reach(best.id) ? b : best), roots[0]).id;
+        }
+        const anyWithEdges = refBlocks.find(b => (outMap.get(b.id) || []).length);
+        return (anyWithEdges || refBlocks[0] || {}).id;
+      })();
+
       console.log('[Cybernet] STRUCTURE MODE v5 (geometry+voice fix, no reference texts) — blocks:', refBlocks.length);
 
       // Send AI a per-block ROLE map (NOT the reference texts). Sending the
@@ -8480,6 +8508,27 @@ ${JSON.stringify(uniqLabels, null, 1)}`;
       // помочь?", which belongs to an inbound support line. Turn the choice into
       // an explicit behavioural rule (and never hardcode one direction).
       const ch = String(channel || '').toLowerCase();
+      // The goal dropdown was only pasted in as a label ("ЦЕЛЬ: продажа кредита"),
+      // so nothing in the output actually behaved like selling. Turn the choice
+      // into an explicit behavioural rule, the same way the channel is handled.
+      const gl = String(goal || '').toLowerCase();
+      let goalRule;
+      if (/продаж|кросс|допродаж/.test(gl)) {
+        goalRule = `- 🔴 ЭТО ПРОДАЮЩИЙ СКРИПТ (${goal}). Задача робота — довести клиента до заявки, а не просто проинформировать.
+  ✅ В каждой содержательной реплике: выгода для клиента конкретными словами (какую задачу закрывает продукт), затем шаг вперёд.
+  ✅ Работая с возражением: принять → контраргумент с фактом из базы → вернуть к цели.
+  ✅ Ближе к концу — призыв к действию: оформить заявку, назначить консультацию, передать менеджеру.
+  ❌ НЕ будь справочной службой: сухое перечисление условий без выгоды и без следующего шага — это провал скрипта.`;
+      } else if (/взыскан|просрочк|напоминани|реструктуризац/.test(gl)) {
+        goalRule = `- 🔴 ЭТО СКРИПТ ВЗЫСКАНИЯ/НАПОМИНАНИЯ (${goal}). Задача — добиться оплаты или конкретной договорённости о дате.
+  ✅ Тон корректный, но настойчивый: последствия просрочки, затем конкретный вопрос о дате платежа.
+  ❌ Никаких продающих предложений новых продуктов.`;
+      } else if (/удержан|anti-churn|реактивац/.test(gl)) {
+        goalRule = `- 🔴 ЭТО СКРИПТ УДЕРЖАНИЯ (${goal}). Задача — вернуть интерес клиента: выяснить причину ухода, снять её, предложить выгоду за то, чтобы остаться.`;
+      } else {
+        goalRule = `- 🔴 ЦЕЛЬ РАЗГОВОРА: ${goal}. Каждая реплика должна двигать клиента к этой цели, а не просто отвечать на вопрос.`;
+      }
+
       let channelRule;
       if (ch.includes('исходящ')) {
         channelRule = `- 🔴 ЭТО ИСХОДЯЩИЙ ЗВОНОК: робот позвонил клиенту САМ и ВЕДЁТ разговор. Клиент ни о чём не просил и не ждёт звонка.
@@ -8585,6 +8634,7 @@ leadsTo — блоки, которые идут ПОСЛЕ этого. Репл�
   ✅ answers есть → аргумент + один короткий вопрос, на который эти answers являются ответами.
   ✅ answers нет → аргумент и точка. Ни «Вы готовы?», ни «Вам интересно?», ни «Как считаете?».
 - 🔴 РЕПЛИКА ДОЛЖНА БЫТЬ СОДЕРЖАТЕЛЬНОЙ, а не вежливой пустышкой: (а) короткое присоединение, (б) КОНКРЕТНЫЙ аргумент — что клиент получит (закрыть кассовый разрыв, профинансировать поставку, лимит без залога, решение за N дней).
+${goalRule}
 ${channelRule}
 - 🔴 ЗАПРЕЩЁННЫЕ ПУСТЫШКИ (реальные примеры того, что писать НЕЛЬЗЯ): «Мы предлагаем выгодные условия», «Давайте обсудим ваши потребности», «Я здесь, чтобы помочь вам с финансированием», «Спасибо за ваше время», «Обратитесь к специалисту», «Это может быть вам интересно», «Мы всегда готовы помочь». Такая фраза не несёт клиенту НИЧЕГО — вместо неё назови конкретную выгоду или цифру.
 - 🔴 НЕ заканчивай реплику пустым предложением помощи: «Если вас интересует, могу помочь», «Могу рассказать подробнее», «Обращайтесь, если возникнут вопросы», «Готов ответить на вопросы». Это вода. Вместо концовки-заглушки добавь ЕЩЁ ОДИН конкретный факт из базы или закончи реплику по существу.
@@ -8650,16 +8700,27 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       const ordered = textMap.slice().sort((a, b) =>
         (orderPos.has(a.id) ? orderPos.get(a.id) : 1e9) - (orderPos.has(b.id) ? orderPos.get(b.id) : 1e9));
 
-      // The bilingual greeting probe is fixed and says nothing about WHO is
-      // calling, and the "don't introduce twice" rule then stopped every block
-      // from introducing at all — the bot never gave its name. Designate the
-      // FIRST speaking block in flow order as the introduction: name, role, and
-      // the reason for the call belong exactly there.
-      const introId = ordered.length ? ordered[0].id : null;
+      // The introduction belongs on the MAIN path, not on an exception branch.
+      // Taking simply the first speaking block put it in «Молчание» (a
+      // "client said nothing" handler), so the main line never introduced the
+      // bot. Walk the main line: skip silent routers/system blocks and skip
+      // exception handlers, then take the first block that actually speaks.
+      const EXCEPTION_TITLE = /молчани|автоответчик|плоха[яй]\s*связ|не\s*слыш|ошибл|не\s*туда|перезвон|занят|мошенн|робот|кто\s*вы|откуда|оператор|родственник|не\s*давал/i;
+      const introId = (() => {
+        const spoken = new Set(textMap.map(x => x.id));
+        for (const id of orderIds) {
+          if (!spoken.has(id)) continue;                 // router or system block
+          const b = refBlocks.find(x => x.id === id);
+          if (b && EXCEPTION_TITLE.test((b.title || '').trim())) continue;
+          return id;
+        }
+        return ordered.length ? ordered[0].id : null;
+      })();
       if (introId) {
         const entry = textMap.find(x => x.id === introId);
         if (entry) entry.этоБлокПредставления = true;
-        console.log('[Cybernet] блок представления:', introId);
+        const ib = refBlocks.find(x => x.id === introId);
+        console.log('[Cybernet] блок представления:', introId, '—', (ib && ib.title) || '');
       }
 
       const runBatch = async (part, label) => {
