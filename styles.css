@@ -4333,3 +4333,19 @@ body.canvas-fullscreen-active .floating-undo-redo { z-index: 10010; }
    on the block border (Visio-style). */
 .canvas-edges .edge-end { transition: transform 0.1s ease; }
 .canvas-edges .edge-end:hover { stroke-width: 3.5; }
+
+/* Handle overlay for the selected edge — must paint ABOVE the blocks (a dragging
+   node uses z-index 100), otherwise an endpoint that lands under a block can't
+   be grabbed and the arrow tip looks permanently stuck. */
+.canvas-stage svg.canvas-edges-top {
+  position: absolute;
+  top: 0; left: 0;
+  overflow: visible;
+  pointer-events: none;   /* only the handles themselves are interactive */
+  z-index: 200;
+}
+.canvas-edges-top .edge-wp,
+.canvas-edges-top .edge-end { pointer-events: all; }
+.canvas-edges-top .edge-wp { transition: r 0.1s ease; }
+.canvas-edges-top .edge-wp:hover { r: 8; }
+.canvas-edges-top .edge-end:hover { stroke-width: 3.5; }
