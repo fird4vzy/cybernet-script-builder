@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-25-v45-size-enforce';
+const CYBERNET_BUILD = '2026-07-30-v47-style-mode';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -7964,10 +7964,24 @@ function updateGsRefsCount() {
   } else {
     counter.textContent = `выбрано: ${active}`;
   }
-  // Show/hide mode selector based on count
+  // Show the mode selector for ANY selected reference — the structure-vs-style
+  // choice matters most with a single эталон, which is exactly when it used to
+  // be hidden. "Смешать" only makes sense with several.
   const modeBox = document.getElementById('gs-mode-box');
   if (modeBox) {
-    modeBox.style.display = active >= 2 ? 'block' : 'none';
+    modeBox.style.display = active >= 1 ? 'block' : 'none';
+    const blendOpt = document.getElementById('gs-mode-blend');
+    if (blendOpt) blendOpt.style.display = active >= 2 ? '' : 'none';
+    const lbl = document.getElementById('gs-mode-label');
+    if (lbl) lbl.textContent = active >= 2 ? 'Как использовать эталоны?' : 'Как использовать эталон?';
+    // If "blend" was selected and then references dropped to one, fall back.
+    if (active < 2) {
+      const blendRadio = document.querySelector('input[name="gs-mode"][value="blend"]');
+      if (blendRadio && blendRadio.checked) {
+        const ex = document.querySelector('input[name="gs-mode"][value="exact"]');
+        if (ex) ex.checked = true;
+      }
+    }
   }
 }
 
@@ -8347,7 +8361,24 @@ async function generateScript() {
     }).join('\n\n═══ СЛЕДУЮЩИЙ ЭТАЛОН ═══\n\n');
 
     let modeInstruction;
-    if (activeRefs.length === 1 || genMode === 'exact') {
+    if (genMode === 'style') {
+      // Style-only: the эталон contributes TONE, nothing else. Its structure and
+      // subject stay out, so the script follows the user's own scenario and the
+      // size setting instead of the reference's block count.
+      const toneSamples = [];
+      activeRefs.forEach(r => {
+        (getRefProfile(r)?.blocks || []).forEach(b => {
+          const t = (b.ru || '').trim();
+          if (t.length > 50 && t.length < 220 && toneSamples.length < 6) toneSamples.push(t);
+        });
+      });
+      modeInstruction = `РЕЖИМ «ТОЛЬКО СТИЛЬ И ТОН»:
+Эталон нужен ИСКЛЮЧИТЕЛЬНО как образец МАНЕРЫ РЕЧИ. Структуру скрипта ты придумываешь сам под задачу пользователя.
+- НЕ копируй структуру, количество блоков и логику эталона.
+- НЕ копируй тему эталона: ни продукта, ни цифр, ни названий из него.
+- Возьми только манеру: длину фраз, степень формальности, построение предложений, живость.
+${toneSamples.length ? `\nОБРАЗЦЫ МАНЕРЫ РЕЧИ (обрати внимание на СТИЛЬ, а не на содержание — тема у тебя другая):\n${toneSamples.map((x, i) => `${i + 1}. ${x}`).join('\n')}` : ''}`;
+    } else if (activeRefs.length === 1 || genMode === 'exact') {
       modeInstruction = `РЕЖИМ «КОПИЯ СТРУКТУРЫ ЭТАЛОНА + СВОИ ТЕКСТЫ»:
 Ниже дан ПОЛНЫЙ СКЕЛЕТ эталона — все блоки, их разделы (sec), позиции (x,y), типы и связи (branches), НО без текстов реплик. Твоя задача из двух частей:
 
@@ -8379,7 +8410,9 @@ async function generateScript() {
 
     referencesSection = `\n\n${modeInstruction}\n\n═══ ЭТАЛОННЫЕ СКРИПТЫ ═══\n\n${refsJson}\n\n═══ КОНЕЦ ЭТАЛОНОВ ═══`;
     // Align the requested size to the reference so the two instructions agree.
-    if ((activeRefs.length === 1 || genMode === 'exact') && refBlockCount > 0) {
+    // NOT in style mode: there the эталон lends only its tone, so the user's own
+    // size setting must win instead of the reference's block count.
+    if (genMode !== 'style' && (activeRefs.length === 1 || genMode === 'exact') && refBlockCount > 0) {
       blockCount = String(refBlockCount);
     }
   }
@@ -8400,6 +8433,20 @@ async function generateScript() {
   // prompt often drops it, and then the model never learns how big the script
   // should be — asking for 90-120 blocks quietly produced 11. Append the
   // requirement whenever the filled prompt doesn't already state it.
+  // Structural requirements the эталоны satisfy but a freshly generated script
+  // usually doesn't: a proper start/end, real decision diamonds, and the
+  // exception handlers that make a call-centre script usable. Appended in code so
+  // an edited prompt can't drop them.
+  userPrompt += `\n\n🔴 ОБЯЗАТЕЛЬНАЯ СТРУКТУРА СХЕМЫ (без этого скрипт неполный):
+- РОВНО ОДИН блок type:"start" — просто маркер начала («Начало разговора»), БЕЗ речи (ru и uz пустые).
+- Минимум один блок type:"end" — завершение звонка.
+- Блоки type:"decision" (ромбы) на каждой технической проверке: определение языка, проверка «это тот клиент?», счётчик попыток. У ромба минимум 2 ветки с короткими метками.
+- Блоки type:"question" там, где робот задаёт вопрос и ждёт ответа клиента.
+- ОБРАБОТКА ОСОБЫХ СИТУАЦИЙ отдельными блоками: молчание клиента, «не слышно», «вы робот?», «кто вы / откуда звоните», «соедините с оператором», «ошиблись номером», «мошенники», «перезвоните позже», автоответчик, плохая связь.
+- СЧЁТЧИКИ ПОВТОРОВ: если клиент повторяет одно возражение — отдельные блоки на 2-й и 3-й раз с более настойчивыми формулировками.
+- У каждой ветки (branches) должна быть КОРОТКАЯ метка (1-3 слова) — это реплика клиента, по которой идёт переход.
+- Ни одного тупика: из каждого блока есть выход, кроме type:"end".`;
+
   if (!/\d\s*[-–]\s*\d/.test(userPrompt) || userPrompt.indexOf(blockCount) === -1) {
     userPrompt += `\n\n🔴 РАЗМЕР СКРИПТА — ОБЯЗАТЕЛЬНО: ${blockCount} блоков. Это не пожелание, а требование: меньше нижней границы — брак. Раскрой тему подробно: отдельный блок на каждое возражение, на каждый вопрос клиента, на каждую особую ситуацию (молчание, не слышно, робот?, соедините с оператором, ошиблись номером, мошенники), плюс счётчики повторов для повторяющихся возражений.`;
   }
@@ -8445,6 +8492,14 @@ async function generateScript() {
       })();
 
       console.log('[Cybernet] STRUCTURE MODE v5 (geometry+voice fix, no reference texts) — blocks:', refBlocks.length);
+      // STRUCTURE MODE builds its own prompt, so a hand-edited "Генерация (system)"
+      // prompt has NO effect here. That silence is confusing: the user writes a
+      // detailed persona prompt, picks a reference, and wonders why none of it
+      // applied. Say so, and point at the field that IS honoured (extras).
+      if ((aiPrompts.generate_system || '') !== (DEFAULT_PROMPTS.generate_system || '')) {
+        console.warn('[Cybernet] У вас изменён промпт «Генерация скрипта (system)», но при выбранном эталоне он НЕ используется — структура и тексты строятся по эталону. Перенесите свои правила в поле «Дополнительные требования».');
+        toast('Внимание: при выбранном эталоне ваш изменённый промпт не применяется. Перенесите правила в «Дополнительные требования».', 'error');
+      }
 
       // Send AI a per-block ROLE map (NOT the reference texts). Sending the
       // real ru/uz made the model rewrite-in-place and drag the reference's
