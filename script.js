@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-25-v42-simplify-bends';
+const CYBERNET_BUILD = '2026-07-25-v43-revert-endpoints';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -4808,50 +4808,7 @@ function csSimplifyWaypoints(pts) {
   return kept;
 }
 
-function csEndHandleSvg(from, to, geom) {
-  // Nudge each handle slightly OUTWARD, away from the block it attaches to.
-  // Sitting exactly on the border left half the handle under the block, which
-  // is what made a tip feel stuck — you were grabbing the block, not the arrow.
-  const push = (pt, box) => {
-    if (!box || !box.w || !box.h) return pt;
-    const dx = pt.x - box.cx, dy = pt.y - box.cy;
-    const len = Math.hypot(dx, dy) || 1;
-    const OUT = 9;
-    return { x: pt.x + (dx / len) * OUT, y: pt.y + (dy / len) * OUT };
-  };
-  const sBox = csBlockBox(from), tBox = csBlockBox(to);
-  const sp = push(geom.start, sBox), ep = push(geom.end, tBox);
-  const h = (pt, kind) => `<rect x="${pt.x - 5.5}" y="${pt.y - 5.5}" width="11" height="11" rx="2"`
-    + ` fill="#ffffff" stroke="#16a34a" stroke-width="2.5" class="edge-end"`
-    + ` data-ef="${from.id}" data-et="${to.id}" data-kind="${kind}"`
-    + ` style="pointer-events:all;cursor:crosshair;"/>`;
-  // A thin tick back to the real attachment point, so it stays obvious where
-  // the arrow actually connects even though the grip sits just outside.
-  const tick = (a, b2) => `<line x1="${a.x}" y1="${a.y}" x2="${b2.x}" y2="${b2.y}" stroke="#16a34a" stroke-width="1.5" opacity="0.6"/>`;
-  return tick(geom.start, sp) + tick(geom.end, ep) + h(sp, 'exit') + h(ep, 'entry');
-}
-
-// Where on the block's border does a dragged endpoint land? Returns fractions.
-function csBorderFraction(box, pt) {
-  const w = box.w || 1, hh = box.h || 1;
-  let fx = (pt.x - box.x) / w, fy = (pt.y - box.y) / hh;
-  fx = Math.max(0, Math.min(1, fx));
-  fy = Math.max(0, Math.min(1, fy));
-  // Snap to the nearest edge of the box so the arrow attaches ON the border,
-  // not floating inside the block.
-  const dLeft = fx, dRight = 1 - fx, dTop = fy, dBot = 1 - fy;
-  const m = Math.min(dLeft, dRight, dTop, dBot);
-  if (m === dTop) fy = 0;
-  else if (m === dBot) fy = 1;
-  else if (m === dLeft) fx = 0;
-  else fx = 1;
-  // Snap to eighths so endpoints line up tidily between sibling arrows.
-  const snap = (v) => Math.round(v * 8) / 8;
-  return { fx: snap(fx), fy: snap(fy) };
-}
-
-// Remove redundant handles from the selected edge while keeping its shape —
-// a middle ground between hand-editing every point and wiping the route.
+// Remove redundant handles from the selected edge while keeping its shape.
 function csCleanEdge() {
   if (!canvasState.selEdge) return;
   const br = csGetBranch(canvasState.selEdge.from, canvasState.selEdge.to);
@@ -5018,7 +4975,6 @@ function buildCanvasEdges(blocks, opts = {}) {
       svg += `<path d="${dp}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit" data-ef="${from.id}" data-et="${to.id}" style="pointer-events:stroke;cursor:pointer;"/>`;
       svg += `<path d="${dp}" data-from="${from.id}" data-to="${to.id}" data-ef="${from.id}" data-et="${to.id}" stroke="${isSelEdge ? '#2563eb' : color}" stroke-width="${isSelEdge ? Math.max(sw, 2.6) : sw}"${dash} fill="none" marker-end="url(#${mk})" opacity="${isSelEdge ? 1 : 0.9}"/>`;
       if (isSelEdge) {
-        topSvg += csEndHandleSvg(from, to, { start: r.start, end: r.end });
         (branch.waypoints || []).forEach((pt, i) => {
           topSvg += `<circle cx="${pt.x}" cy="${pt.y}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" class="edge-wp" data-ef="${from.id}" data-et="${to.id}" data-idx="${i}" style="pointer-events:all;cursor:move;"/>`;
         });
@@ -5054,7 +5010,6 @@ function buildCanvasEdges(blocks, opts = {}) {
       svg += `<path d="${dpath}" fill="none" stroke="transparent" stroke-width="16" class="edge-hit" data-ef="${from.id}" data-et="${to.id}" style="pointer-events:stroke;cursor:pointer;"/>`;
       svg += `<path d="${dpath}" data-from="${from.id}" data-to="${to.id}" data-ef="${from.id}" data-et="${to.id}" stroke="${isSelEdge ? '#2563eb' : color}" stroke-width="${isSelEdge ? 2.6 : 1.8}" fill="none" marker-end="url(#${markerId2})" opacity="${isSelEdge ? 1 : 0.85}"/>`;
       if (isSelEdge) {
-        topSvg += csEndHandleSvg(from, to, geom);
         ((branch && branch.waypoints) || []).forEach((pt, i) => {
           topSvg += `<circle cx="${pt.x}" cy="${pt.y}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" class="edge-wp" data-ef="${from.id}" data-et="${to.id}" data-idx="${i}" style="pointer-events:all;cursor:move;"/>`;
         });
@@ -5338,13 +5293,6 @@ function initCanvasHandlers() {
 
     // ── Manual edge editing (Draw.io-style): drag a bend, or grab the line
     //    anywhere to create a bend; a plain click just selects the edge. ──
-    const _end = e.target.closest('.edge-end');
-    if (_end) {
-      e.preventDefault(); e.stopPropagation();
-      snapshot('Перенос конца стрелки');
-      canvasState.endDrag = { ef: _end.dataset.ef, et: _end.dataset.et, kind: _end.dataset.kind };
-      return;
-    }
     const _wp = e.target.closest('.edge-wp');
     const _hit = e.target.closest('.edge-hit');
     if (_wp) {
@@ -5409,33 +5357,6 @@ function initCanvasHandlers() {
       rz.w = w; rz.h = h;
       return;
     }
-    if (canvasState.endDrag) {
-      const { ef, et, kind } = canvasState.endDrag;
-      const br = csGetBranch(ef, et);
-      const blk = csFindBlock(kind === 'exit' ? ef : et);
-      if (br && blk) {
-        // Keep the route's SHAPE when only an endpoint moves. Dropping _dio
-        // outright threw the imported geometry away and the arrow re-routed into
-        // a completely different path (the stray rectangle loop). Freeze the
-        // existing route into simplified corners first, then move the endpoint.
-        if (br._dio) {
-          const f0 = csFindBlock(ef), t0 = csFindBlock(et);
-          if (f0 && t0 && (!br.waypoints || !br.waypoints.length)) {
-            try {
-              const poly = csDioRoute(f0, t0, br).poly || [];
-              br.waypoints = csSimplifyWaypoints(poly.slice(1, -1));
-            } catch (err) { /* no usable route — fall back to auto-routing */ }
-          }
-          br._dio = undefined;
-        }
-        const box = csBlockBox(blk);
-        const { fx, fy } = csBorderFraction(box, csStagePoint(e));
-        if (kind === 'exit') { br.exitX = fx; br.exitY = fy; br.exitDx = 0; br.exitDy = 0; }
-        else { br.entryX = fx; br.entryY = fy; br.entryDx = 0; br.entryDy = 0; }
-        csRefreshEdges(false);
-      }
-      return;
-    }
     if (canvasState.edgeGrab) {
       const g = canvasState.edgeGrab;
       if (Math.abs(e.clientX - g.startX) < 4 && Math.abs(e.clientY - g.startY) < 4) return;
@@ -5465,7 +5386,21 @@ function initCanvasHandlers() {
       const { ef, et, idx } = canvasState.wpDrag;
       const br = csGetBranch(ef, et);
       if (br && br.waypoints && br.waypoints[idx]) {
-        br.waypoints[idx] = csStagePoint(e);
+        // The router draws strictly orthogonal segments, so a freely-placed bend
+        // ends up NEXT TO the line instead of on it — that's why handles floated
+        // in empty space. Align the dragged point with its neighbour on one axis
+        // so the drawn path actually runs through the handle.
+        const pt = csStagePoint(e);
+        const wps = br.waypoints;
+        const prev = idx > 0 ? wps[idx - 1] : null;
+        const next = idx < wps.length - 1 ? wps[idx + 1] : null;
+        const SNAP = 14;
+        [prev, next].forEach(n => {
+          if (!n) return;
+          if (Math.abs(pt.x - n.x) <= SNAP) pt.x = n.x;
+          if (Math.abs(pt.y - n.y) <= SNAP) pt.y = n.y;
+        });
+        br.waypoints[idx] = pt;
         csUpdateEdgeLive(ef, et);
       }
       return;
@@ -5568,13 +5503,6 @@ function initCanvasHandlers() {
       canvasState.selEdge = { from: g.ef, to: g.et };
       canvasState.selectedId = null; canvasState.selectedIds.clear();
       canvasRender();
-      renderCanvasSidebar(null);
-      return;
-    }
-    if (canvasState.endDrag) {
-      canvasState.endDrag = null;
-      canvasRender();
-      saveToStorage();
       renderCanvasSidebar(null);
       return;
     }
@@ -6050,7 +5978,6 @@ function renderCanvasSidebar(id) {
         <div style="font-size:13px;color:var(--tx-secondary);line-height:1.7;">
           ${esc((fromB && (fromB.title || (fromB.ru || fromB.uz || '').replace(/\n/g, ' ').slice(0, 22))) || '?')} → ${esc((toB && (toB.title || (toB.ru || toB.uz || '').replace(/\n/g, ' ').slice(0, 22))) || '?')}<br><br>
           Точек изгиба: <b>${nWp}</b>${br && br._dio ? ' · геометрия из Draw.io' : ''}<br><br>
-          • Тяни <b style="color:#16a34a;">зелёные</b> квадраты на концах — выбираешь, к какой точке блока цепляется стрелка.<br>
           • Тяни <b style="color:#2563eb;">синюю</b> точку — двигаешь изгиб.<br>
           • Тяни саму линию в любом месте — появится новый изгиб.<br>
           • Двойной клик по синей точке — удалить изгиб.<br>
