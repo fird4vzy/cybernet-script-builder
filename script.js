@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-25-v41-handles-on-top';
+const CYBERNET_BUILD = '2026-07-25-v42-simplify-bends';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -4775,6 +4775,39 @@ function csUpdateEdgeLive(ef, et) {
 // tip to choose WHERE it attaches to the block. Stored as exitX/exitY and
 // entryX/entryY — fractions of the block box, the same fields Draw.io import
 // and export already use, so a hand-placed endpoint survives a round-trip.
+// Reduce a polyline to its real CORNERS. Freezing an imported Draw.io route
+// produced a point for every vertex it happened to contain — including ones
+// lying on the same straight line — so a single drag turned one arrow into a
+// column of stacked handles. Drop collinear points and merge near-duplicates.
+function csSimplifyWaypoints(pts) {
+  if (!Array.isArray(pts) || pts.length < 2) return (pts || []).slice();
+  const MERGE = 8;      // px: closer than this is the same point
+  const FLAT = 1.5;     // px: deviation below this counts as a straight line
+  const out = [];
+  pts.forEach(p => {
+    const q = { x: Math.round(p.x), y: Math.round(p.y) };
+    const last = out[out.length - 1];
+    if (last && Math.abs(last.x - q.x) <= MERGE && Math.abs(last.y - q.y) <= MERGE) return;
+    out.push(q);
+  });
+  const kept = [];
+  for (let i = 0; i < out.length; i++) {
+    const prev = kept[kept.length - 1] || null;
+    const next = out[i + 1] || null;
+    if (prev && next) {
+      // collinear if the point barely deviates from the prev→next line
+      const vx = next.x - prev.x, vy = next.y - prev.y;
+      const len = Math.hypot(vx, vy);
+      if (len > 0) {
+        const dist = Math.abs((out[i].x - prev.x) * vy - (out[i].y - prev.y) * vx) / len;
+        if (dist <= FLAT) continue;   // straight through — no corner here
+      }
+    }
+    kept.push(out[i]);
+  }
+  return kept;
+}
+
 function csEndHandleSvg(from, to, geom) {
   // Nudge each handle slightly OUTWARD, away from the block it attaches to.
   // Sitting exactly on the border left half the handle under the block, which
@@ -4815,6 +4848,21 @@ function csBorderFraction(box, pt) {
   // Snap to eighths so endpoints line up tidily between sibling arrows.
   const snap = (v) => Math.round(v * 8) / 8;
   return { fx: snap(fx), fy: snap(fy) };
+}
+
+// Remove redundant handles from the selected edge while keeping its shape —
+// a middle ground between hand-editing every point and wiping the route.
+function csCleanEdge() {
+  if (!canvasState.selEdge) return;
+  const br = csGetBranch(canvasState.selEdge.from, canvasState.selEdge.to);
+  if (!br || !br.waypoints || !br.waypoints.length) { toast('У стрелки нет точек изгиба'); return; }
+  const before = br.waypoints.length;
+  const cleaned = csSimplifyWaypoints(br.waypoints);
+  if (cleaned.length === before) { toast('Лишних точек нет'); return; }
+  snapshot('Очистка изгибов');
+  br.waypoints = cleaned.length ? cleaned : undefined;
+  canvasRender(); saveToStorage(); renderCanvasSidebar(null);
+  toast(`Убрано лишних точек: ${before - cleaned.length}`);
 }
 
 function csStraightenEdge() {
@@ -5366,13 +5414,24 @@ function initCanvasHandlers() {
       const br = csGetBranch(ef, et);
       const blk = csFindBlock(kind === 'exit' ? ef : et);
       if (br && blk) {
+        // Keep the route's SHAPE when only an endpoint moves. Dropping _dio
+        // outright threw the imported geometry away and the arrow re-routed into
+        // a completely different path (the stray rectangle loop). Freeze the
+        // existing route into simplified corners first, then move the endpoint.
+        if (br._dio) {
+          const f0 = csFindBlock(ef), t0 = csFindBlock(et);
+          if (f0 && t0 && (!br.waypoints || !br.waypoints.length)) {
+            try {
+              const poly = csDioRoute(f0, t0, br).poly || [];
+              br.waypoints = csSimplifyWaypoints(poly.slice(1, -1));
+            } catch (err) { /* no usable route — fall back to auto-routing */ }
+          }
+          br._dio = undefined;
+        }
         const box = csBlockBox(blk);
         const { fx, fy } = csBorderFraction(box, csStagePoint(e));
         if (kind === 'exit') { br.exitX = fx; br.exitY = fy; br.exitDx = 0; br.exitDy = 0; }
         else { br.entryX = fx; br.entryY = fy; br.entryDx = 0; br.entryDy = 0; }
-        // A hand-placed endpoint overrides an imported Draw.io route, otherwise
-        // csEdgeGeom would keep returning the original baked geometry.
-        if (br._dio && (!br.waypoints || !br.waypoints.length)) br._dio = undefined;
         csRefreshEdges(false);
       }
       return;
@@ -5388,7 +5447,7 @@ function initCanvasHandlers() {
           // Freeze the computed Draw.io route into real waypoints, so the
           // segment index the user grabbed lines up with the array below.
           const frozen = csDioRoute(from, to, br).poly;
-          br.waypoints = frozen.slice(1, -1).map(q => ({ x: Math.round(q.x), y: Math.round(q.y) }));
+          br.waypoints = csSimplifyWaypoints(frozen.slice(1, -1));
         }
         if (!br.waypoints) br.waypoints = [];
         const pt = csStagePoint(e);
@@ -5997,7 +6056,10 @@ function renderCanvasSidebar(id) {
           • Двойной клик по синей точке — удалить изгиб.<br>
           • Esc — снять выделение.
         </div>
-        <button class="btn btn-sm btn-ghost" style="margin-top:14px;" onclick="csStraightenEdge()">${br && br._dio ? 'Пересчитать маршрут (снять геометрию Draw.io)' : 'Выпрямить (убрать изгибы)'}</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;">
+          ${nWp > 1 ? '<button class="btn btn-sm btn-ghost" onclick="csCleanEdge()">Убрать лишние точки</button>' : ''}
+          <button class="btn btn-sm btn-ghost" onclick="csStraightenEdge()">${br && br._dio ? 'Пересчитать маршрут (снять геометрию Draw.io)' : 'Выпрямить (убрать изгибы)'}</button>
+        </div>
       </div>`;
     return;
   }
