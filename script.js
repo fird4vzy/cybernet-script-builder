@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-25-v37-root-goal';
+const CYBERNET_BUILD = '2026-07-25-v38-edge-hover';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -5860,9 +5860,9 @@ function renderCanvasSidebar(id) {
         <div style="font-size:13px;color:var(--tx-secondary);line-height:1.7;">
           ${esc((fromB && (fromB.title || (fromB.ru || fromB.uz || '').replace(/\n/g, ' ').slice(0, 22))) || '?')} → ${esc((toB && (toB.title || (toB.ru || toB.uz || '').replace(/\n/g, ' ').slice(0, 22))) || '?')}<br><br>
           Точек изгиба: <b>${nWp}</b>${br && br._dio ? ' · геометрия из Draw.io' : ''}<br><br>
-          • Тяни <b style="color:#2563eb;">синие</b> точки — гнёшь стрелку.<br>
-          • Тяни белую точку на линии — добавляешь изгиб.<br>
-          • Двойной клик по синей точке — удалить.<br>
+          • Тяни <b style="color:#2563eb;">синюю</b> точку — двигаешь изгиб.<br>
+          • Тяни саму линию в любом месте — появится новый изгиб.<br>
+          • Двойной клик по синей точке — удалить изгиб.<br>
           • Esc — снять выделение.
         </div>
         <button class="btn btn-sm btn-ghost" style="margin-top:14px;" onclick="csStraightenEdge()">${br && br._dio ? 'Пересчитать маршрут (снять геометрию Draw.io)' : 'Выпрямить (убрать изгибы)'}</button>
