@@ -4316,3 +4316,15 @@ body.canvas-fullscreen-active .side-rail {
 
 /* undo/redo must stay reachable in fullscreen canvas (canvas itself sits at 9999) */
 body.canvas-fullscreen-active .floating-undo-redo { z-index: 10010; }
+
+/* ── Edges are interactive (Draw.io-style manual bending) ──────────────
+   Without any hover feedback the arrows read as static decoration, so the
+   manual-bend editing sitting behind a click went unnoticed. The fat
+   transparent hit-stroke drives a highlight on the visible line next to it. */
+.canvas-edges .edge-hit { cursor: pointer; }
+.canvas-edges .edge-hit:hover + path {
+  stroke-width: 3;
+  filter: drop-shadow(0 0 3px rgba(37, 99, 235, 0.55));
+}
+.canvas-edges .edge-wp { transition: r 0.1s ease; }
+.canvas-edges .edge-wp:hover { r: 8; }
