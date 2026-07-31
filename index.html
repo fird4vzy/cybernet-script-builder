@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@400;500;600;700&family=Unbounded:wght@600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20251029zq">
+  <link rel="stylesheet" href="styles.css?v=20260731a">
 </head>
 <body>
 
@@ -845,7 +845,11 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" integrity="sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4" integrity="sha384-GFr3yTh5lJznCbZfpTtXnwboFsxqtTQoeTZCRHhE0579KrRmlCzen5AA8ohaB5ug" crossorigin="anonymous"></script>
-  <script src="supabase-client.js?v=20251029zq"></script>
-  <script src="script.js?v=20260707a"></script>
+  <!-- ?v= бампится ВМЕСТЕ с CYBERNET_BUILD в script.js. Токены жили порознь и
+       протухали (styles.css оставался на октябрьском), из-за чего правки не
+       доезжали до браузера. Заголовок must-revalidate в vercel.json страхует
+       на случай, если про токен снова забудут. -->
+  <script src="supabase-client.js?v=20260731a"></script>
+  <script src="script.js?v=20260731a"></script>
 </body>
 </html>

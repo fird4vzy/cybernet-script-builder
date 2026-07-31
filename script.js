@@ -1,8 +1,14 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-31-v56-companies-sharing';
+const CYBERNET_BUILD = '2026-07-31-v57-learning-selftest';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
+// Печатаем и адрес, из которого приехал файл: если версия сборки не та, что
+// ожидалась, сразу видно — это протухший ?v= / кэш или просто незадеплоенный код.
+try {
+  const _src = (document.currentScript && document.currentScript.src) || '';
+  if (_src) console.log('[Cybernet] загружен файл:', _src.split('/').pop());
+} catch (e) {}
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
   try {
@@ -8403,8 +8409,16 @@ function hideGenLoader() {
 // can imitate the user's phrasing. The model isn't retrained — we feed examples back.
 function captureEditForLearning(b, prevRu, prevUz) {
   try {
-    if (!llmSettings.learnFromEdits) return; // user hasn't opted in
-    if (typeof cloudSaveEdit !== 'function' || !getCurrentUserId || !getCurrentUserId()) return;
+    // Эти две проверки раньше выходили молча — в консоли не было НИЧЕГО, и
+    // отличить «функция не вызвалась» от «вызвалась и вышла» было нельзя.
+    if (!llmSettings.learnFromEdits) {
+      console.log(`[Cybernet] правка НЕ сохранена («${b.title || b.id}»): тумблер «Улучшать AI на моих правках» выключен`);
+      return;
+    }
+    if (typeof cloudSaveEdit !== 'function' || !getCurrentUserId || !getCurrentUserId()) {
+      console.log(`[Cybernet] правка НЕ сохранена («${b.title || b.id}»): нет входа в аккаунт или не загрузился supabase-client.js`);
+      return;
+    }
     // Only meaningful when we know what AI originally produced and the user changed it.
     const who = `«${b.title || b.id}»`;
     const aiRu = b.aiRu, aiUz = b.aiUz;
@@ -8509,6 +8523,63 @@ async function learningStatus() {
   return info;
 }
 if (typeof window !== 'undefined') window.learningStatus = learningStatus;
+
+// Пошаговая проверка обучения на КОНКРЕТНОМ блоке. learningStatus() отвечает
+// только «сколько пар накопилось», а этот разбирает, почему конкретная правка
+// не записалась, и делает пробную вставку, чтобы увидеть настоящую ошибку базы.
+// Использование: выделить блок на схеме и вызвать testLearning() в консоли.
+async function testLearning(blockId) {
+  const id = blockId || (typeof canvasState === 'object' && canvasState.selectedId) || null;
+  const b = id ? data().blocks.find(x => x.id === id) : null;
+  if (!b) {
+    console.error('[Cybernet] блок не найден. Кликните блок на схеме, потом testLearning(), либо testLearning("id_блока").');
+    return null;
+  }
+
+  const signed = !!(getCurrentUserId && getCurrentUserId());
+  const hasBase = !(b.aiRu === undefined && b.aiUz === undefined);
+  const ruChanged = b.aiRu !== undefined && (b.ru || '') !== (b.aiRu || '') && (b.ru || '').trim().length > 2;
+  const uzChanged = b.aiUz !== undefined && (b.uz || '') !== (b.aiUz || '') && (b.uz || '').trim().length > 2;
+
+  const rows = {
+    '1. блок': b.title || b.id,
+    '2. тумблер в настройках': llmSettings.learnFromEdits ? 'да' : 'НЕТ — включите «Улучшать AI на моих правках»',
+    '3. вход в аккаунт': signed ? 'да' : 'НЕТ — правки хранятся в аккаунте',
+    '4. supabase-client загружен': (typeof cloudSaveEdit === 'function') ? 'да' : 'НЕТ',
+    '5. базовая линия AI (aiRu)': hasBase
+      ? `есть, ${String(b.aiRu || '').length} символов`
+      : 'НЕТ — блок не создан AI, правка не считается парой',
+    '6. текст отличается от базовой': (ruChanged || uzChanged) ? 'да' : 'НЕТ — правка не записывается'
+  };
+  console.table(rows);
+
+  if (hasBase) {
+    console.log('%cБыло (AI):', 'font-weight:bold', String(b.aiRu || '').slice(0, 200) || '(пусто)');
+    console.log('%cСтало    :', 'font-weight:bold', String(b.ru || '').slice(0, 200) || '(пусто)');
+    if (!ruChanged && !uzChanged) {
+      console.warn('[Cybernet] тексты совпадают. Правка заголовка блока парой НЕ считается — обучение смотрит только на ru/uz.');
+    }
+  }
+
+  if (llmSettings.learnFromEdits && signed && typeof cloudSaveEdit === 'function') {
+    // ai_ru === final_ru, поэтому buildLearningSection такую строку отфильтрует
+    // и она не попадёт в промпт даже если удалить её не удастся.
+    const probe = await cloudSaveEdit({
+      title: '__probe__', intent: '', aiRu: '__probe__', aiUz: '',
+      finalRu: '__probe__', finalUz: '', niche: '', goal: ''
+    });
+    if (probe && probe.id) {
+      console.log('[Cybernet] ✓ пробная запись в cs_edits прошла — таблица и права в порядке');
+      if (typeof cloudDeleteEdit === 'function') await cloudDeleteEdit(probe.id);
+    } else {
+      const why = (typeof getLastEditError === 'function' && getLastEditError()) || '(причина не получена)';
+      console.error('[Cybernet] ✗ пробная запись в cs_edits НЕ прошла. Причина:', why);
+      console.error('Обычно это значит: таблицы cs_edits нет, или RLS не разрешает insert. Схема — в комментарии supabase-client.js.');
+    }
+  }
+  return rows;
+}
+if (typeof window !== 'undefined') window.testLearning = testLearning;
 
 // ─── Перевод всего профиля на английский (поле b.en) ───
 async function translateProfileToEN() {

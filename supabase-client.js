@@ -202,8 +202,25 @@ async function cloudDeleteReference(id) {
 //   block_title text, intent text, ai_ru text, ai_uz text, final_ru text, final_uz text,
 //   niche text, goal text
 // + RLS: owner_id = auth.uid() for select/insert/delete.
+// Последняя ошибка вставки. Раньше она тонула в catch, и снаружи было видно
+// только «null» — нельзя было отличить «нет таблицы» от «RLS запретил».
+let lastEditError = null;
+function getLastEditError() { return lastEditError; }
+
+async function cloudDeleteEdit(id) {
+  if (!sb || !currentUser || !id) return false;
+  try {
+    const { error } = await sb.from('cs_edits').delete().eq('id', id);
+    if (error) throw error;
+    return true;
+  } catch (e) { console.error('cloudDeleteEdit:', e); return false; }
+}
+
 async function cloudSaveEdit(edit) {
-  if (!sb || !currentUser) return null;
+  if (!sb || !currentUser) {
+    lastEditError = !sb ? 'Supabase не инициализирован' : 'не выполнен вход в аккаунт';
+    return null;
+  }
   try {
     const { data, error } = await sb.from('cs_edits').insert({
       owner_id: currentUser.id,
@@ -217,8 +234,13 @@ async function cloudSaveEdit(edit) {
       goal: edit.goal || ''
     }).select().single();
     if (error) throw error;
+    lastEditError = null;
     return data;
-  } catch (e) { console.error('cloudSaveEdit:', e); return null; }
+  } catch (e) {
+    lastEditError = (e && (e.message || e.hint || e.details)) || String(e);
+    console.error('cloudSaveEdit:', e);
+    return null;
+  }
 }
 
 async function cloudLoadEdits(limit = 40) {
