@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-31-v54-one-block-two-langs';
+const CYBERNET_BUILD = '2026-07-31-v55-learning-coverage';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -6373,8 +6373,13 @@ function canvasSaveBlock(id) {
   if (v('title') !== undefined) b.title = v('title');
   if (v('intent') !== undefined) b.intent = v('intent');
   if (v('type') !== undefined) b.type = v('type');
+  const _prevRu = b.ru, _prevUz = b.uz;
   if (v('ru') !== undefined) b.ru = v('ru');
   if (v('uz') !== undefined) b.uz = v('uz');
+  // Обучение на правках ловилось ТОЛЬКО в списочном редакторе (saveBlock).
+  // Канва — основной рабочий экран, и правки, сделанные тут, в обучение не
+  // попадали вообще. Ловим и здесь.
+  captureEditForLearning(b, _prevRu, _prevUz);
   if (v('en') !== undefined) b.en = v('en');
   if (v('entitle') !== undefined) b.enTitle = v('entitle');
   // Color: '#ffffff' or empty = no override
@@ -7897,7 +7902,10 @@ async function improveBlockTextInList(blockId, mode) {
 
 async function _doImproveBlock(b, mode, currentRu, currentUz, uiMode) {
   const modeInfo = getStyleInfo(mode);
-  const systemPrompt = aiPrompts.improve_system;
+  // Примеры правок подставлялись только в генерацию, а «улучшить блок» —
+  // ровно то место, где манера пользователя важнее всего. Тихий режим: не
+  // засорять консоль на каждое нажатие, статус смотрится через learningStatus().
+  const systemPrompt = aiPrompts.improve_system + (await buildLearningSection(true));
   const userPrompt = fillTemplate(aiPrompts.improve_user, {
     title: b.title || '',
     type: b.type || 'normal',
@@ -7924,6 +7932,11 @@ async function _doImproveBlock(b, mode, currentRu, currentUz, uiMode) {
       snapshot('AI: ' + modeInfo.label);
       b.ru = parsed.ru;
       b.uz = parsed.uz;
+      // Новый текст написал AI, а не пользователь. Без сдвига базовой линии
+      // следующее «Сохранить» записало бы в обучение пару «исходная генерация →
+      // переписка AI», то есть AI учился бы на самом себе.
+      b.aiRu = parsed.ru;
+      b.aiUz = parsed.uz;
       const ruEl = document.getElementById('fr-' + b.id);
       const uzEl = document.getElementById('fu-' + b.id);
       if (ruEl) ruEl.value = parsed.ru;
@@ -7985,6 +7998,10 @@ function applyAISuggestion(blockId, newRu, newUz) {
   snapshot('AI: улучшение блока');
   b.ru = newRu;
   b.uz = newUz;
+  // Текст написал AI — сдвигаем базовую линию, иначе следующее сохранение
+  // запишет его же переписку как «правку пользователя» (см. _doImproveBlock).
+  b.aiRu = newRu;
+  b.aiUz = newUz;
   // Update DOM inputs in real-time
   const ruInput = document.getElementById('cs-ru');
   const uzInput = document.getElementById('cs-uz');
@@ -8292,26 +8309,79 @@ function captureEditForLearning(b, prevRu, prevUz) {
     });
     // once captured, treat the new text as the baseline so we don't log it again
     b.aiRu = b.ru; b.aiUz = b.uz;
+    _learningCache = { at: 0, text: null };   // новая правка — кэш примеров устарел
+    console.log(`[Cybernet] правка сохранена для обучения: блок «${b.title || b.id}»`);
   } catch (e) { console.warn('captureEditForLearning skipped:', e); }
 }
 
 // Build a short 'here is how this user prefers to phrase things' block from past edits.
-async function buildLearningSection() {
+// Cached: generation, STRUCTURE MODE and «улучшить блок» all ask for it, and the
+// answer only changes when a new edit is captured (which resets the cache).
+let _learningCache = { at: 0, text: null };
+const LEARNING_TTL_MS = 5 * 60 * 1000;
+
+async function buildLearningSection(quiet) {
+  const say = (...a) => { if (!quiet) console.log(...a); };
   try {
-    if (!llmSettings.learnFromEdits) return '';
-    if (typeof cloudLoadEdits !== 'function' || !getCurrentUserId || !getCurrentUserId()) return '';
+    if (!llmSettings.learnFromEdits) {
+      say('[Cybernet] обучение на правках: ВЫКЛЮЧЕНО в настройках AI');
+      return '';
+    }
+    if (typeof cloudLoadEdits !== 'function' || !getCurrentUserId || !getCurrentUserId()) {
+      say('[Cybernet] обучение на правках: НЕТ ВХОДА В АККАУНТ — правки не сохраняются и не подставляются');
+      return '';
+    }
+    if (_learningCache.text !== null && Date.now() - _learningCache.at < LEARNING_TTL_MS) {
+      say(`[Cybernet] обучение на правках: из кэша, ${_learningCache.text ? 'примеры подставлены' : 'примеров нет'}`);
+      return _learningCache.text;
+    }
     const edits = await cloudLoadEdits(30);
-    if (!edits || !edits.length) return '';
+    if (!edits || !edits.length) {
+      say('[Cybernet] обучение на правках: включено, но правок в базе ПОКА НЕТ');
+      _learningCache = { at: Date.now(), text: '' };
+      return '';
+    }
     // Pick the most informative recent pairs (RU differs), cap to keep tokens sane.
-    const pairs = edits
-      .filter(e => e.final_ru && e.ai_ru && e.final_ru !== e.ai_ru)
-      .slice(0, 8)
+    const usable = edits.filter(e => e.final_ru && e.ai_ru && e.final_ru !== e.ai_ru);
+    const picked = usable.slice(0, 8);
+    const pairs = picked
       .map(e => `Было (AI): ${e.ai_ru}\nСтало (правка пользователя): ${e.final_ru}`)
       .join('\n\n');
-    if (!pairs) return '';
-    return '\n\n=== КАК ЭТОТ ПОЛЬЗОВАТЕЛЬ ПРАВИТ ТЕКСТЫ (учись на его правках, повторяй его манеру: длину, тон, лексику) ===\n' + pairs;
+    say(`[Cybernet] обучение на правках: в базе последних ${edits.length}, годных пар ${usable.length}, подставлено в промпт ${picked.length}`);
+    if (!pairs) {
+      _learningCache = { at: Date.now(), text: '' };
+      return '';
+    }
+    const text = '\n\n=== КАК ЭТОТ ПОЛЬЗОВАТЕЛЬ ПРАВИТ ТЕКСТЫ (учись на его правках, повторяй его манеру: длину, тон, лексику) ===\n' + pairs;
+    _learningCache = { at: Date.now(), text };
+    return text;
   } catch (e) { console.warn('buildLearningSection skipped:', e); return ''; }
 }
+
+// Читаемая сводка для кнопки «Проверить ключ» и ручной проверки из консоли.
+async function learningStatus() {
+  const on = !!llmSettings.learnFromEdits;
+  const signed = !!(getCurrentUserId && getCurrentUserId());
+  let total = 0, usable = 0;
+  if (on && signed && typeof cloudLoadEdits === 'function') {
+    try {
+      const edits = await cloudLoadEdits(30) || [];
+      total = edits.length;
+      usable = edits.filter(e => e.final_ru && e.ai_ru && e.final_ru !== e.ai_ru).length;
+    } catch (e) {}
+  }
+  const info = {
+    'включено в настройках': on,
+    'вход в аккаунт': signed,
+    'правок в базе (последние 30)': total,
+    'годных пар для промпта': usable,
+    'подставляется в': 'генерацию с нуля, генерацию по эталону, улучшение блока',
+    'НЕ подставляется в': 'AI-разбор скрипта'
+  };
+  console.table(info);
+  return info;
+}
+if (typeof window !== 'undefined') window.learningStatus = learningStatus;
 
 // ─── Перевод всего профиля на английский (поле b.en) ───
 async function translateProfileToEN() {
@@ -9471,7 +9541,11 @@ ${JSON.stringify(mapChunk, null, 1)}`;
               type: b.type || 'normal',
               ru: shortRu.length <= 40 ? shortRu : '',
               uz: shortUz.length <= 40 ? shortUz : '',
-              aiRu: '', aiUz: '',
+              // Базовая линия = то, что реально лежит в блоке. Пустая линия при
+              // непустом ru давала мусорную «правку» вида «» → «Ответ клиента»
+              // при первом же сохранении роутера.
+              aiRu: shortRu.length <= 40 ? shortRu : '',
+              aiUz: shortUz.length <= 40 ? shortUz : '',
               color: b.color || '',
               x: b.x, y: b.y, w: b.w, h: b.h,
               hManual: b.hManual, wManual: b.wManual, dioSize: b.dioSize,
