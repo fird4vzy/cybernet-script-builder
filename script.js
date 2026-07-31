@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-31-v51-spoken-style';
+const CYBERNET_BUILD = '2026-07-31-v52-layout-branches';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -1111,13 +1111,26 @@ function buildLayout(blocks) {
 
   // ── Build edges, but SKIP counter-group internal edges ─────
   // (they connect horizontally, not vertically)
+  //
+  // Read `branches` FIRST. The legacy next_default/next_yes/next_no fields hold
+  // at most THREE links — syncLegacyNext() keeps «да», «нет» and the first of
+  // everything else, and silently drops the rest. A block branching into
+  // «Комфортно / Некомфортно / Непонятно» therefore handed the layout only ONE
+  // edge, so its other two children had no parent, counted as ROOTS, and got
+  // ranked ABOVE the block they descend from. That is why answer branches came
+  // out scattered and sitting higher than their own question.
+  const outgoingIds = (b) => (Array.isArray(b.branches) && b.branches.length)
+    ? b.branches.map(br => br && br.next).filter(Boolean)
+    : ['next_default', 'next_yes', 'next_no'].map(k => b[k]).filter(Boolean);
+
   const edges = []; // { from, to }
   blocks.forEach(b => {
-    ['next_default', 'next_yes', 'next_no'].forEach(k => {
-      const to = b[k];
-      if (!to || !byId[to]) return;
+    const seenTo = new Set();   // two branches to the same block = one edge
+    outgoingIds(b).forEach(to => {
+      if (!byId[to] || seenTo.has(to)) return;
       // Skip if both in same group (these are horizontal counters)
       if (groupOf[b.id] && groupOf[b.id] === groupOf[to]) return;
+      seenTo.add(to);
       edges.push({ from: b.id, to });
     });
   });
@@ -1164,12 +1177,19 @@ function buildLayout(blocks) {
   });
 
   // ── Assign lanes: center (happy path), left, right ─────────
+  // Follow the FIRST branch of each block. next_default was empty whenever a
+  // block branched only into «да»/«нет», so the main line broke off right at
+  // the first yes/no question and almost nothing landed in the center lane.
+  const firstNext = (b) => (Array.isArray(b.branches) && b.branches.length)
+    ? ((b.branches.find(br => br && br.next) || {}).next || '')
+    : (b.next_default || '');
+
   const happyPath = new Set();
   roots.forEach(r => {
     let cur = r.id, safety = 0;
     while (cur && byId[cur] && safety++ < 200) {
       happyPath.add(cur);
-      cur = byId[cur].next_default;
+      cur = firstNext(byId[cur]);
       if (happyPath.has(cur)) break; // avoid infinite loop
     }
   });
@@ -1407,14 +1427,28 @@ function buildCybernetSVG(lang, scale, opts = {}) {
 
       if (label) {
         const lx = (fx + tx) / 2, ly = ty > fy + 10 ? (fy + ty) / 2 : fy + 20;
-        svg += `<rect x="${lx - 14}" y="${ly - 8}" width="28" height="15" rx="3" fill="white" stroke="${color}" stroke-width="0.5"/>`;
+        // Width was hardcoded to 28px — enough for «да»/«нет» only. Real branch
+        // labels («Некомфортно», «Сомневаюсь») spilled outside the white box.
+        const lw = Math.max(28, String(label).length * 5.2 + 8);
+        svg += `<rect x="${lx - lw / 2}" y="${ly - 8}" width="${lw}" height="15" rx="3" fill="white" stroke="${color}" stroke-width="0.5"/>`;
         svg += `<text x="${lx}" y="${ly + 3}" text-anchor="middle" font-size="9" font-weight="bold" fill="${color}">${svgText(label)}</text>`;
       }
     };
 
-    drawEdge(b.next_default, '',    '#444', 'm0');
-    drawEdge(b.next_yes,     'да',  '#16a34a', 'mY');
-    drawEdge(b.next_no,      'нет', '#dc2626', 'mN');
+    // Same legacy trap as in buildLayout: next_default/next_yes/next_no carry
+    // only three links, so a block with four answer branches lost the rest and
+    // the picture showed arrows that don't exist in the script. Draw the real
+    // branches; keep the legacy fields for profiles that predate them.
+    if (Array.isArray(b.branches) && b.branches.length) {
+      b.branches.forEach(br => {
+        if (!br || !br.next) return;
+        drawEdge(br.next, (br.label || '').trim(), '#444', 'm0');
+      });
+    } else {
+      drawEdge(b.next_default, '',    '#444', 'm0');
+      drawEdge(b.next_yes,     'да',  '#16a34a', 'mY');
+      drawEdge(b.next_no,      'нет', '#dc2626', 'mN');
+    }
   });
 
   // ── Nodes ─────────────────────────────────────────────────
@@ -8301,6 +8335,134 @@ async function translateProfileToEN() {
   }
 }
 
+// ─── Спрямление «книжных» реплик ──────────────────────────────
+// Модель пишет литературно, а не разговорно: кальки с английского («Мы здесь,
+// чтобы помочь вам», «Как вы себя чувствуете с этим долгом?»), канцелярит
+// («данный долг»), отглагольные существительные («возможность
+// реструктуризации»). Правило в промпте держится не всегда, поэтому помеченные
+// реплики переписываются ОТДЕЛЬНЫМ запросом — сразу ru+uz, иначе языки
+// разъедутся (переписать только ru нельзя).
+// ВНИМАНИЕ: \b в JS не работает с кириллицей — границы слов заданы явными
+// классами [а-яё] через lookaround.
+const LITERARY_MARKERS = [
+  /как\s+вы\s+(себя\s+)?чувствуете/i,
+  /(мы|я)\s+здесь[,\s]+чтобы\s+помоч/i,
+  /я\s+представляю\s+банк/i,
+  // Формы «данные/данных/данными» НЕ включены намеренно: это обычное
+  // существительное («ваши данные», «данные карты», «по данным банка»),
+  // а не канцелярское «данный». Ловим только однозначные формы.
+  /(?<![а-яё])(?<!по\s)данн(ый|ого|ому|ом|ая|ой|ую|ое|ым)(?![а-яё])/i,
+  /(?<![а-яё])(указанн|настоящ|вышеуказанн|нижеследующ)[а-яё]+/i,
+  /(?<![а-яё])осуществ[а-яё]+/i,
+  /произвести\s+оплату|(?<![а-яё])в\s+целях(?![а-яё])|при\s+необходимости|в\s+случае\s+возникновения/i,
+  /возможност[ьи]\s+[а-яё]+(?:ции|ния|ия)(?![а-яё])/i,
+  /обсудить\s+возможность/i,
+  /это\s+(действительно\s+|очень\s+)?важно/i,
+  /нельзя\s+упускать/i,
+  /это\s+может\s+быть\s+(сложно|запутанно|непросто|трудно)/i,
+  /снизить\s+([а-яё]+\s+)?нагрузку/i,
+  /будьте\s+уверены|не\s+стесняйтесь/i,
+  /мы\s+ценим\s+вас/i
+];
+function literaryHits(s) {
+  return LITERARY_MARKERS.reduce((n, re) => n + (re.test(s) ? 1 : 0), 0);
+}
+function varsIn(s) {
+  return String(s).match(/\{[A-Za-z_][A-Za-z0-9_]*\}/g) || [];
+}
+
+// targets: [{ id, role, answers, obj }] — obj это объект, у которого правятся
+// поля .ru/.uz (в STRUCTURE MODE это запись textById, в общем пути — сам блок).
+// Возвращает { found, rewritten }. Никогда не бросает: правка тона не должна
+// ронять уже сгенерированный скрипт.
+async function rewriteBookishReplies(targets, label) {
+  const res = { found: 0, rewritten: 0 };
+  try {
+    const flagged = targets
+      .filter(t => t && t.obj && typeof t.obj.ru === 'string' && t.obj.ru.trim().length > 20)
+      .map(t => ({ ...t, hits: literaryHits(t.obj.ru) }))
+      .filter(t => t.hits > 0)
+      .sort((a, b) => b.hits - a.hits);
+    res.found = flagged.length;
+    // Потолок: переписывание — это лишние запросы к модели, а хвост списка —
+    // уже одиночные слабые совпадения. Чиним самое книжное.
+    const toFix = flagged.slice(0, 36);
+
+    const buildFixPrompt = (items) => `Ты — редактор скриптов колл-центра. Ниже реплики РОБОТА, написанные слишком книжно. Перепиши каждую живой устной речью: так говорят вслух по телефону, а не пишут в документе.
+
+УБРАТЬ:
+- кальки с английского: «Как вы себя чувствуете с этим долгом?», «Мы здесь, чтобы помочь вам», «Я представляю банк», «Будьте уверены», «Не стесняйтесь обращаться»;
+- канцелярит: «данный», «указанный», «настоящий», «осуществить», «произвести оплату», «в целях», «при необходимости», «в случае возникновения»;
+- отглагольные существительные — ставь глагол: «обсудить возможность реструктуризации» → «пересобрать график», «для осуществления оплаты» → «чтобы оплатить», «снизить долговую нагрузку» → «платить меньше»;
+- литературную воду без факта: «Это действительно важно», «Нельзя упускать из виду», «Это может быть сложно», «Мы ценим вас как клиента».
+
+СОХРАНИТЬ БЕЗ ИЗМЕНЕНИЙ:
+- смысл реплики и её место в разговоре (роль блока дана в поле role);
+- ВСЕ переменные в фигурных скобках ({BANK_NAME}, {AGENT_NAME}, {AMOUNT} и любые другие) — дословно, ни одну не терять;
+- вопрос: если поле вопросВКонце=true, реплика по-прежнему заканчивается вопросом (и на него можно ответить вариантами из answers); если false — вопроса быть НЕ должно;
+- длину: столько же или короче. Предложения по 5-12 слов.
+
+uz — только латиница (o', g', sh, ch), натуральная узбекская речь, по смыслу равна НОВОМУ ru, а не дословный перевод.
+Верни СТРОГО JSON-массив [{"id":"...","ru":"...","uz":"..."}] для всех ${items.length} реплик, ничего кроме JSON.
+
+РЕПЛИКИ:
+${JSON.stringify(items, null, 1)}`;
+
+    const FIX_CHUNK = 12;
+    for (let i = 0; i < toFix.length; i += FIX_CHUNK) {
+      const slice = toFix.slice(i, i + FIX_CHUNK);
+      try { showGenLoader(`Генерирую, а ты зачилься (правлю тон ${Math.min(i + FIX_CHUNK, toFix.length)}/${toFix.length})`); } catch (e) {}
+      const items = slice.map(t => ({
+        id: t.id,
+        role: t.role || '',
+        answers: (t.answers && t.answers.length) ? t.answers : undefined,
+        вопросВКонце: /\?\s*$/.test(String(t.obj.ru).trim()),
+        ru: t.obj.ru,
+        uz: t.obj.uz || ''
+      }));
+      let arr = [];
+      try {
+        const raw = await aiGenerate(buildFixPrompt(items), 'Перепиши реплики разговорно и верни JSON-массив.', {
+          json: true, temperature: 0.6, maxTokens: 8000
+        });
+        let parsed;
+        try { parsed = JSON.parse(raw); } catch {
+          const m = String(raw).match(/\[[\s\S]*\]/);
+          parsed = m ? JSON.parse(m[0]) : parseAIJson(raw);
+        }
+        arr = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.blocks) ? parsed.blocks : []);
+      } catch (e) { console.warn('[Cybernet] порция правки тона не удалась:', e); continue; }
+
+      arr.forEach(r => {
+        if (!r || !r.id) return;
+        const target = slice.find(t => String(t.id) === String(r.id));
+        if (!target) return;
+        const newRu = typeof r.ru === 'string' ? r.ru.trim() : '';
+        const newUz = typeof r.uz === 'string' ? r.uz.trim() : '';
+        const oldRu = String(target.obj.ru);
+        const hadUz = String(target.obj.uz || '').trim();
+        if (newRu.length < 10) return;
+        // Блок без узбекского был и остаётся без него (в некоторых эталонах
+        // ru и uz разнесены по разным блокам) — не выдумываем текст.
+        if (hadUz && newUz.length < 5) return;
+        // Переменные терять нельзя — иначе из реплики пропадёт сумма или имя.
+        const now = varsIn(newRu);
+        if (varsIn(oldRu).some(v => !now.includes(v))) return;
+        if (newUz && /[а-яё]/i.test(newUz)) return;        // кириллица в uz — брак
+        if (newRu.length > oldRu.length * 1.4) return;     // не раздувать
+        if (literaryHits(newRu) >= target.hits) return;    // не стало лучше
+        target.obj.ru = newRu;
+        if (hadUz && newUz) target.obj.uz = newUz;
+        res.rewritten++;
+      });
+    }
+    console.log(`[Cybernet] книжных реплик (${label}): найдено ${res.found}, переписано ${res.rewritten}`);
+  } catch (e) {
+    console.warn('[Cybernet] правка книжного тона пропущена:', e);
+  }
+  return res;
+}
+
 async function generateScript() {
   const niche = document.getElementById('gs-niche').value.trim();
   const goal = document.getElementById('gs-goal').value;
@@ -9081,111 +9243,13 @@ ${JSON.stringify(mapChunk, null, 1)}`;
 
       const totalGot = Object.keys(textById).length;
 
-      // ── Спрямление «книжных» реплик ─────────────────────────────────
-      // Модель пишет литературно, а не разговорно: кальки с английского («Мы
-      // здесь, чтобы помочь вам», «Как вы себя чувствуете с этим долгом?»),
-      // канцелярит («данный долг»), отглагольные существительные
-      // («возможность реструктуризации»). Правило в промпте держится не
-      // всегда, поэтому помеченные блоки переписываются ОТДЕЛЬНЫМ запросом —
-      // сразу ru+uz, иначе языки разъедутся (переписать только ru нельзя).
-      // ВНИМАНИЕ: \b в JS не работает с кириллицей, границы слов заданы
-      // явными классами [а-яё] через lookaround.
-      const LITERARY = [
-        /как\s+вы\s+(себя\s+)?чувствуете/i,
-        /(мы|я)\s+здесь[,\s]+чтобы\s+помоч/i,
-        /я\s+представляю\s+банк/i,
-        // Формы «данные/данных/данными» НЕ включены намеренно: это обычное
-        // существительное («ваши данные», «данные карты», «по данным банка»),
-        // а не канцелярское «данный». Ловим только однозначные формы.
-        /(?<![а-яё])(?<!по\s)данн(ый|ого|ому|ом|ая|ой|ую|ое|ым)(?![а-яё])/i,
-        /(?<![а-яё])(указанн|настоящ|вышеуказанн|нижеследующ)[а-яё]+/i,
-        /(?<![а-яё])осуществ[а-яё]+/i,
-        /произвести\s+оплату|(?<![а-яё])в\s+целях(?![а-яё])|при\s+необходимости|в\s+случае\s+возникновения/i,
-        /возможност[ьи]\s+[а-яё]+(?:ции|ния|ия)(?![а-яё])/i,
-        /обсудить\s+возможность/i,
-        /это\s+(действительно\s+|очень\s+)?важно/i,
-        /нельзя\s+упускать/i,
-        /это\s+может\s+быть\s+(сложно|запутанно|непросто|трудно)/i,
-        /снизить\s+([а-яё]+\s+)?нагрузку/i,
-        /будьте\s+уверены|не\s+стесняйтесь/i,
-        /мы\s+ценим\s+вас/i
-      ];
-      const literaryHits = (s) => LITERARY.reduce((n, re) => n + (re.test(s) ? 1 : 0), 0);
-      const varsOf = (s) => (String(s).match(/\{[A-Za-z_][A-Za-z0-9_]*\}/g) || []);
-      let bookish = 0, rewrote = 0;
-      try {
-        const flagged = textMap
-          .map(p => ({ p, rec: textById[p.id] }))
-          .filter(x => x.rec && typeof x.rec.ru === 'string' && x.rec.ru.trim().length > 20)
-          .map(x => ({ ...x, hits: literaryHits(x.rec.ru) }))
-          .filter(x => x.hits > 0)
-          .sort((a, b) => b.hits - a.hits);
-        bookish = flagged.length;
-        // Потолок: переписывание — это лишние запросы к модели, а хвост списка
-        // это уже одиночные слабые совпадения. Чиним самое книжное.
-        const toFix = flagged.slice(0, 36);
-        if (toFix.length) {
-          const buildFixPrompt = (items) => `Ты — редактор скриптов колл-центра. Ниже реплики РОБОТА, написанные слишком книжно. Перепиши каждую живой устной речью: так говорят вслух по телефону, а не пишут в документе.
-
-УБРАТЬ:
-- кальки с английского: «Как вы себя чувствуете с этим долгом?», «Мы здесь, чтобы помочь вам», «Я представляю банк», «Будьте уверены», «Не стесняйтесь обращаться»;
-- канцелярит: «данный», «указанный», «настоящий», «осуществить», «произвести оплату», «в целях», «при необходимости», «в случае возникновения»;
-- отглагольные существительные — ставь глагол: «обсудить возможность реструктуризации» → «пересобрать график», «для осуществления оплаты» → «чтобы оплатить», «снизить долговую нагрузку» → «платить меньше»;
-- литературную воду без факта: «Это действительно важно», «Нельзя упускать из виду», «Это может быть сложно», «Мы ценим вас как клиента».
-
-СОХРАНИТЬ БЕЗ ИЗМЕНЕНИЙ:
-- смысл реплики и её место в разговоре (роль клиента дана в поле role);
-- ВСЕ переменные в фигурных скобках ({BANK_NAME}, {AGENT_NAME}, {AMOUNT} и любые другие) — дословно, ни одну не терять;
-- вопрос: если поле вопросВКонце=true, реплика по-прежнему заканчивается вопросом (и на него можно ответить вариантами из answers); если false — вопроса быть НЕ должно;
-- длину: столько же или короче. Предложения по 5-12 слов.
-
-uz — только латиница (o', g', sh, ch), натуральная узбекская речь, по смыслу равна НОВОМУ ru, а не дословный перевод.
-Верни СТРОГО JSON-массив [{"id":"...","ru":"...","uz":"..."}] для всех ${items.length} реплик, ничего кроме JSON.
-
-РЕПЛИКИ:
-${JSON.stringify(items, null, 1)}`;
-
-          const FIX_CHUNK = 12;
-          for (let i = 0; i < toFix.length; i += FIX_CHUNK) {
-            const slice = toFix.slice(i, i + FIX_CHUNK);
-            showGenLoader(`Генерирую, а ты зачилься (правлю тон ${Math.min(i + FIX_CHUNK, toFix.length)}/${toFix.length})`);
-            const items = slice.map(x => ({
-              id: x.p.id,
-              role: x.p.role || '',
-              answers: x.p.answers || undefined,
-              вопросВКонце: /\?\s*$/.test(String(x.rec.ru).trim()),
-              ru: x.rec.ru,
-              uz: x.rec.uz || ''
-            }));
-            let arr = [];
-            try {
-              const raw = await aiGenerate(buildFixPrompt(items), 'Перепиши реплики разговорно и верни JSON-массив.', {
-                json: true, temperature: 0.6, maxTokens: 8000
-              });
-              arr = parseChunk(raw);
-            } catch (e) { console.warn('[Cybernet] порция правки тона не удалась:', e); continue; }
-            arr.forEach(r => {
-              if (!r || !r.id) return;
-              const target = slice.find(x => x.p.id === r.id);
-              if (!target) return;
-              const newRu = typeof r.ru === 'string' ? r.ru.trim() : '';
-              const newUz = typeof r.uz === 'string' ? r.uz.trim() : '';
-              if (newRu.length < 10 || newUz.length < 5) return;
-              // Переменные терять нельзя — иначе в реплике пропадёт сумма или имя.
-              const had = varsOf(target.rec.ru);
-              const now = varsOf(newRu);
-              if (had.some(v => !now.includes(v))) return;
-              if (/[а-яё]/i.test(newUz)) return;             // кириллица в uz — брак
-              if (newRu.length > target.rec.ru.length * 1.4) return;  // не раздувать
-              if (literaryHits(newRu) >= target.hits) return;         // не стало лучше
-              target.rec.ru = newRu;
-              target.rec.uz = newUz;
-              rewrote++;
-            });
-          }
-        }
-        console.log(`[Cybernet] книжных реплик найдено: ${bookish}, переписано: ${rewrote}`);
-      } catch (e) { console.warn('[Cybernet] правка книжного тона пропущена:', e); }
+      // Правка книжного тона — общая для обоих путей генерации, см.
+      // rewriteBookishReplies(). Здесь роль блока и варианты ответа берём из
+      // textMap, а тексты правим прямо в записях textById.
+      const bookishRes = await rewriteBookishReplies(
+        textMap.map(p => ({ id: p.id, role: p.role, answers: p.answers, obj: textById[p.id] })),
+        'эталон');
+      const bookish = bookishRes.found;
 
       // ── Strip duplicate greetings ───────────────────────────────────
       // Only the opening block may greet. The model kept saying "Здравствуйте!"
@@ -9509,6 +9573,20 @@ ${JSON.stringify(items, null, 1)}`;
         parsed.blocks = kept;
       }
     } catch (e) {}
+
+    // Правка книжного тона. Раньше стояла только в STRUCTURE MODE, поэтому
+    // генерация «с нуля» приезжала с кальками и канцеляритом («это поможет
+    // снизить нагрузку»). Ромбы и стартовый маркер речи не имеют — пропускаем.
+    await rewriteBookishReplies(
+      parsed.blocks
+        .filter(b => b && b.type !== 'decision' && b.type !== 'start')
+        .map(b => ({
+          id: b.id,
+          role: b.title || '',
+          answers: (b.branches || []).map(br => (br && br.label || '').trim()).filter(Boolean),
+          obj: b
+        })),
+      'с нуля');
 
     // Build profile
     const profileName = parsed.name || `AI: ${niche} (${new Date().toLocaleDateString()})`;
