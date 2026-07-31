@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-30-v47-style-mode';
+const CYBERNET_BUILD = '2026-07-30-v48-kb-everywhere';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8424,7 +8424,20 @@ ${toneSamples.length ? `\nОБРАЗЦЫ МАНЕРЫ РЕЧИ (обрати в�
       + '\nВ репликах используй фигурные скобки: {' + Object.keys(genVars)[0] + '} и т.д. Значения выше — это то, что реально подставится.'
     : '';
   const learningSection = await buildLearningSection();
-  const systemPrompt = aiPrompts.generate_system + referencesSection + briefSection + varsSection + learningSection;
+  // The knowledge base was only wired into STRUCTURE MODE, so generating without
+  // "copy the эталон's structure" silently ignored it — the facts the user
+  // carefully entered never reached the model. Inject it here too.
+  const knowledgeSection = knowledge ? `
+
+📚 БАЗА ЗНАНИЙ — бери конкретику ТОЛЬКО отсюда:
+${knowledge}
+
+🔴 КАК ПОЛЬЗОВАТЬСЯ БАЗОЙ:
+- Имя робота, название компании, продукты, суммы, сроки, ставки — строго как здесь. НЕ подставляй {BANK_NAME}, если настоящее название есть в базе.
+- В каждом блоке про продукт, условия или возражение назови КОНКРЕТНЫЙ факт из базы, а не общие слова.
+- В разных блоках бери РАЗНЫЕ факты.
+- НЕ ВЫДУМЫВАЙ данных, которых в базе нет.` : '';
+  const systemPrompt = aiPrompts.generate_system + referencesSection + knowledgeSection + briefSection + varsSection + learningSection;
   let userPrompt = fillTemplate(aiPrompts.generate_user, {
     niche, goal, channel, tone, blockCount,
     extras: extras || '(нет)'
@@ -8445,7 +8458,8 @@ ${toneSamples.length ? `\nОБРАЗЦЫ МАНЕРЫ РЕЧИ (обрати в�
 - ОБРАБОТКА ОСОБЫХ СИТУАЦИЙ отдельными блоками: молчание клиента, «не слышно», «вы робот?», «кто вы / откуда звоните», «соедините с оператором», «ошиблись номером», «мошенники», «перезвоните позже», автоответчик, плохая связь.
 - СЧЁТЧИКИ ПОВТОРОВ: если клиент повторяет одно возражение — отдельные блоки на 2-й и 3-й раз с более настойчивыми формулировками.
 - У каждой ветки (branches) должна быть КОРОТКАЯ метка (1-3 слова) — это реплика клиента, по которой идёт переход.
-- Ни одного тупика: из каждого блока есть выход, кроме type:"end".`;
+- Ни одного тупика: из каждого блока есть выход, кроме type:"end".
+- 🔴 ЗАГОЛОВКИ БЛОКОВ (title) И МЕТКИ ВЕТОК — ТОЛЬКО ПО-РУССКИ. «Приветствие», «Нет денег», «Кто вы?», «Согласие», «Отказ» — а НЕ «Greeting», «No Money Objection», «Refusal». Английские заголовки — ошибка.`;
 
   if (!/\d\s*[-–]\s*\d/.test(userPrompt) || userPrompt.indexOf(blockCount) === -1) {
     userPrompt += `\n\n🔴 РАЗМЕР СКРИПТА — ОБЯЗАТЕЛЬНО: ${blockCount} блоков. Это не пожелание, а требование: меньше нижней границы — брак. Раскрой тему подробно: отдельный блок на каждое возражение, на каждый вопрос клиента, на каждую особую ситуацию (молчание, не слышно, робот?, соедините с оператором, ошиблись номером, мошенники), плюс счётчики повторов для повторяющихся возражений.`;
