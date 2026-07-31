@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-30-v49-kb-structure';
+const CYBERNET_BUILD = '2026-07-31-v50-scenario-priority';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8449,6 +8449,21 @@ ${knowledge}
   // prompt often drops it, and then the model never learns how big the script
   // should be — asking for 90-120 blocks quietly produced 11. Append the
   // requirement whenever the filled prompt doesn't already state it.
+  // The default prompt carries a generic 6-point outline ("Приветствие →
+  // возражения → завершение"). When the user has written their own scenario in
+  // extras or the knowledge base, the model followed the generic outline and
+  // treated the real spec as background — producing a script for the wrong
+  // conversation. State the priority explicitly.
+  if ((extras && extras.trim().length > 200) || (knowledge && knowledge.trim().length > 200)) {
+    userPrompt += `\n\n🔴 ПРИОРИТЕТ ИСТОЧНИКОВ — ЧИТАЙ ВНИМАТЕЛЬНО:
+Пользователь описал СВОЙ сценарий (в «Дополнительных требованиях» и/или «Базе знаний»). Этот сценарий — ГЛАВНЫЙ. Типовой план «приветствие → возражения → завершение» из этого промпта применяй ТОЛЬКО там, где пользователь ничего не описал.
+- Следуй ЕГО порядку шагов, ЕГО ветвлениям, ЕГО формулировкам целей.
+- Если пользователь пишет, что робота зовут определённым именем — используй это имя, а не {AGENT_NAME}.
+- Если он указал переменные ({client_name}, {input_amount}, {payment_date} и т.п.) — вставляй именно их в реплики.
+- Если он описал, ЧТО спрашивать и в каком порядке — не заменяй это своими вопросами.
+- Не превращай его сценарий в другой: если речь про уточнение удобства платежа, не пиши скрипт взыскания долга.`;
+  }
+
   // Structural requirements the эталоны satisfy but a freshly generated script
   // usually doesn't: a proper start/end, real decision diamonds, and the
   // exception handlers that make a call-centre script usable. Appended in code so
@@ -9345,6 +9360,28 @@ ${JSON.stringify(mapChunk, null, 1)}`;
       console.error('[Cybernet] ответ AI без блоков. Ключи ответа:', keys, '| начало ответа:', String(raw).slice(0, 400));
       throw new Error(`AI вернул ответ без списка блоков (получено: ${keys || 'пусто'}). Скорее всего изменённый промпт больше не требует формат {"blocks": [...]} — откройте «Редактор промптов» и нажмите «По умолчанию».`);
     }
+
+    // Drop duplicate blocks. The model sometimes emits the same block twice
+    // (identical title AND text), which shows up on the canvas as two
+    // indistinguishable boxes. Re-point any branch that referenced the copy.
+    try {
+      const seen = new Map();
+      const remap = new Map();
+      const kept = [];
+      parsed.blocks.forEach(b => {
+        const key = `${(b.title || '').trim().toLowerCase()}|${(b.ru || '').trim().toLowerCase()}`;
+        if ((b.ru || '').trim() && seen.has(key)) { remap.set(b.id, seen.get(key)); return; }
+        seen.set(key, b.id);
+        kept.push(b);
+      });
+      if (remap.size) {
+        kept.forEach(b => (b.branches || []).forEach(br => {
+          if (br.next && remap.has(br.next)) br.next = remap.get(br.next);
+        }));
+        console.log(`[Cybernet] удалено блоков-дубликатов: ${remap.size}`);
+        parsed.blocks = kept;
+      }
+    } catch (e) {}
 
     // Build profile
     const profileName = parsed.name || `AI: ${niche} (${new Date().toLocaleDateString()})`;
