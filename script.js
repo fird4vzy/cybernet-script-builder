@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-31-v52-layout-branches';
+const CYBERNET_BUILD = '2026-07-31-v53-layout-untangle';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -1215,6 +1215,26 @@ function buildLayout(blocks) {
     if (m !== l) laneOf[m] = laneOf[l];
   });
 
+  // ── Pull end blocks to the lane their parents are in ───────
+  // getLane pins every type:"end" to the left lane by type alone. When all the
+  // parents of an end sit in the right lane that guarantees an arrow across the
+  // full width of the diagram — the main source of the "chaotic arrows" reports
+  // on scripts with parallel RU/UZ branches meeting at shared endings.
+  // Averaging the parents' lanes minimises the horizontal run. Ends are sinks,
+  // so nothing else depends on their lane and this cannot cascade.
+  const LANE_ORDER = ['left', 'center', 'right'];
+  blocks.forEach(b => {
+    if (b.type !== 'end') return;
+    if (b.lane && b.lane !== 'auto') return;   // user pinned this one by hand
+    if (happyPath.has(b.id)) return;           // main line keeps the center lane
+    const ps = (parentsOf[b.id] || [])
+      .map(p => LANE_ORDER.indexOf(laneOf[p]))
+      .filter(i => i >= 0);
+    if (!ps.length) return;
+    const mean = ps.reduce((s, v) => s + v, 0) / ps.length;
+    laneOf[b.id] = LANE_ORDER[Math.round(mean)];
+  });
+
   // ── Build row buckets per lane ─────────────────────────────
   // rowCells[row][lane] = [ids in order]
   const rowCells = {};
@@ -1226,16 +1246,43 @@ function buildLayout(blocks) {
     rowCells[r][ln].push(b.id);
   });
 
-  // Sort each cell: counter group members adjacent by suffix
-  Object.values(rowCells).forEach(cell => {
+  // ── Order nodes inside each row (crossing reduction) ───────
+  // This sort used to compare block IDS ALPHABETICALLY, which has nothing to do
+  // with the graph: a row came out ordered '10','11','8','9' by string compare,
+  // so children landed in columns unrelated to their parents and the arrows ran
+  // back and forth across the canvas. Order each row by the mean position of a
+  // node's parents instead (the standard barycenter heuristic). Lane membership
+  // is untouched — only the order INSIDE a lane changes.
+  const LANE_BASE = { left: 0, center: 1000, right: 2000 };
+  const colOf = {};   // pseudo-x used to average parents; monotonic left→right
+  Object.keys(rowCells).map(Number).sort((a, b) => a - b).forEach(r => {
     ['left', 'center', 'right'].forEach(ln => {
-      cell[ln].sort((a, b) => {
-        const ga = groupOf[a] || a, gb = groupOf[b] || b;
-        if (ga !== gb) return ga.localeCompare(gb);
-        const na = parseInt((a.match(/_(\d+)$/) || [,'1'])[1], 10);
-        const nb = parseInt((b.match(/_(\d+)$/) || [,'1'])[1], 10);
-        return na - nb;
-      });
+      const cell = rowCells[r][ln];
+      if (cell.length > 1) {
+        // Parents sit in rows already processed, so their columns are known.
+        // A node whose parents aren't placed yet keeps its current slot.
+        const bary = {};
+        cell.forEach((id, i) => {
+          const ps = (parentsOf[id] || []).map(p => colOf[p]).filter(v => typeof v === 'number');
+          bary[id] = ps.length ? ps.reduce((s, v) => s + v, 0) / ps.length : LANE_BASE[ln] + i;
+        });
+        // Counter groups move as one block and stay adjacent, ordered by suffix.
+        const groupBary = {};
+        cell.forEach(id => {
+          const g = groupOf[id] || id;
+          (groupBary[g] = groupBary[g] || []).push(bary[id]);
+        });
+        const gAvg = {};
+        Object.entries(groupBary).forEach(([g, v]) => { gAvg[g] = v.reduce((s, x) => s + x, 0) / v.length; });
+        cell.sort((a, b) => {
+          const ga = groupOf[a] || a, gb = groupOf[b] || b;
+          if (ga !== gb) return gAvg[ga] - gAvg[gb];
+          const na = parseInt((a.match(/_(\d+)$/) || [, '1'])[1], 10);
+          const nb = parseInt((b.match(/_(\d+)$/) || [, '1'])[1], 10);
+          return na - nb;
+        });
+      }
+      cell.forEach((id, i) => { colOf[id] = LANE_BASE[ln] + i; });
     });
   });
 
