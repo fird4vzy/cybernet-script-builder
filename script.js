@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-31-v59-learn-in-review';
+const CYBERNET_BUILD = '2026-07-31-v60-lazy-xlsx';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 // Печатаем и адрес, из которого приехал файл: если версия сборки не та, что
 // ожидалась, сразу видно — это протухший ?v= / кэш или просто незадеплоенный код.
@@ -8283,10 +8283,36 @@ function parseBriefWorkbook(wb) {
   return items;
 }
 
-function handleBriefUpload(ev) {
+// XLSX грузится с cdn.sheetjs.com и нужен ТОЛЬКО для загрузки брифа. Раньше тег
+// стоял в index.html и тянулся на каждой загрузке страницы: при недоступности
+// CDN (например ERR_QUIC_PROTOCOL_ERROR) в консоли у всех висела красная ошибка,
+// а страница ждала ответа. Теперь подгружаем по требованию.
+const XLSX_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+const XLSX_SRI = 'sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT';
+let _xlsxLoading = null;
+
+function ensureXLSX() {
+  if (typeof XLSX !== 'undefined') return Promise.resolve(true);
+  if (_xlsxLoading) return _xlsxLoading;
+  _xlsxLoading = new Promise((resolve) => {
+    const s = document.createElement('script');
+    s.src = XLSX_URL;
+    s.integrity = XLSX_SRI;
+    s.crossOrigin = 'anonymous';
+    s.onload = () => resolve(typeof XLSX !== 'undefined');
+    s.onerror = () => { _xlsxLoading = null; resolve(false); };  // дать шанс повторить
+    document.head.appendChild(s);
+  });
+  return _xlsxLoading;
+}
+
+async function handleBriefUpload(ev) {
   const file = ev.target.files && ev.target.files[0];
   if (!file) return;
-  if (typeof XLSX === 'undefined') { toast('Библиотека XLSX не загрузилась — обновите страницу', 'error'); return; }
+  if (!(await ensureXLSX())) {
+    toast('Не удалось загрузить библиотеку для .xlsx (cdn.sheetjs.com недоступен). Проверьте сеть/VPN и попробуйте ещё раз.', 'error');
+    return;
+  }
   const reader = new FileReader();
   reader.onload = (e) => {
     try {
@@ -8544,6 +8570,20 @@ async function learningStatus() {
   return info;
 }
 if (typeof window !== 'undefined') window.learningStatus = learningStatus;
+
+// Показать ТОТ САМЫЙ текст, который подставляется в промпты. learningStatus()
+// отвечает «сколько пар», а этот — «что именно уедет модели».
+async function learningPreview() {
+  const text = await buildLearningSection(true);
+  if (!text) {
+    console.warn('[Cybernet] подставлять нечего — накопленных пар «было → стало» нет. Проверьте конкретный блок через testLearning().');
+    return '';
+  }
+  console.log('%c=== ЭТО ДОБАВЛЯЕТСЯ К ПРОМПТАМ ===', 'font-weight:bold');
+  console.log(text);
+  return text;
+}
+if (typeof window !== 'undefined') window.learningPreview = learningPreview;
 
 // Пошаговая проверка обучения на КОНКРЕТНОМ блоке. learningStatus() отвечает
 // только «сколько пар накопилось», а этот разбирает, почему конкретная правка
@@ -10579,8 +10619,10 @@ async function runAIReview() {
     // Это была ошибка: поле suggestion — это ПЕРЕПИСАННАЯ реплика, её человек
     // читает и принимает кнопкой «Исправить». Значит и она должна быть в манере
     // пользователя, иначе он правит одно и то же по кругу.
+    // Здесь НЕ тихий режим: разбор запускают редко и осознанно, и человеку надо
+    // видеть, подставились примеры его правок или нет.
     const raw = await aiGenerate(
-      aiPrompts.review_system + (await buildLearningSection(true)),
+      aiPrompts.review_system + (await buildLearningSection()),
       userPrompt, {
       json: true,
       temperature: 0.35,
