@@ -3198,6 +3198,54 @@ body.canvas-fullscreen-active .side-rail {
 .profile-dd-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-dd-item svg { color: var(--accent); flex-shrink: 0; }
 
+/* Группировка профилей по компаниям + поиск (список вырос до десятков) */
+.profile-dd-search { padding: 4px 4px 8px; position: sticky; top: -6px; background: var(--bg-elevated); z-index: 1; }
+.profile-dd-search input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 1px solid var(--bd-default);
+  border-radius: var(--r-sm);
+  background: var(--bg-surface);
+  color: var(--tx-primary);
+  outline: none;
+}
+.profile-dd-search input:focus { border-color: var(--accent); }
+.profile-dd-group {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tx-tertiary);
+}
+.profile-dd-count {
+  font-size: 10px; font-weight: 600;
+  padding: 1px 7px; border-radius: 100px;
+  background: var(--bg-surface-2); color: var(--tx-tertiary);
+}
+.profile-dd-empty { padding: 16px 12px; font-size: 13px; color: var(--tx-tertiary); text-align: center; }
+.profile-dd-badge {
+  font-size: 10px; font-weight: 600;
+  padding: 1px 7px; border-radius: 100px;
+  background: var(--bg-surface-2); color: var(--tx-tertiary);
+  flex-shrink: 0;
+}
+.profile-dd-badge.shared { background: #dcfce7; color: #15803d; }
+[data-theme="dark"] .profile-dd-badge.shared { background: rgba(34,197,94,.18); color: #4ade80; }
+
+/* Бейджи общих эталонов */
+.ref-badge {
+  font-size: 10px; font-weight: 600;
+  padding: 2px 8px; border-radius: 100px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.ref-badge-shared { background: #dcfce7; color: #15803d; }
+.ref-badge-foreign { background: var(--bg-surface-2); color: var(--tx-tertiary); }
+[data-theme="dark"] .ref-badge-shared { background: rgba(34,197,94,.18); color: #4ade80; }
+
 /* ═══════════════════════════════════════════════════════════════
    DARK THEME FIXES — info boxes, AI panel, preview, mode box
    ═══════════════════════════════════════════════════════════════ */

@@ -102,6 +102,12 @@
         <button class="icon-btn" id="share-profile-btn" onclick="toggleShareProfile()" title="Сделать видимым для команды">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
         </button>
+        <button class="icon-btn" id="copy-profile-btn" onclick="copyProfileToMine()" title="Скопировать себе — своя копия, которую можно менять">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button class="icon-btn" onclick="setProfileCompany()" title="Компания — для группировки в списке">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M10 12h4"/><path d="M10 16h4"/></svg>
+        </button>
         <button class="icon-btn" onclick="newProfile()" title="Новый профиль">+</button>
         <button class="icon-btn" onclick="renameProfile()" title="Переименовать"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter" style="vertical-align:-2px;"><path d="M4 20l4-1L20 7l-3-3L5 16l-1 4z"/><path d="M14 6l3 3"/></svg></button>
         <button class="icon-btn" onclick="deleteProfile()" title="Удалить">×</button>

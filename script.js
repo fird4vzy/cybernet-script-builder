@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-31-v55-learning-coverage';
+const CYBERNET_BUILD = '2026-07-31-v56-companies-sharing';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -423,6 +423,48 @@ function renderStats() {
 // ═══════════════════════════════════════════════════════════════
 // PROFILES with modal
 // ═══════════════════════════════════════════════════════════════
+// ─── Группировка профилей по компаниям ──────────────────────
+// Скриптов становится много, плоский список нечитаем. Имена в библиотеке
+// устроены одинаково («tm_script_uzumbank_mainLimit», «soft_script_tbcbank»):
+// компания идёт сразу после «script». Угадываем её для группировки; если
+// угадали не так — компанию можно задать руками, она ляжет в p.company и
+// переживёт синхронизацию (в облако уходят все поля без префикса «_»).
+function guessCompany(name) {
+  const s = String(name || '');
+  const m = s.match(/(?:^|[_\s-])scripts?[_\s-]+([A-Za-zА-Яа-яЁё0-9]+)/i);
+  if (m) return m[1];
+  const first = s.match(/[A-Za-zА-Яа-яЁё0-9]+/);
+  return first ? first[0] : 'Прочее';
+}
+
+function profileCompany(name) {
+  const p = profiles[name];
+  const explicit = p && typeof p.company === 'string' ? p.company.trim() : '';
+  return explicit || guessCompany(name);
+}
+
+let _profileFilter = '';
+
+function onProfileFilter(v) {
+  _profileFilter = v || '';
+  renderProfiles();
+  const el = document.getElementById('profile-dd-search');
+  if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+}
+
+function setProfileCompany() {
+  const p = profiles[activeProfile];
+  if (!p) { toast('Профиль не найден', 'error'); return; }
+  if (p._readOnly) { toast('Это общий профиль коллеги — сначала скопируйте его себе', 'error'); return; }
+  const raw = prompt('Компания (для группировки в списке). Пусто — определять по имени:', profileCompany(activeProfile));
+  if (raw === null) return;
+  const v = String(raw).trim();
+  p.company = v;
+  saveToStorage();
+  renderProfiles();
+  toast(v ? `Профиль отнесён к «${v}»` : 'Компания снова определяется по имени');
+}
+
 function renderProfiles() {
   const names = Object.keys(profiles);
   // Update trigger label
@@ -431,15 +473,66 @@ function renderProfiles() {
   setTimeout(updateShareButton, 0);
   // Build menu
   const menu = document.getElementById('profile-dd-menu');
-  if (menu) {
-    menu.innerHTML = names.map(name => `
-      <button class="profile-dd-item ${name === activeProfile ? 'active' : ''}" onclick="switchProfile('${esc(name)}'); closeProfileDropdown();">
-        <span class="profile-dd-dot"></span>
-        <span class="profile-dd-name">${esc(name)}</span>
-        ${name === activeProfile ? '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
-      </button>
-    `).join('');
+  if (!menu) return;
+
+  const q = _profileFilter.trim().toLowerCase();
+  const shown = names.filter(n => !q
+    || n.toLowerCase().includes(q)
+    || profileCompany(n).toLowerCase().includes(q));
+
+  const search = `<div class="profile-dd-search">
+    <input type="text" id="profile-dd-search" placeholder="Поиск по названию или компании…"
+      value="${esc(_profileFilter)}" oninput="onProfileFilter(this.value)" onclick="event.stopPropagation()">
+  </div>`;
+
+  if (!shown.length) {
+    menu.innerHTML = search + `<div class="profile-dd-empty">Ничего не найдено</div>`;
+    return;
   }
+
+  const groups = new Map();
+  shown.forEach(n => {
+    const c = profileCompany(n);
+    if (!groups.has(c)) groups.set(c, []);
+    groups.get(c).push(n);
+  });
+
+  const check = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+  menu.innerHTML = search + [...groups.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0], 'ru'))
+    .map(([company, list]) => `
+      <div class="profile-dd-group"><span>${esc(company)}</span><span class="profile-dd-count">${list.length}</span></div>
+      ${list.sort((a, b) => a.localeCompare(b, 'ru')).map(name => `
+        <button class="profile-dd-item ${name === activeProfile ? 'active' : ''}" onclick="switchProfile('${esc(name)}'); closeProfileDropdown();">
+          <span class="profile-dd-dot"></span>
+          <span class="profile-dd-name">${esc(name)}</span>
+          ${profiles[name] && profiles[name]._readOnly ? '<span class="profile-dd-badge">чужой</span>' : ''}
+          ${profiles[name] && profiles[name]._isShared && !profiles[name]._readOnly ? '<span class="profile-dd-badge shared">общий</span>' : ''}
+          ${name === activeProfile ? check : ''}
+        </button>
+      `).join('')}
+    `).join('');
+}
+
+// Общий профиль коллеги правится только через свою копию: локальные изменения
+// в чужом профиле в облако не уходят (cloudPushProfiles их пропускает) и
+// стираются при следующей загрузке — то есть работа пропадала бы молча.
+function copyProfileToMine() {
+  const p = profiles[activeProfile];
+  if (!p) { toast('Профиль не найден', 'error'); return; }
+  const base = activeProfile.replace(/ \(общий\)$/, '').replace(/ #[0-9a-f]{4}$/, '');
+  let name = base + ' (моя копия)';
+  let i = 2;
+  while (profiles[name]) name = `${base} (моя копия ${i++})`;
+  const { _cloudId, _isShared, _ownerId, _readOnly, _migrated, ...clean } = p;
+  profiles[name] = JSON.parse(JSON.stringify(clean));
+  activeProfile = name;
+  openBlocks.clear();
+  dirtyVars.clear();
+  saveToStorage();
+  renderProfiles(); renderBlocks(); renderVars(); renderStats();
+  toast(`Скопирован в ваш аккаунт как «${name}» — теперь его можно менять`);
 }
 
 function toggleProfileDropdown(e) {
@@ -471,6 +564,13 @@ function switchProfile(name) {
   canvasState.panX = 0;
   canvasState.panY = 0;
   renderProfiles(); renderBlocks(); renderVars(); renderStats();
+  // Чужой общий профиль в облако не выгружается (cloudPushProfiles его
+  // пропускает), а следующая загрузка перетирает локальные правки. Раньше это
+  // происходило молча — человек работал и терял сделанное.
+  const p = profiles[name];
+  if (p && p._readOnly) {
+    toast('Это общий профиль коллеги. Правки здесь не сохранятся — нажмите «Скопировать себе»', 'error');
+  }
 }
 
 function newProfile() {
@@ -637,8 +737,18 @@ function updateShareButton() {
   if (!btn) return;
   const p = profiles[activeProfile];
   const shared = p && p._isShared;
+  const foreign = !!(p && p._readOnly);
   btn.classList.toggle('active', !!shared);
+  btn.style.display = foreign ? 'none' : '';   // чужим профилем делиться нельзя
   btn.title = shared ? 'Виден команде — нажмите чтобы сделать личным' : 'Сделать видимым для команды';
+  // Для чужого профиля копирование — единственный способ работать с ним.
+  const copyBtn = document.getElementById('copy-profile-btn');
+  if (copyBtn) {
+    copyBtn.classList.toggle('active', foreign);
+    copyBtn.title = foreign
+      ? 'Скопировать себе — иначе правки не сохранятся'
+      : 'Сделать свою копию профиля';
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -8296,21 +8406,38 @@ function captureEditForLearning(b, prevRu, prevUz) {
     if (!llmSettings.learnFromEdits) return; // user hasn't opted in
     if (typeof cloudSaveEdit !== 'function' || !getCurrentUserId || !getCurrentUserId()) return;
     // Only meaningful when we know what AI originally produced and the user changed it.
+    const who = `«${b.title || b.id}»`;
     const aiRu = b.aiRu, aiUz = b.aiUz;
-    if (aiRu === undefined && aiUz === undefined) return;
+    // Пара имеет смысл, только если известно, ЧТО написал AI. У импортированных
+    // из drawio и созданных руками блоков базовой линии нет — раньше функция тут
+    // молча выходила, и пользователь видел «годных пар 0», не понимая почему.
+    if (aiRu === undefined && aiUz === undefined) {
+      console.log(`[Cybernet] правка НЕ сохранена (${who}): у блока нет базовой линии AI. Обучение считает только правки текста, который написал AI — в импортированных и рукописных блоках его нет.`);
+      return;
+    }
     const ruChanged = aiRu !== undefined && (b.ru || '') !== (aiRu || '') && (b.ru || '').trim().length > 2;
     const uzChanged = aiUz !== undefined && (b.uz || '') !== (aiUz || '') && (b.uz || '').trim().length > 2;
-    if (!ruChanged && !uzChanged) return;
-    cloudSaveEdit({
+    if (!ruChanged && !uzChanged) {
+      console.log(`[Cybernet] правка НЕ сохранена (${who}): текст не отличается от того, что написал AI`);
+      return;
+    }
+    // cloudSaveEdit асинхронный и глотает ошибки в catch. Без разбора результата
+    // лог врал «сохранено» даже когда вставка падала (например, нет таблицы).
+    Promise.resolve(cloudSaveEdit({
       title: b.title || '', intent: b.intent || '',
       aiRu: aiRu || '', aiUz: aiUz || '',
       finalRu: b.ru || '', finalUz: b.uz || '',
       niche: (data().meta && data().meta.niche) || '', goal: (data().meta && data().meta.goal) || ''
-    });
+    })).then(saved => {
+      if (saved && saved.id) {
+        _learningCache = { at: 0, text: null };   // новая правка — кэш примеров устарел
+        console.log(`[Cybernet] ✓ правка сохранена для обучения (${who})`);
+      } else {
+        console.warn(`[Cybernet] ✗ правка НЕ записалась в облако (${who}). Обычная причина — нет таблицы cs_edits или RLS не разрешает insert. Схема в комментарии supabase-client.js.`);
+      }
+    }).catch(e => console.warn('[Cybernet] ✗ ошибка записи правки:', e));
     // once captured, treat the new text as the baseline so we don't log it again
     b.aiRu = b.ru; b.aiUz = b.uz;
-    _learningCache = { at: 0, text: null };   // новая правка — кэш примеров устарел
-    console.log(`[Cybernet] правка сохранена для обучения: блок «${b.title || b.id}»`);
   } catch (e) { console.warn('captureEditForLearning skipped:', e); }
 }
 
@@ -9971,7 +10098,11 @@ function renderReferences() {
           <input type="checkbox" id="ref-active-${idx}" ${r.active ? 'checked' : ''} onchange="toggleRefActive(${idx}, this.checked)">
         </div>
         <div class="ref-card-body">
-          <div class="ref-card-name">${esc(r.name || '(без названия)')}</div>
+          <div class="ref-card-name">
+            ${esc(r.name || '(без названия)')}
+            ${r._readOnly ? '<span class="ref-badge ref-badge-foreign">эталон коллеги</span>' : ''}
+            ${r._isShared && !r._readOnly ? '<span class="ref-badge ref-badge-shared">виден команде</span>' : ''}
+          </div>
           <div class="ref-card-meta">
             ${typeLabel ? `<span class="ref-tag ref-tag-type">${csIcon('clipboard',10)} ${esc(typeLabel)}</span>` : ''}
             ${r.niche ? `<span class="ref-tag">${csIcon('building',10)} ${esc(r.niche)}</span>` : ''}
@@ -9983,9 +10114,14 @@ function renderReferences() {
           ${r.notes ? `<div class="ref-card-notes">${esc(r.notes)}</div>` : ''}
         </div>
         <div class="ref-card-actions">
-          <button class="icon-btn" onclick="editReference(${idx})" title="Описание / стиль">${csIcon('pen',12)}</button>
+          ${r._readOnly
+            ? `<button class="icon-btn" onclick="copyReferenceToMine(${idx})" title="Скопировать себе — чтобы можно было менять">${csIcon('copy',12) || '⧉'}</button>`
+            : `<button class="icon-btn ${r._isShared ? 'active' : ''}" onclick="toggleShareReference(${idx})" title="${r._isShared ? 'Виден команде — нажмите чтобы сделать личным' : 'Сделать видимым для команды'}">
+                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+               </button>
+               <button class="icon-btn" onclick="editReference(${idx})" title="Описание / стиль">${csIcon('pen',12)}</button>`}
           <button class="icon-btn" onclick="useReferenceAsProfile(${idx})" title="Загрузить как профиль">${csIcon('folder',12)}</button>
-          <button class="icon-btn" onclick="deleteReference(${idx})" title="Удалить">×</button>
+          ${r._readOnly ? '' : `<button class="icon-btn" onclick="deleteReference(${idx})" title="Удалить">×</button>`}
         </div>
       </div>
     `;
@@ -10066,9 +10202,41 @@ function importReferenceFromFile(e) {
   e.target.value = '';
 }
 
+// Эталоны шарятся так же, как профили: флаг is_shared на строке в облаке.
+// Раньше кнопки не было вовсе — ref._isShared только читался, поэтому в базу
+// всегда уходил false и поделиться эталоном было нечем.
+function toggleShareReference(idx) {
+  const r = aiReferences[idx];
+  if (!r) return;
+  if (r._readOnly) { toast('Это эталон коллеги — сначала скопируйте его себе', 'error'); return; }
+  if (!getCurrentUserId()) { toast('Войдите, чтобы делиться эталонами', 'error'); return; }
+  r._isShared = !r._isShared;
+  saveReferences();
+  renderReferences();
+  toast(r._isShared ? '✓ Эталон виден команде' : 'Эталон снова личный');
+}
+
+// Чужой эталон правится только через свою копию — как и чужой профиль:
+// cloudPushReferences пропускает _readOnly, так что правки в оригинал не уйдут
+// и потеряются при следующей загрузке.
+function copyReferenceToMine(idx) {
+  const r = aiReferences[idx];
+  if (!r) return;
+  const copy = JSON.parse(JSON.stringify(r));
+  delete copy._cloudId; delete copy._readOnly; delete copy._isShared; delete copy._ownerId;
+  copy.id = 'ref_' + Date.now().toString(36);
+  copy.name = (r.name || 'Эталон').replace(/ \(копия\)$/, '') + ' (копия)';
+  copy.active = false;
+  aiReferences.push(copy);
+  saveReferences();
+  renderReferences();
+  toast(`«${copy.name}» скопирован в ваш аккаунт — теперь его можно менять`);
+}
+
 function editReference(idx) {
   const r = aiReferences[idx];
   if (!r) return;
+  if (r._readOnly) { toast('Это эталон коллеги — скопируйте его себе, чтобы менять', 'error'); return; }
   openRefEditModal(idx);
 }
 
@@ -10164,6 +10332,7 @@ function saveRefEdit(idx) {
 function deleteReference(idx) {
   const r = aiReferences[idx];
   if (!r) return;
+  if (r._readOnly) { toast('Это эталон коллеги — удалить его может только владелец', 'error'); return; }
   if (!confirm(`Удалить эталон "${r.name}"?`)) return;
   aiReferences.splice(idx, 1);
   saveReferences();
