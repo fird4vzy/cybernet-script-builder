@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-31-v61-baseline-on-ack';
+const CYBERNET_BUILD = '2026-07-31-v62-learn-accepted-uz';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 // Печатаем и адрес, из которого приехал файл: если версия сборки не та, что
 // ожидалась, сразу видно — это протухший ?v= / кэш или просто незадеплоенный код.
@@ -8048,11 +8048,11 @@ async function _doImproveBlock(b, mode, currentRu, currentUz, uiMode) {
       snapshot('AI: ' + modeInfo.label);
       b.ru = parsed.ru;
       b.uz = parsed.uz;
-      // Новый текст написал AI, а не пользователь. Без сдвига базовой линии
-      // следующее «Сохранить» записало бы в обучение пару «исходная генерация →
-      // переписка AI», то есть AI учился бы на самом себе.
-      b.aiRu = parsed.ru;
-      b.aiUz = parsed.uz;
+      // Текст написал AI, но ПРИНЯЛ его пользователь — это его выбор, и он
+      // такой же сигнал предпочтения, как правка руками. Базовую линию НЕ
+      // трогаем: captureEditForLearning увидит расхождение, запишет пару
+      // «было → принятое» и сдвинет линию только после подтверждения записи.
+      captureEditForLearning(b);
       const ruEl = document.getElementById('fr-' + b.id);
       const uzEl = document.getElementById('fu-' + b.id);
       if (ruEl) ruEl.value = parsed.ru;
@@ -8114,10 +8114,9 @@ function applyAISuggestion(blockId, newRu, newUz) {
   snapshot('AI: улучшение блока');
   b.ru = newRu;
   b.uz = newUz;
-  // Текст написал AI — сдвигаем базовую линию, иначе следующее сохранение
-  // запишет его же переписку как «правку пользователя» (см. _doImproveBlock).
-  b.aiRu = newRu;
-  b.aiUz = newUz;
+  // Пользователь нажал «Применить» — принятая подсказка идёт в обучение как
+  // его выбор (см. _doImproveBlock).
+  captureEditForLearning(b);
   // Update DOM inputs in real-time
   const ruInput = document.getElementById('cs-ru');
   const uzInput = document.getElementById('cs-uz');
@@ -8433,6 +8432,8 @@ function hideGenLoader() {
 // ═══ LEARNING FROM EDITS (было → стало) ═══
 // When the user rewrites text that AI generated, store the pair so future generations
 // can imitate the user's phrasing. The model isn't retrained — we feed examples back.
+const _editInFlight = new Set();
+
 function captureEditForLearning(b, prevRu, prevUz) {
   try {
     // Эти две проверки раньше выходили молча — в консоли не было НИЧЕГО, и
@@ -8467,6 +8468,13 @@ function captureEditForLearning(b, prevRu, prevUz) {
       console.log(`[Cybernet] правка НЕ сохранена (${who}): ни текст, ни заголовок не отличаются от того, что написал AI`);
       return;
     }
+    // Приняли подсказку AI и сразу нажали «Сохранить» — capture срабатывает
+    // дважды, а базовая линия двигается только по ответу облака, поэтому вторая
+    // попытка успевает записать ту же пару. Гасим повтор по блоку и тексту.
+    const flightKey = `${b.id}|${b.ru || ''}|${b.uz || ''}|${b.title || ''}`;
+    if (_editInFlight.has(flightKey)) return;
+    _editInFlight.add(flightKey);
+
     // cloudSaveEdit асинхронный и глотает ошибки в catch. Без разбора результата
     // лог врал «сохранено» даже когда вставка падала (например, нет таблицы).
     Promise.resolve(cloudSaveEdit({
@@ -8489,7 +8497,8 @@ function captureEditForLearning(b, prevRu, prevUz) {
       } else {
         console.warn(`[Cybernet] ✗ правка НЕ записалась в облако (${who}). Базовая линия НЕ сдвинута — правка будет поймана при следующем сохранении. Причина:`, (typeof getLastEditError === 'function' && getLastEditError()) || 'не указана');
       }
-    }).catch(e => console.warn('[Cybernet] ✗ ошибка записи правки:', e));
+    }).catch(e => console.warn('[Cybernet] ✗ ошибка записи правки:', e))
+      .finally(() => _editInFlight.delete(flightKey));
   } catch (e) { console.warn('captureEditForLearning skipped:', e); }
 }
 
@@ -8526,6 +8535,14 @@ async function buildLearningSection(quiet) {
     const pairs = picked
       .map(e => `Было (AI): ${e.ai_ru}\nСтало (правка пользователя): ${e.final_ru}`)
       .join('\n\n');
+    // Узбекские правки раньше терялись: запись в базу шла, но пары собирались
+    // ТОЛЬКО из ru, и правка одного лишь uz превращалась в «негодную пару».
+    const uzEdits = edits.filter(e => e.final_uz && e.ai_uz && e.final_uz !== e.ai_uz);
+    const uzPairs = uzEdits
+      .slice(0, 6)
+      .map(e => `Было (AI): ${e.ai_uz}\nСтало (правка пользователя): ${e.final_uz}`)
+      .join('\n\n');
+
     // Переименования блоков идут отдельным списком: это не про манеру речи, а
     // про то, как пользователь называет узлы схемы.
     const titleEdits = edits.filter(e => e.final_title && e.ai_title && e.final_title !== e.ai_title);
@@ -8533,14 +8550,17 @@ async function buildLearningSection(quiet) {
       .slice(0, 8)
       .map(e => `«${e.ai_title}» → «${e.final_title}»`)
       .join('\n');
-    say(`[Cybernet] обучение на правках: в базе последних ${edits.length}, годных пар по тексту ${usable.length} (в промпт ${picked.length}), переименований ${titleEdits.length}`);
-    if (!pairs && !titlePairs) {
+    say(`[Cybernet] обучение на правках: в базе последних ${edits.length}, пар по русскому ${usable.length} (в промпт ${picked.length}), по узбекскому ${uzEdits.length}, переименований ${titleEdits.length}`);
+    if (!pairs && !uzPairs && !titlePairs) {
       _learningCache = { at: Date.now(), text: '' };
       return '';
     }
     let text = '';
     if (pairs) {
       text += '\n\n=== КАК ЭТОТ ПОЛЬЗОВАТЕЛЬ ПРАВИТ ТЕКСТЫ (учись на его правках, повторяй его манеру: длину, тон, лексику) ===\n' + pairs;
+    }
+    if (uzPairs) {
+      text += '\n\n=== КАК ЭТОТ ПОЛЬЗОВАТЕЛЬ ПРАВИТ УЗБЕКСКИЕ ТЕКСТЫ (та же манера, только латиница) ===\n' + uzPairs;
     }
     if (titlePairs) {
       text += '\n\n=== КАК ЭТОТ ПОЛЬЗОВАТЕЛЬ ПЕРЕИМЕНОВЫВАЕТ БЛОКИ (называй заголовки в той же манере) ===\n' + titlePairs;
@@ -10850,12 +10870,9 @@ async function fixIssueFromReview(idx) {
     snapshot('AI-исправление блока');
     if (parsed.ru) b.ru = parsed.ru;
     if (parsed.uz) b.uz = parsed.uz;
-    // Текст написал AI, а не пользователь. Без сдвига базовой линии следующее
-    // сохранение блока записало бы в обучение пару «исходная генерация →
-    // переписка ревью», то есть AI учился бы на самом себе. Та же ловушка была
-    // в «Улучшить блок» — здесь третье место, где пишутся тексты.
-    if (parsed.ru) b.aiRu = parsed.ru;
-    if (parsed.uz) b.aiUz = parsed.uz;
+    // Нажатие «Исправить» — осознанный выбор пользователя, значит пара «было →
+    // принятое» идёт в обучение (см. _doImproveBlock).
+    captureEditForLearning(b);
     saveToStorage();
     if (typeof renderBlocks === 'function') renderBlocks();
     if (typeof canvasRender === 'function') canvasRender();
