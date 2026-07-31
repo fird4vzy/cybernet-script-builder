@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-30-v48-kb-everywhere';
+const CYBERNET_BUILD = '2026-07-30-v49-kb-structure';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 const THEME_KEY = 'cybernet_theme_v1';
 (function initThemeEarly() {
@@ -8427,16 +8427,19 @@ ${toneSamples.length ? `\nОБРАЗЦЫ МАНЕРЫ РЕЧИ (обрати в�
   // The knowledge base was only wired into STRUCTURE MODE, so generating without
   // "copy the эталон's structure" silently ignored it — the facts the user
   // carefully entered never reached the model. Inject it here too.
+  // The base is framed as "product facts" only, so a scenario the user described
+  // there (steps, branches, which blocks to create) was read as background and
+  // ignored. It is the user's own specification — treat it as authoritative for
+  // BOTH facts and structure.
   const knowledgeSection = knowledge ? `
 
-📚 БАЗА ЗНАНИЙ — бери конкретику ТОЛЬКО отсюда:
+📚 БАЗА ЗНАНИЙ — ЭТО ГЛАВНЫЙ ИСТОЧНИК. Всё, что здесь написано, важнее твоих домыслов:
 ${knowledge}
 
 🔴 КАК ПОЛЬЗОВАТЬСЯ БАЗОЙ:
-- Имя робота, название компании, продукты, суммы, сроки, ставки — строго как здесь. НЕ подставляй {BANK_NAME}, если настоящее название есть в базе.
-- В каждом блоке про продукт, условия или возражение назови КОНКРЕТНЫЙ факт из базы, а не общие слова.
-- В разных блоках бери РАЗНЫЕ факты.
-- НЕ ВЫДУМЫВАЙ данных, которых в базе нет.` : '';
+1) ФАКТЫ: имя робота, название компании, продукты, суммы, сроки, ставки — строго как здесь. НЕ подставляй {BANK_NAME} или {AGENT_NAME}, если настоящее название/имя есть в базе. В каждом блоке про продукт, условия или возражение назови КОНКРЕТНЫЙ факт отсюда, в разных блоках — разные. Не выдумывай данных, которых здесь нет.
+2) ЛОГИКА И СТРУКТУРА: если в базе описан сценарий разговора — порядок шагов, ветвления, какие блоки нужны, как обрабатывать ответы — ПОСТРОЙ СХЕМУ ИМЕННО ТАК. Это техническое задание, а не справочная информация. Каждый описанный шаг = отдельный блок, каждое описанное условие = ромб type:"decision", каждый вариант ответа клиента = отдельная ветка со своей меткой.
+3) Если база описывает сценарий короче, чем запрошенный размер скрипта — дополни его обработкой особых ситуаций и возражений, НЕ ломая описанную логику.` : '';
   const systemPrompt = aiPrompts.generate_system + referencesSection + knowledgeSection + briefSection + varsSection + learningSection;
   let userPrompt = fillTemplate(aiPrompts.generate_user, {
     niche, goal, channel, tone, blockCount,
@@ -8453,7 +8456,12 @@ ${knowledge}
   userPrompt += `\n\n🔴 ОБЯЗАТЕЛЬНАЯ СТРУКТУРА СХЕМЫ (без этого скрипт неполный):
 - РОВНО ОДИН блок type:"start" — просто маркер начала («Начало разговора»), БЕЗ речи (ru и uz пустые).
 - Минимум один блок type:"end" — завершение звонка.
-- Блоки type:"decision" (ромбы) на каждой технической проверке: определение языка, проверка «это тот клиент?», счётчик попыток. У ромба минимум 2 ветки с короткими метками.
+- 🔴 РОМБЫ type:"decision" — ОБЯЗАТЕЛЬНЫ, минимум 3 штуки. Ромб = ТЕХНИЧЕСКАЯ ПРОВЕРКА без речи робота (ru и uz пустые!), из него выходят ветки с вариантами. Обязательно сделай ромбы для:
+  · проверки языка: title «Проверка языка», ветки «Рус» / «Уз»
+  · проверки собеседника: title «Это клиент?», ветки «Да» / «Нет»
+  · счётчика попыток: title «Какой раз повторяет?», ветки «1ый раз» / «2ой раз» / «3ий раз»
+  Пример правильного ромба: {"id":"check_lang","title":"Проверка языка","type":"decision","ru":"","uz":"","branches":[{"label":"Рус","next":"ru_path"},{"label":"Уз","next":"uz_path"}]}
+  ❌ НЕПРАВИЛЬНО: делать проверку обычным блоком с текстом — тогда ромба на схеме не будет.
 - Блоки type:"question" там, где робот задаёт вопрос и ждёт ответа клиента.
 - ОБРАБОТКА ОСОБЫХ СИТУАЦИЙ отдельными блоками: молчание клиента, «не слышно», «вы робот?», «кто вы / откуда звоните», «соедините с оператором», «ошиблись номером», «мошенники», «перезвоните позже», автоответчик, плохая связь.
 - СЧЁТЧИКИ ПОВТОРОВ: если клиент повторяет одно возражение — отдельные блоки на 2-й и 3-й раз с более настойчивыми формулировками.
@@ -9379,6 +9387,17 @@ ${JSON.stringify(mapChunk, null, 1)}`;
     // Switch to Canvas view to show the result
     const canvasTab = document.querySelector('[data-tab="canvas"]');
     if (canvasTab) switchTab('canvas', canvasTab);
+
+    // Report what the model actually built, so a missing diamond or a stray
+    // English title is visible immediately instead of being found on the canvas.
+    try {
+      const bl = profile.blocks || [];
+      const cnt = (t) => bl.filter(b => (b.type || '') === t).length;
+      const engTitles = bl.filter(b => /^[A-Za-z0-9 ,'"?!.\-]+$/.test((b.title || '').trim()) && (b.title || '').trim().length > 2).length;
+      console.log(`[Cybernet] структура: старт ${cnt('start')}, конец ${cnt('end')}, ромбов ${cnt('decision')}, вопросов ${cnt('question')}, обычных ${cnt('normal')}, англ. заголовков ${engTitles}`);
+      if (!cnt('decision')) console.warn('[Cybernet] AI не создал ни одного ромба (type:"decision") — проверки языка/собеседника оформлены обычными блоками.');
+      if (engTitles) console.warn(`[Cybernet] ${engTitles} заголовков на английском — должны быть по-русски.`);
+    } catch (e) {}
 
     {
       // Say it out loud when the model undershot the requested size — this used
