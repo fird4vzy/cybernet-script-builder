@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-31-v60-lazy-xlsx';
+const CYBERNET_BUILD = '2026-07-31-v61-baseline-on-ack';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 // Печатаем и адрес, из которого приехал файл: если версия сборки не та, что
 // ожидалась, сразу видно — это протухший ?v= / кэш или просто незадеплоенный код.
@@ -8478,15 +8478,18 @@ function captureEditForLearning(b, prevRu, prevUz) {
       niche: (data().meta && data().meta.niche) || '', goal: (data().meta && data().meta.goal) || ''
     })).then(saved => {
       if (saved && saved.id) {
+        // Базовую линию двигаем ТОЛЬКО после подтверждённой записи. Раньше она
+        // сдвигалась сразу, синхронно: если вставка падала, правка исчезала
+        // бесследно — блок уже «совпадал с AI», и повторно поймать её было
+        // нельзя. Именно поэтому пары не накапливались.
+        b.aiRu = b.ru; b.aiUz = b.uz;
+        if (aiTitle !== undefined) b.aiTitle = b.title;
         _learningCache = { at: 0, text: null };   // новая правка — кэш примеров устарел
         console.log(`[Cybernet] ✓ правка сохранена для обучения (${who})`);
       } else {
-        console.warn(`[Cybernet] ✗ правка НЕ записалась в облако (${who}). Обычная причина — нет таблицы cs_edits или RLS не разрешает insert. Схема в комментарии supabase-client.js.`);
+        console.warn(`[Cybernet] ✗ правка НЕ записалась в облако (${who}). Базовая линия НЕ сдвинута — правка будет поймана при следующем сохранении. Причина:`, (typeof getLastEditError === 'function' && getLastEditError()) || 'не указана');
       }
     }).catch(e => console.warn('[Cybernet] ✗ ошибка записи правки:', e));
-    // once captured, treat the new text as the baseline so we don't log it again
-    b.aiRu = b.ru; b.aiUz = b.uz;
-    if (aiTitle !== undefined) b.aiTitle = b.title;
   } catch (e) { console.warn('captureEditForLearning skipped:', e); }
 }
 
@@ -8551,12 +8554,18 @@ async function buildLearningSection(quiet) {
 async function learningStatus() {
   const on = !!llmSettings.learnFromEdits;
   const signed = !!(getCurrentUserId && getCurrentUserId());
-  let total = 0, usable = 0;
+  let total = 0, usable = 0, rows = [];
   if (on && signed && typeof cloudLoadEdits === 'function') {
     try {
       const edits = await cloudLoadEdits(30) || [];
       total = edits.length;
       usable = edits.filter(e => e.final_ru && e.ai_ru && e.final_ru !== e.ai_ru).length;
+      rows = edits.slice(0, 5).map(e => ({
+        блок: (e.block_title || '').slice(0, 30),
+        'было (AI)': (e.ai_ru || '').slice(0, 45),
+        'стало': (e.final_ru || '').slice(0, 45),
+        'годная пара': !!(e.final_ru && e.ai_ru && e.final_ru !== e.ai_ru)
+      }));
     } catch (e) {}
   }
   const info = {
@@ -8567,6 +8576,12 @@ async function learningStatus() {
     'подставляется в': 'генерацию с нуля, генерацию по эталону, улучшение блока, AI-разбор и кнопку «Исправить» в нём'
   };
   console.table(info);
+  if (rows.length) {
+    console.log('%cПоследние записи в cs_edits:', 'font-weight:bold');
+    console.table(rows);
+  } else if (on && signed) {
+    console.warn('[Cybernet] в cs_edits нет ни одной записи. Правьте ТЕКСТ реплики руками и жмите «Сохранить» — в консоли должно появиться «✓ правка сохранена».');
+  }
   return info;
 }
 if (typeof window !== 'undefined') window.learningStatus = learningStatus;
@@ -8589,7 +8604,7 @@ if (typeof window !== 'undefined') window.learningPreview = learningPreview;
 // только «сколько пар накопилось», а этот разбирает, почему конкретная правка
 // не записалась, и делает пробную вставку, чтобы увидеть настоящую ошибку базы.
 // Использование: выделить блок на схеме и вызвать testLearning() в консоли.
-async function testLearning(blockId) {
+async function testLearning(blockId, probe) {
   const id = blockId || (typeof canvasState === 'object' && canvasState.selectedId) || null;
   const b = id ? data().blocks.find(x => x.id === id) : null;
   if (!b) {
@@ -8629,7 +8644,10 @@ async function testLearning(blockId) {
     }
   }
 
-  if (llmSettings.learnFromEdits && signed && typeof cloudSaveEdit === 'function') {
+  // Пробная вставка теперь по требованию: testLearning(id, true). Каждый вызов
+  // добавлял служебную строку, а если удалить её не удавалось (нет RLS на
+  // delete), они копились и вытесняли настоящие пары из выборки.
+  if (probe && llmSettings.learnFromEdits && signed && typeof cloudSaveEdit === 'function') {
     // ai_ru === final_ru, поэтому buildLearningSection такую строку отфильтрует
     // и она не попадёт в промпт даже если удалить её не удастся.
     const probe = await cloudSaveEdit({

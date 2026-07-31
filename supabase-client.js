@@ -267,6 +267,9 @@ async function cloudLoadEdits(limit = 40) {
       .from('cs_edits')
       .select('*')
       .eq('owner_id', currentUser.id)
+      // Строки от testLearning() — служебные. Если их не отсеять, они съедают
+      // окно из последних N записей и вытесняют настоящие пары.
+      .neq('block_title', '__probe__')
       .order('created_at', { ascending: false })
       .limit(limit);
     if (error) throw error;
