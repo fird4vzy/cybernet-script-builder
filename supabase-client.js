@@ -201,6 +201,9 @@ async function cloudDeleteReference(id) {
 //   id uuid pk default gen_random_uuid(), owner_id uuid, created_at timestamptz default now(),
 //   block_title text, intent text, ai_ru text, ai_uz text, final_ru text, final_uz text,
 //   niche text, goal text
+//   -- для обучения на переименованиях блоков (необязательно, код работает и без них):
+//   alter table cs_edits add column if not exists ai_title text;
+//   alter table cs_edits add column if not exists final_title text;
 // + RLS: owner_id = auth.uid() for select/insert/delete.
 // Последняя ошибка вставки. Раньше она тонула в catch, и снаружи было видно
 // только «null» — нельзя было отличить «нет таблицы» от «RLS запретил».
@@ -222,7 +225,7 @@ async function cloudSaveEdit(edit) {
     return null;
   }
   try {
-    const { data, error } = await sb.from('cs_edits').insert({
+    const row = {
       owner_id: currentUser.id,
       block_title: edit.title || '',
       intent: edit.intent || '',
@@ -232,7 +235,21 @@ async function cloudSaveEdit(edit) {
       final_uz: edit.finalUz || '',
       niche: edit.niche || '',
       goal: edit.goal || ''
-    }).select().single();
+    };
+    // Переименования блоков — отдельная пара. Колонки добавлены позже, поэтому
+    // на базе без них первый insert упадёт: ловим именно эту ошибку и повторяем
+    // без заголовков, чтобы не потерять пару по текстам.
+    const withTitles = edit.aiTitle !== undefined || edit.finalTitle !== undefined;
+    if (withTitles) {
+      row.ai_title = edit.aiTitle || '';
+      row.final_title = edit.finalTitle || '';
+    }
+    let { data, error } = await sb.from('cs_edits').insert(row).select().single();
+    if (error && withTitles && /ai_title|final_title|column|schema cache/i.test(error.message || '')) {
+      console.warn('cs_edits: нет колонок ai_title/final_title — пишу без переименования. SQL для добавления есть в комментарии к таблице.');
+      delete row.ai_title; delete row.final_title;
+      ({ data, error } = await sb.from('cs_edits').insert(row).select().single());
+    }
     if (error) throw error;
     lastEditError = null;
     return data;

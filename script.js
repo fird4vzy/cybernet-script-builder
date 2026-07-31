@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-31-v57-learning-selftest';
+const CYBERNET_BUILD = '2026-07-31-v59-learn-in-review';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 // Печатаем и адрес, из которого приехал файл: если версия сборки не та, что
 // ожидалась, сразу видно — это протухший ?v= / кэш или просто незадеплоенный код.
@@ -8421,18 +8421,24 @@ function captureEditForLearning(b, prevRu, prevUz) {
     }
     // Only meaningful when we know what AI originally produced and the user changed it.
     const who = `«${b.title || b.id}»`;
-    const aiRu = b.aiRu, aiUz = b.aiUz;
+    const aiRu = b.aiRu, aiUz = b.aiUz, aiTitle = b.aiTitle;
     // Пара имеет смысл, только если известно, ЧТО написал AI. У импортированных
     // из drawio и созданных руками блоков базовой линии нет — раньше функция тут
     // молча выходила, и пользователь видел «годных пар 0», не понимая почему.
-    if (aiRu === undefined && aiUz === undefined) {
-      console.log(`[Cybernet] правка НЕ сохранена (${who}): у блока нет базовой линии AI. Обучение считает только правки текста, который написал AI — в импортированных и рукописных блоках его нет.`);
+    if (aiRu === undefined && aiUz === undefined && aiTitle === undefined) {
+      console.log(`[Cybernet] правка НЕ сохранена (${who}): у блока нет базовой линии AI. Обучение считает только правки того, что написал AI — в импортированных и рукописных блоках его нет.`);
       return;
     }
     const ruChanged = aiRu !== undefined && (b.ru || '') !== (aiRu || '') && (b.ru || '').trim().length > 2;
     const uzChanged = aiUz !== undefined && (b.uz || '') !== (aiUz || '') && (b.uz || '').trim().length > 2;
-    if (!ruChanged && !uzChanged) {
-      console.log(`[Cybernet] правка НЕ сохранена (${who}): текст не отличается от того, что написал AI`);
+    // Переименование блока — тоже сигнал: генератор systematically мажет с
+    // заголовками (языковые пометки, английские названия), а как надо —
+    // показывают именно правки пользователя.
+    const titleChanged = aiTitle !== undefined
+      && (b.title || '').trim() !== (aiTitle || '').trim()
+      && (b.title || '').trim().length > 1;
+    if (!ruChanged && !uzChanged && !titleChanged) {
+      console.log(`[Cybernet] правка НЕ сохранена (${who}): ни текст, ни заголовок не отличаются от того, что написал AI`);
       return;
     }
     // cloudSaveEdit асинхронный и глотает ошибки в catch. Без разбора результата
@@ -8441,6 +8447,8 @@ function captureEditForLearning(b, prevRu, prevUz) {
       title: b.title || '', intent: b.intent || '',
       aiRu: aiRu || '', aiUz: aiUz || '',
       finalRu: b.ru || '', finalUz: b.uz || '',
+      aiTitle: titleChanged ? (aiTitle || '') : undefined,
+      finalTitle: titleChanged ? (b.title || '') : undefined,
       niche: (data().meta && data().meta.niche) || '', goal: (data().meta && data().meta.goal) || ''
     })).then(saved => {
       if (saved && saved.id) {
@@ -8452,6 +8460,7 @@ function captureEditForLearning(b, prevRu, prevUz) {
     }).catch(e => console.warn('[Cybernet] ✗ ошибка записи правки:', e));
     // once captured, treat the new text as the baseline so we don't log it again
     b.aiRu = b.ru; b.aiUz = b.uz;
+    if (aiTitle !== undefined) b.aiTitle = b.title;
   } catch (e) { console.warn('captureEditForLearning skipped:', e); }
 }
 
@@ -8488,12 +8497,25 @@ async function buildLearningSection(quiet) {
     const pairs = picked
       .map(e => `Было (AI): ${e.ai_ru}\nСтало (правка пользователя): ${e.final_ru}`)
       .join('\n\n');
-    say(`[Cybernet] обучение на правках: в базе последних ${edits.length}, годных пар ${usable.length}, подставлено в промпт ${picked.length}`);
-    if (!pairs) {
+    // Переименования блоков идут отдельным списком: это не про манеру речи, а
+    // про то, как пользователь называет узлы схемы.
+    const titleEdits = edits.filter(e => e.final_title && e.ai_title && e.final_title !== e.ai_title);
+    const titlePairs = titleEdits
+      .slice(0, 8)
+      .map(e => `«${e.ai_title}» → «${e.final_title}»`)
+      .join('\n');
+    say(`[Cybernet] обучение на правках: в базе последних ${edits.length}, годных пар по тексту ${usable.length} (в промпт ${picked.length}), переименований ${titleEdits.length}`);
+    if (!pairs && !titlePairs) {
       _learningCache = { at: Date.now(), text: '' };
       return '';
     }
-    const text = '\n\n=== КАК ЭТОТ ПОЛЬЗОВАТЕЛЬ ПРАВИТ ТЕКСТЫ (учись на его правках, повторяй его манеру: длину, тон, лексику) ===\n' + pairs;
+    let text = '';
+    if (pairs) {
+      text += '\n\n=== КАК ЭТОТ ПОЛЬЗОВАТЕЛЬ ПРАВИТ ТЕКСТЫ (учись на его правках, повторяй его манеру: длину, тон, лексику) ===\n' + pairs;
+    }
+    if (titlePairs) {
+      text += '\n\n=== КАК ЭТОТ ПОЛЬЗОВАТЕЛЬ ПЕРЕИМЕНОВЫВАЕТ БЛОКИ (называй заголовки в той же манере) ===\n' + titlePairs;
+    }
     _learningCache = { at: Date.now(), text };
     return text;
   } catch (e) { console.warn('buildLearningSection skipped:', e); return ''; }
@@ -8516,8 +8538,7 @@ async function learningStatus() {
     'вход в аккаунт': signed,
     'правок в базе (последние 30)': total,
     'годных пар для промпта': usable,
-    'подставляется в': 'генерацию с нуля, генерацию по эталону, улучшение блока',
-    'НЕ подставляется в': 'AI-разбор скрипта'
+    'подставляется в': 'генерацию с нуля, генерацию по эталону, улучшение блока, AI-разбор и кнопку «Исправить» в нём'
   };
   console.table(info);
   return info;
@@ -8537,9 +8558,12 @@ async function testLearning(blockId) {
   }
 
   const signed = !!(getCurrentUserId && getCurrentUserId());
-  const hasBase = !(b.aiRu === undefined && b.aiUz === undefined);
+  const hasBase = !(b.aiRu === undefined && b.aiUz === undefined && b.aiTitle === undefined);
   const ruChanged = b.aiRu !== undefined && (b.ru || '') !== (b.aiRu || '') && (b.ru || '').trim().length > 2;
   const uzChanged = b.aiUz !== undefined && (b.uz || '') !== (b.aiUz || '') && (b.uz || '').trim().length > 2;
+  const titleChanged = b.aiTitle !== undefined
+    && (b.title || '').trim() !== (b.aiTitle || '').trim()
+    && (b.title || '').trim().length > 1;
 
   const rows = {
     '1. блок': b.title || b.id,
@@ -8549,15 +8573,19 @@ async function testLearning(blockId) {
     '5. базовая линия AI (aiRu)': hasBase
       ? `есть, ${String(b.aiRu || '').length} символов`
       : 'НЕТ — блок не создан AI, правка не считается парой',
-    '6. текст отличается от базовой': (ruChanged || uzChanged) ? 'да' : 'НЕТ — правка не записывается'
+    '6. текст отличается от базовой': (ruChanged || uzChanged) ? 'да' : 'нет',
+    '7. заголовок переименован': b.aiTitle === undefined
+      ? 'базовой линии заголовка нет (блок сгенерирован до этой версии)'
+      : (titleChanged ? `да: «${b.aiTitle}» → «${b.title}»` : 'нет'),
+    'ИТОГ': (ruChanged || uzChanged || titleChanged) ? 'правка записывается' : 'НЕ записывается — ничего не изменилось'
   };
   console.table(rows);
 
   if (hasBase) {
     console.log('%cБыло (AI):', 'font-weight:bold', String(b.aiRu || '').slice(0, 200) || '(пусто)');
     console.log('%cСтало    :', 'font-weight:bold', String(b.ru || '').slice(0, 200) || '(пусто)');
-    if (!ruChanged && !uzChanged) {
-      console.warn('[Cybernet] тексты совпадают. Правка заголовка блока парой НЕ считается — обучение смотрит только на ru/uz.');
+    if (!ruChanged && !uzChanged && !titleChanged) {
+      console.warn('[Cybernet] ничего не изменилось: и текст, и заголовок совпадают с тем, что написал AI.');
     }
   }
 
@@ -9799,6 +9827,7 @@ ${JSON.stringify(mapChunk, null, 1)}`;
             uz: t.uz !== undefined ? t.uz : '',
             aiRu: t.ru !== undefined ? t.ru : '',  // remember what AI generated,
             aiUz: t.uz !== undefined ? t.uz : '',  // so a later manual edit = a training pair
+            aiTitle: outTitle || '',               // то же для заголовка блока
             color: b.color || '',
             x: b.x,  // keep the reference's exact layout so the new script
             y: b.y,  // inherits the same clean arrangement (not a fresh auto-layout)
@@ -9968,6 +9997,7 @@ ${JSON.stringify(mapChunk, null, 1)}`;
         uz: b.uz || '',
         aiRu: b.ru || '',  // baseline for learning-from-edits
         aiUz: b.uz || '',
+        aiTitle: b.title || '',   // переименование блока — тоже сигнал для обучения
         branches: (b.branches || []).map(br => ({
           id: branchId(),
           label: br.label || '',
@@ -10545,7 +10575,13 @@ async function runAIReview() {
   if (!aspects.includes('logic')) userPrompt += '\n\nЛогику/структуру (тупики, связи) подробно не разбирай — она не в фокусе этой проверки.';
 
   try {
-    const raw = await aiGenerate(aiPrompts.review_system, userPrompt, {
+    // Ревью я сначала оставил без обучения, посчитав, что оно только оценивает.
+    // Это была ошибка: поле suggestion — это ПЕРЕПИСАННАЯ реплика, её человек
+    // читает и принимает кнопкой «Исправить». Значит и она должна быть в манере
+    // пользователя, иначе он правит одно и то же по кругу.
+    const raw = await aiGenerate(
+      aiPrompts.review_system + (await buildLearningSection(true)),
+      userPrompt, {
       json: true,
       temperature: 0.35,
       maxTokens: 12000
@@ -10737,7 +10773,13 @@ async function fixIssueFromReview(idx) {
       currentUz: b.uz || '',
       task
     });
-    const raw = await aiGenerate(aiPrompts.improve_system, userPrompt, { json: true, temperature: 0.6, maxTokens: 2500 });
+    // Кнопка «Исправить» переписывает реплику, значит должна писать в манере
+    // пользователя — как и «Улучшить блок». Раньше примеры правок сюда не
+    // подставлялись, и одно и то же действие работало по-разному в двух местах.
+    const raw = await aiGenerate(
+      aiPrompts.improve_system + (await buildLearningSection(true)),
+      userPrompt,
+      { json: true, temperature: 0.6, maxTokens: 2500 });
     let parsed;
     try { parsed = JSON.parse(raw); } catch {
       const m = raw.match(/\{[\s\S]*\}/);
@@ -10748,6 +10790,12 @@ async function fixIssueFromReview(idx) {
     snapshot('AI-исправление блока');
     if (parsed.ru) b.ru = parsed.ru;
     if (parsed.uz) b.uz = parsed.uz;
+    // Текст написал AI, а не пользователь. Без сдвига базовой линии следующее
+    // сохранение блока записало бы в обучение пару «исходная генерация →
+    // переписка ревью», то есть AI учился бы на самом себе. Та же ловушка была
+    // в «Улучшить блок» — здесь третье место, где пишутся тексты.
+    if (parsed.ru) b.aiRu = parsed.ru;
+    if (parsed.uz) b.aiUz = parsed.uz;
     saveToStorage();
     if (typeof renderBlocks === 'function') renderBlocks();
     if (typeof canvasRender === 'function') canvasRender();
