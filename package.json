@@ -1,6 +1,10 @@
 {
-  "dependencies": {
-    "@google/genai": "^1.50.1",
-    "@google/generative-ai": "^0.24.1"
+  "name": "cybernet-script-builder",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Cybernet AI — конструктор скриптов для колл-центра",
+  "scripts": {
+    "test": "node tests/run.js",
+    "check": "node --check script.js && node --check supabase-client.js && node --check api/ai.js"
   }
 }

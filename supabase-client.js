@@ -295,12 +295,22 @@ async function cloudLoadSettings() {
   }
 }
 
+// 🔴 Ключи провайдеров НИКОГДА не уезжают в базу. Раньше объект llmSettings
+// писался целиком, вместе с apiKey / geminiApiKey / openaiApiKey — то есть
+// чужие платные ключи лежали в cs_user_settings открытым текстом, и вся их
+// защита держалась на одной лишь RLS. Срезаем здесь, в единственной точке
+// записи, чтобы это нельзя было забыть на стороне вызова.
+function stripProviderKeys(s) {
+  const { apiKey, geminiApiKey, openaiApiKey, ...safe } = (s || {});
+  return safe;
+}
+
 async function cloudSaveSettings(llmSettings, prompts, theme) {
   if (!sb || !currentUser) return false;
   try {
     const { error } = await sb.from('cs_user_settings').upsert({
       user_id: currentUser.id,
-      llm_settings: llmSettings || {},
+      llm_settings: stripProviderKeys(llmSettings),
       prompts: prompts || {},
       theme: theme || 'dark'
     }, { onConflict: 'user_id' });
@@ -309,6 +319,19 @@ async function cloudSaveSettings(llmSettings, prompts, theme) {
   } catch (e) {
     console.error('cloudSaveSettings:', e);
     return false;
+  }
+}
+
+// Токен текущей сессии для авторизации на /api/ai. Берём именно из
+// getSession(), а не из currentUser: SDK сам обновляет протухший access_token.
+async function getAccessToken() {
+  if (!sb) return null;
+  try {
+    const { data: { session } } = await sb.auth.getSession();
+    return session?.access_token || null;
+  } catch (e) {
+    console.error('getAccessToken:', e);
+    return null;
   }
 }
 

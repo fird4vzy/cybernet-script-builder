@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
 // THEME (light / dark) — apply early to avoid flash
 // ═══════════════════════════════════════════════════════════════
-const CYBERNET_BUILD = '2026-07-31-v63-clearer-status';
+const CYBERNET_BUILD = '2026-08-04-v64-security-hardening';
 console.log('[Cybernet] script build:', CYBERNET_BUILD);
 // Печатаем и адрес, из которого приехал файл: если версия сборки не та, что
 // ожидалась, сразу видно — это протухший ?v= / кэш или просто незадеплоенный код.
@@ -846,7 +846,7 @@ function renderBlocks() {
                     <option value="">— выбрать блок —</option>
                     ${allIds.filter(id => id !== b.id).map(id => {
                       const blk = d.blocks.find(x => x.id === id);
-                      return `<option value="${id}" ${br.next===id?'selected':''}>${esc(id)} — ${esc(blk?blk.title:'')}</option>`;
+                      return `<option value="${esc(id)}" ${br.next===id?'selected':''}>${esc(id)} — ${esc(blk?blk.title:'')}</option>`;
                     }).join('')}
                   </select>
                   <button class="cs-branch-del" onclick="removeBranchInList('${esc(b.id)}', ${idx})" title="Удалить">×</button>
@@ -2979,6 +2979,9 @@ function importCSV(event) {
         sections,
         blocks: importedBlocks
       };
+      // CSV — недоверенный файл, id блоков берутся из него дословно.
+      // Раньше санитайзер сюда не доходил вовсе.
+      safeProfile(profiles[profName]);
       activeProfile = profName;
       canvasState.autoLaidOut.delete(profName); // force auto-layout next time
       renderProfiles(); renderBlocks(); renderVars(); renderStats();
@@ -3073,6 +3076,25 @@ function safeIdFrom(raw, used) {
   used.add(unique);
   return unique;
 }
+// Единая точка обеззараживания. Санитайзер вызывался вручную на трёх путях
+// из семи, и про остальные забыли — именно так рождаются дыры. Флаг _idsSafe
+// делает повторный вызов дешёвым, поэтому его можно ставить везде, где
+// недоверенный профиль входит в приложение, не думая об эффективности.
+//
+// Почему это критично: id блока подставляется в inline-обработчики вида
+// onclick="toggleBlock('...')". HTML-экранирование там НЕ спасает — парсер
+// HTML раскодирует &#39; обратно в апостроф ДО того, как строку разберёт
+// JS-движок. То есть единственная реальная защита — набор допустимых
+// символов в самом id.
+function safeProfile(profile) {
+  if (!profile || typeof profile !== 'object') return profile;
+  if (profile._idsSafe) return profile;
+  sanitizeProfileIds(profile);
+  try { Object.defineProperty(profile, '_idsSafe', { value: true, enumerable: false }); }
+  catch (e) { profile._idsSafe = true; }
+  return profile;
+}
+
 function sanitizeProfileIds(profile) {
   if (!profile || typeof profile !== 'object') return profile;
   const blocks = Array.isArray(profile.blocks) ? profile.blocks : [];
@@ -7170,8 +7192,11 @@ async function cloudPullReferences() {
     tone: row.tone,
     tags: row.tags || [],
     notes: row.notes,
-    profile: row.profile_data,       // code uses r.profile everywhere
-    profileData: row.profile_data,   // keep for cloud push
+    // Чужой общий эталон приходит из облака — это межпользовательский путь,
+    // самый опасный из всех: коллега открывает эталон, а id блоков в нём
+    // сочинил кто угодно.
+    profile: safeProfile(row.profile_data),   // code uses r.profile everywhere
+    profileData: row.profile_data,            // keep for cloud push
     active: row.is_active !== false, // generation filters by r.active
     isActive: row.is_active
   }));
@@ -7339,9 +7364,9 @@ function fillTemplate(tpl, vars) {
 const llmSettings = {
   provider: 'gemini',        // 'gemini' | 'openai'
   apiKey: '',                // mirror of the ACTIVE provider's key (kept in sync — everything else in the app reads this)
-  model: 'gemini-3.5-flash', // mirror of the ACTIVE provider's model
+  model: 'gemini-3.1-flash-lite', // mirror of the ACTIVE provider's model
   geminiApiKey: '',
-  geminiModel: 'gemini-3.5-flash',
+  geminiModel: 'gemini-3.1-flash-lite',
   openaiApiKey: '',
   openaiModel: 'gpt-4o-mini',
   learnFromEdits: false,   // consent for capturing edit pairs into cs_edits (default OFF)
@@ -7360,21 +7385,21 @@ function loadLLMSettings() {
       const s = JSON.parse(raw);
       // Migrate stale/deprecated Gemini model names that no longer work
       const migrations = {
-        'gemini-1.5-flash': 'gemini-3.5-flash',
+        'gemini-1.5-flash': 'gemini-3.1-flash-lite',
         'gemini-1.5-pro': 'gemini-3.1-pro-preview',
-        'gemini-1.5-flash-latest': 'gemini-3.5-flash',
+        'gemini-1.5-flash-latest': 'gemini-3.1-flash-lite',
         'gemini-1.5-pro-latest': 'gemini-3.1-pro-preview',
         'gemini-1.5-flash-8b-latest': 'gemini-2.5-flash-lite',
-        'gemini-2.0-flash-exp': 'gemini-3.5-flash',
+        'gemini-2.0-flash-exp': 'gemini-3.1-flash-lite',
         'gemini-2.0-flash': 'gemini-2.5-flash',      // shut down by Google
         'gemini-2.0-flash-lite': 'gemini-2.5-flash-lite', // shut down by Google
-        'gemini-pro': 'gemini-3.5-flash'
+        'gemini-pro': 'gemini-3.1-flash-lite'
       };
       if (s.provider) {
         // Current (multi-provider) shape
         llmSettings.provider = s.provider === 'openai' ? 'openai' : 'gemini';
         llmSettings.geminiApiKey = s.geminiApiKey || '';
-        llmSettings.geminiModel = migrations[s.geminiModel] || s.geminiModel || 'gemini-3.5-flash';
+        llmSettings.geminiModel = migrations[s.geminiModel] || s.geminiModel || 'gemini-3.1-flash-lite';
         llmSettings.openaiApiKey = s.openaiApiKey || '';
         llmSettings.openaiModel = s.openaiModel || 'gpt-4o-mini';
         llmSettings.learnFromEdits = !!s.learnFromEdits;
@@ -7383,7 +7408,7 @@ function loadLLMSettings() {
         // Legacy single-provider (Gemini-only) shape — migrate in place
         llmSettings.provider = 'gemini';
         llmSettings.geminiApiKey = s.apiKey || '';
-        llmSettings.geminiModel = migrations[s.model] || s.model || 'gemini-3.5-flash';
+        llmSettings.geminiModel = migrations[s.model] || s.model || 'gemini-3.1-flash-lite';
       }
       csSyncActiveLLM();
       saveLLMSettings(); // persist migration/new shape
@@ -7413,7 +7438,7 @@ async function geminiGenerate(systemPrompt, userPrompt, opts = {}) {
   if (!apiKey) {
     throw new Error('API ключ Gemini не настроен. Нажмите "Настройки AI" чтобы его добавить.');
   }
-  const model = opts.model || llmSettings.geminiModel || 'gemini-3.5-flash';
+  const model = opts.model || llmSettings.geminiModel || 'gemini-3.1-flash-lite';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
   const body = {
@@ -7555,11 +7580,17 @@ async function openaiGenerate(systemPrompt, userPrompt, opts = {}) {
 async function proxyGenerate(systemPrompt, userPrompt, opts = {}) {
   const provider = opts.provider || llmSettings.provider || 'gemini';
   const model = opts.model || (provider === 'openai' ? llmSettings.openaiModel : llmSettings.geminiModel);
+  // Эндпоинт тратит наши деньги, поэтому пускает только вошедших. Токен
+  // сессии Supabase проверяется на сервере (api/ai.js → verifyUser).
+  const token = (typeof getAccessToken === 'function') ? await getAccessToken() : null;
+  if (!token) {
+    throw new Error('Серверный ключ требует входа в аккаунт. Войдите и повторите — либо снимите галочку «Использовать серверный ключ» и укажите свой API-ключ.');
+  }
   let resp;
   try {
     resp = await fetch('/api/ai', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
         provider, model,
         system: systemPrompt || '',
@@ -7576,7 +7607,12 @@ async function proxyGenerate(systemPrompt, userPrompt, opts = {}) {
   try { data = await resp.json(); } catch {}
   if (!resp.ok) {
     if (resp.status === 404) throw new Error('Серверный ключ включён, но /api/ai не найден — задеплойте папку api/ на Vercel.');
-    throw new Error((data && data.error) || `Ошибка сервера AI (${resp.status})`);
+    if (resp.status === 401) throw new Error('Сессия истекла — обновите страницу и войдите заново.');
+    if (resp.status === 413) throw new Error((data && data.error) || 'Промпт слишком большой — уменьшите базу знаний.');
+    // ref — номер обращения в логах Vercel: детали ошибки провайдера наружу
+    // больше не отдаются, но по нему их можно найти в логах.
+    const ref = data && data.ref ? ` (обращение ${data.ref})` : '';
+    throw new Error(((data && data.error) || `Ошибка сервера AI (${resp.status})`) + ref);
   }
   if (!data || !data.text) throw new Error((data && data.error) || 'Пустой ответ от сервера AI');
   return data.text;
@@ -7693,7 +7729,7 @@ async function testLLMKey() {
   const modelSelect = document.getElementById(isOpenai ? 'llm-openai-model-select' : 'llm-model-select');
   const key = keyInput.value.trim();
   if (!key) { toast('Сначала введите ключ', 'error'); return; }
-  const selectedModel = modelSelect?.value || (isOpenai ? 'gpt-4o-mini' : 'gemini-3.5-flash');
+  const selectedModel = modelSelect?.value || (isOpenai ? 'gpt-4o-mini' : 'gemini-3.1-flash-lite');
   const btn = document.getElementById('llm-test-btn');
   const origText = btn.textContent;
   btn.disabled = true;
@@ -8226,13 +8262,16 @@ function closeGenScriptModal() {
 // Get the script profile object from a reference, regardless of which field it's stored in
 function getRefProfile(r) {
   if (!r) return null;
+  // Страховка: эталон мог прийти из файла или из облака (в том числе чужой,
+  // общий). Обеззараживаем на чтении, чтобы пропущенный вызов на входе
+  // перестал быть уязвимостью.
   // Prefer whichever has actual blocks
   const candidates = [r.profile, r.profileData, r.data];
   for (const c of candidates) {
-    if (c && Array.isArray(c.blocks) && c.blocks.length) return c;
+    if (c && Array.isArray(c.blocks) && c.blocks.length) return safeProfile(c);
   }
   // Fallback to first non-empty object
-  return r.profile || r.profileData || r.data || null;
+  return safeProfile(r.profile || r.profileData || r.data || null);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -10360,7 +10399,7 @@ function importReferenceFromFile(e) {
   const r = new FileReader();
   r.onload = (ev) => {
     try {
-      const p = JSON.parse(ev.target.result);
+      const p = safeProfile(JSON.parse(ev.target.result));   // недоверенный файл
       if (!p.blocks || !Array.isArray(p.blocks) || !p.blocks.length) {
         throw new Error('Неверный формат: нужен JSON профиля с блоками');
       }
@@ -10529,7 +10568,8 @@ function useReferenceAsProfile(idx) {
   if (!r) return;
   if (!confirm(`Загрузить эталон "${r.name}" как новый редактируемый профиль?`)) return;
   snapshot('Загрузка эталона как профиля');
-  const profileCopy = JSON.parse(JSON.stringify(r.profile));
+  // Эталон мог прийти из чужого общего — id блоков недоверенные.
+  const profileCopy = safeProfile(JSON.parse(JSON.stringify(r.profile)));
   let name = r.name;
   if (profiles[name]) name += ' ' + Date.now().toString().slice(-4);
   profileCopy.name = name;
@@ -11010,8 +11050,16 @@ async function bootApp() {
     if (typeof cloudLoadSettings === 'function' && getCurrentUserId()) {
       const s = await cloudLoadSettings();
       if (s) {
-        if (s.llm_settings && s.llm_settings.apiKey) {
-          Object.assign(llmSettings, s.llm_settings);
+        if (s.llm_settings) {
+          // Условие было `&& s.llm_settings.apiKey` — то есть настройки
+          // применялись, только если в облаке лежал ключ. Ключи мы больше не
+          // храним (см. stripProviderKeys), поэтому синхронизируем всё
+          // остальное — провайдера, модели, тумблеры, — а ключи берём
+          // исключительно локальные и НЕ затираем облачными.
+          const cloud = { ...s.llm_settings };
+          delete cloud.apiKey; delete cloud.geminiApiKey; delete cloud.openaiApiKey;
+          Object.assign(llmSettings, cloud);
+          csSyncActiveLLM();   // пересобрать apiKey/model под активного провайдера
           try { localStorage.setItem(LLM_SETTINGS_KEY, JSON.stringify(llmSettings)); } catch (e) {}
         }
         if (s.prompts) {

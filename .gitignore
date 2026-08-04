@@ -1,0 +1,16 @@
+# Зависимости ставятся из package-lock.json, а не хранятся в репозитории.
+# Раньше сюда было закоммичено 855 файлов node_modules — это ломало
+# воспроизводимость сборки на Vercel и слепило npm audit / Dependabot.
+node_modules/
+
+# Секреты — никогда в git
+.env
+.env.*
+!.env.example
+
+# Служебное
+.vercel/
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
